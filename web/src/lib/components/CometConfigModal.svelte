@@ -98,31 +98,10 @@
 		line-height: 1.5;
 		margin: 0 0 var(--space-lg);
 	}
-	.settings-group {
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		overflow: hidden;
-		margin-bottom: var(--space-xs);
-	}
-	.settings-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-md);
-		padding: var(--space-md) var(--space-lg);
-		border-bottom: 1px solid var(--color-border);
-	}
-	.settings-row:last-child {
-		border-bottom: none;
-	}
-	.row-label {
-		font-size: 0.85rem;
-	}
 	.row-sub {
 		font-size: 0.72rem;
 		color: var(--color-text-dim);
-		margin-top: 2px;
+		margin-top: var(--space-xs);
 	}
 	.settings-row select,
 	.settings-row input[type='time'] {

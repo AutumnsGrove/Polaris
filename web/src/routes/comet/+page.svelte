@@ -104,6 +104,7 @@
 		(data?.star_total ?? 0) > 0 || (growth.grown_stars ?? 0) > 0 || (growth.new_links ?? 0) > 0
 	);
 
+	const categoryMax = $derived(Math.max(...categories.map((c) => c.count), 1));
 	const rhythmMax = $derived(Math.max(...(rhythm?.days ?? []).map((d) => d.count), 1));
 
 	// The heatmap is a 7-column grid aligned to weekday; pad the start with
@@ -148,15 +149,18 @@
 		}
 		appState.showToast('Comet is generating — this can take a few minutes');
 		const before = cometState.periods.length;
+		const generatedBefore = cometState.config?.last_generated_at ?? null;
 		for (let i = 0; i < 120; i++) {
 			await new Promise((r) => setTimeout(r, 5000));
 			await cometState.loadPeriods();
 			const appeared = cometState.periods.length > before || cometState.periods.includes(target);
 			// A re-generation of an existing period doesn't change the period
 			// list length, so also stop once the config's last_generated_at
-			// moves past where it was when we started.
+			// moves off the value it had when we started. (Comparing against
+			// "is set" instead would stop on the very first poll for anyone who
+			// has ever generated before.)
 			await cometState.loadConfig();
-			if (appeared || cometState.config?.last_generated_at) {
+			if (appeared || cometState.config?.last_generated_at !== generatedBefore) {
 				await cometState.loadEdition('latest');
 				break;
 			}
@@ -301,12 +305,11 @@
 					<span class="meta">by conversation</span>
 				</div>
 				{#each categories as cat (cat.name)}
-					{@const max = Math.max(...categories.map((c) => c.count), 1)}
 					<div class="cat-row">
 						<span class="dot" style="background:{colorForCategory(cat.name)}"></span>
 						<span class="name">{cat.name}</span>
 						<div class="bar-track">
-							<div class="bar-fill" style="width:{Math.round((cat.count / max) * 100)}%;background:{colorForCategory(cat.name)}"></div>
+							<div class="bar-fill" style="width:{Math.round((cat.count / categoryMax) * 100)}%;background:{colorForCategory(cat.name)}"></div>
 						</div>
 						<span class="count">{cat.count}</span>
 					</div>
@@ -379,7 +382,7 @@
 						{#each ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as w, i (i)}<span>{w}</span>{/each}
 					</div>
 					<div class="heat-grid">
-						{#each heatmapCells as cell}
+						{#each heatmapCells as cell, i (i)}
 							{#if cell}
 								{@const level = cell.count === 0 ? 0 : Math.min(4, Math.ceil((cell.count / rhythmMax) * 4))}
 								<span class={`heat heat-${level}`} title={`${shortDate(cell.date)}: ${cell.count}`}></span>
@@ -488,21 +491,6 @@
 		color: var(--color-text-dim);
 		font-size: 0.78rem;
 	}
-	.icon-btn {
-		display: grid;
-		place-items: center;
-		background: transparent;
-		border: none;
-		color: var(--color-text-dim);
-		cursor: pointer;
-		padding: var(--space-xs);
-		border-radius: var(--radius-md);
-	}
-	.icon-btn:hover {
-		color: var(--color-text);
-		background: var(--color-surface-2);
-	}
-
 	.content {
 		flex: 1;
 		overflow-y: auto;
@@ -613,7 +601,7 @@
 	.stat-tile .label {
 		font-size: 0.7rem;
 		color: var(--color-text-dim);
-		margin-top: 3px;
+		margin-top: var(--space-xs);
 	}
 	.ghost-note {
 		display: flex;
@@ -781,7 +769,7 @@
 	.mini-star .star-cat {
 		font-size: 0.68rem;
 		color: var(--color-text-dim);
-		margin-top: 2px;
+		margin-top: var(--space-xs);
 	}
 	.more-link {
 		display: block;
@@ -884,7 +872,7 @@
 	.heat-grid {
 		display: grid;
 		grid-template-columns: repeat(7, 1fr);
-		gap: 3px;
+		gap: var(--space-xs);
 		max-width: 260px;
 		margin: 0 auto;
 	}
@@ -898,7 +886,7 @@
 	}
 	.heat {
 		aspect-ratio: 1;
-		border-radius: 3px;
+		border-radius: var(--radius-sm);
 		background: var(--color-surface-3);
 	}
 	.heat-blank {
@@ -927,7 +915,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-sm);
-		padding: 5px 0;
+		padding: var(--space-xs) 0;
 	}
 	.tool-name {
 		font-size: 0.8rem;

@@ -252,6 +252,25 @@ Relevant code beyond `gateway/pulsar_scheduler.go` above: `gateway/pulsar_routes
 Pulsar/Pulsar Daily bullets are the user-facing description; this section is only the "where the
 code lives" pointer.
 
+## Comet
+
+"Comet" (`/comet`) is the monthly retrospective: a once-a-month pass classifies each conversation
+into a `trails` row (topic/mood/intent/resolved) via an "Approach" — an `agent.Run` over a hidden
+`threads.source = 'comet_approach'` thread — then `gateway/comet_generate.go` assembles one
+`comet_editions` page from straight aggregation plus a single forced-tool synthesis call (hook,
+highlights, spike/fade). Design doc: `docs/plans/comet.md`. Code: `store/comet.go`,
+`gateway/comet_*.go` (the due-check piggybacks on the Pulsar scheduler's tick), `cmd/comet.go`,
+`web/src/routes/comet/`.
+
+- **A new thread listing/search that excludes `'weaver'` must exclude `'comet_approach'` too** —
+  Approach threads are internal transcripts, not conversations.
+- **`cometGenerationRunning` is Comet's single-flight flag *and* the update watcher's busy signal**
+  (`handleServerBusy`). Anything that runs a long Comet job — the scheduler pipeline, the blocking
+  classify/backfill endpoints (via `claimCometRun`) — must hold it, or a self-update can recreate
+  the container mid-run.
+- Comet never generates for the month in progress (`cometPeriodOf` is the last *complete* month);
+  `cometMonthOf` is the month containing a timestamp. Don't swap them.
+
 ## The prompt-writing wizard
 
 "Help me write this" is one shared, target-driven interview, not a per-surface feature — Pulsar

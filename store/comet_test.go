@@ -87,14 +87,10 @@ func TestCometTrail_LifecycleAndEligibility(t *testing.T) {
 		t.Fatalf("StartTrail: %v", err)
 	}
 
-	// Mid-flight, the thread is still eligible (classified_at IS NULL) and
-	// HasInFlightTrail reports busy.
+	// Mid-flight, the thread is still eligible (classified_at IS NULL).
 	ids, _ = s.EligibleCometThreads(start, end, period)
 	if len(ids) != 1 {
 		t.Errorf("eligible while in-flight = %v, want the thread still listed", ids)
-	}
-	if busy, err := s.HasInFlightTrail(); err != nil || !busy {
-		t.Errorf("HasInFlightTrail = %v, %v; want true, nil", busy, err)
 	}
 
 	if err := s.FinishTrail(trailID, "technology", "curious", "pick a laptop", "yes", 0.01); err != nil {
@@ -104,9 +100,6 @@ func TestCometTrail_LifecycleAndEligibility(t *testing.T) {
 	ids, _ = s.EligibleCometThreads(start, end, period)
 	if len(ids) != 0 {
 		t.Errorf("eligible after finishing = %v, want none", ids)
-	}
-	if busy, _ := s.HasInFlightTrail(); busy {
-		t.Error("HasInFlightTrail should be false once a trail is complete")
 	}
 
 	trail, err := s.GetTrail(threadID, period)
@@ -347,5 +340,95 @@ func TestCometPeriodFirstTopics(t *testing.T) {
 	}
 	if len(none) != 0 {
 		t.Errorf("firsts for the earliest period = %+v, want none", none)
+	}
+}
+
+func TestCometClassifyStarted_StaleMarkerIsIgnored(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.SetCometClassifyStarted(time.Hour); err != nil {
+		t.Fatalf("first SetCometClassifyStarted: %v", err)
+	}
+	// A run that crashed before its deferred clear left this marker behind;
+	// once it's older than staleAfter the next run must take over rather than
+	// stay wedged out forever.
+	if _, err := s.db.Exec(`UPDATE comet_config SET classify_started_at = datetime('now', '-5 hours') WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCometClassifyStarted(4 * time.Hour); err != nil {
+		t.Fatalf("SetCometClassifyStarted over a stale marker = %v, want success", err)
+	}
+	if err := s.SetCometClassifyStarted(4 * time.Hour); err != ErrCometClassifyAlreadyRunning {
+		t.Fatalf("SetCometClassifyStarted over a fresh marker = %v, want ErrCometClassifyAlreadyRunning", err)
+	}
+}
+
+func TestMarkStaleTrailsFailed_OnlySweepsAbandonedMidFlightRows(t *testing.T) {
+	s := openTestStore(t)
+	period := "2026-09"
+
+	abandoned := makeCometThread(t, s, "21111111-1111-1111-1111-111111111111", period)
+	fresh := makeCometThread(t, s, "22222222-2222-2222-2222-222222222222", period)
+	finished := makeCometThread(t, s, "23333333-3333-3333-3333-333333333333", period)
+
+	abandonedID, _ := s.StartTrail(abandoned, period)
+	if _, err := s.StartTrail(fresh, period); err != nil {
+		t.Fatal(err)
+	}
+	finishedID, _ := s.StartTrail(finished, period)
+	if err := s.FinishTrail(finishedID, "science", "curious", "x", "yes", 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{abandonedID, finishedID} {
+		if _, err := s.db.Exec(`UPDATE trails SET started_at = datetime('now', '-2 hours') WHERE id = ?`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := s.MarkStaleTrailsFailed(30 * time.Minute)
+	if err != nil || n != 1 {
+		t.Fatalf("MarkStaleTrailsFailed = %d, %v; want 1, nil (only the old unfinished row)", n, err)
+	}
+	trail, err := s.GetTrail(abandoned, period)
+	if err != nil || trail == nil || !trail.NeedsRetry || trail.Error == "" {
+		t.Errorf("abandoned trail = %+v, %v; want needs_retry with an error recorded", trail, err)
+	}
+	if trail, _ := s.GetTrail(fresh, period); trail == nil || trail.NeedsRetry {
+		t.Errorf("fresh in-flight trail = %+v, want untouched", trail)
+	}
+	if trail, _ := s.GetTrail(finished, period); trail == nil || trail.NeedsRetry {
+		t.Errorf("finished trail = %+v, want untouched", trail)
+	}
+}
+
+func TestSearchTrails_MatchesTopicAndThreadTitleButNotUnfinished(t *testing.T) {
+	s := openTestStore(t)
+	period := "2026-09"
+
+	done := makeCometThread(t, s, "31111111-1111-1111-1111-111111111111", period)
+	pending := makeCometThread(t, s, "32222222-2222-2222-2222-222222222222", period)
+	doneID, _ := s.StartTrail(done, period)
+	if err := s.FinishTrail(doneID, "space & astronomy", "awed", "watch the launch", "yes", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartTrail(pending, period); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE trails SET topic = 'space & astronomy' WHERE thread_id = ?`, pending); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.SearchTrails("ASTRONOMY", 0)
+	if err != nil {
+		t.Fatalf("SearchTrails: %v", err)
+	}
+	if len(got) != 1 || got[0].ThreadID != done {
+		t.Fatalf("SearchTrails by topic (case-insensitive) = %+v, want only the finished trail", got)
+	}
+	if got[0].ThreadTitle == "" {
+		t.Error("SearchTrails should populate ThreadTitle from the joined thread")
+	}
+	if byTitle, _ := s.SearchTrails("Thread "+done, 0); len(byTitle) != 1 {
+		t.Errorf("SearchTrails by thread title = %+v, want the one match", byTitle)
 	}
 }

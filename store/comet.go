@@ -379,7 +379,7 @@ func (s *Store) ListCometPeriods() ([]string, error) {
 	for rows.Next() {
 		var p string
 		if err := rows.Scan(&p); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("list comet periods: %w", err)
 		}
 		periods = append(periods, p)
 	}
@@ -474,26 +474,24 @@ func (s *Store) MarkStaleTrailsFailed(staleAfter time.Duration) (int, error) {
 	return int(n), nil
 }
 
-// HasInFlightTrail reports whether any trail row is currently mid-flight —
-// the mirror of HasInFlightShootingStarRun, used by the Docker update
-// watcher's busy check so a container recreation doesn't land out from
-// under a running Approach batch.
-func (s *Store) HasInFlightTrail() (bool, error) {
-	var busy bool
-	// needs_retry = 0 matters here: a failed Approach leaves classified_at
-	// NULL too (it's only set on success), so without it this would report
-	// busy=true forever after any single failure.
-	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM trails WHERE classified_at IS NULL AND needs_retry = 0)`).Scan(&busy)
-	if err != nil {
-		return false, fmt.Errorf("has in-flight trail: %w", err)
-	}
-	return busy, nil
-}
-
 func scanTrail(rows interface{ Scan(...interface{}) error }) (Trail, error) {
 	var t Trail
 	err := rows.Scan(&t.ID, &t.ThreadID, &t.Period, &t.Topic, &t.Mood, &t.Intent, &t.Resolved, &t.StartedAt, &t.ClassifiedAt, &t.NeedsRetry, &t.Error, &t.CostUSD)
 	return t, err
+}
+
+// scanTrails drains rows of trailColumns into a slice — shared by
+// TrailsByThread and TrailsForPeriod, which differ only in their WHERE/ORDER.
+func scanTrails(rows *sql.Rows) ([]Trail, error) {
+	var out []Trail
+	for rows.Next() {
+		t, err := scanTrail(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan trail: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 const trailColumns = `id, thread_id, period, topic, mood, intent, resolved, started_at, classified_at, needs_retry, error, cost_usd`
@@ -522,15 +520,7 @@ func (s *Store) TrailsByThread(threadID string) ([]Trail, error) {
 		return nil, fmt.Errorf("trails by thread: %w", err)
 	}
 	defer rows.Close()
-	var out []Trail
-	for rows.Next() {
-		t, err := scanTrail(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
+	return scanTrails(rows)
 }
 
 // TrailsForPeriod returns every completed trail for one period (newest
@@ -544,15 +534,7 @@ func (s *Store) TrailsForPeriod(period string) ([]Trail, error) {
 		return nil, fmt.Errorf("trails for period: %w", err)
 	}
 	defer rows.Close()
-	var out []Trail
-	for rows.Next() {
-		t, err := scanTrail(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
+	return scanTrails(rows)
 }
 
 // DistinctTrailTopics returns every topic value already recorded on a
@@ -582,7 +564,7 @@ func (s *Store) distinctTrailColumn(column string) ([]string, error) {
 	for rows.Next() {
 		var v string
 		if err := rows.Scan(&v); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("distinct trail %s: %w", column, err)
 		}
 		out = append(out, v)
 	}
@@ -615,7 +597,7 @@ func (s *Store) SearchTrails(query string, limit int) ([]Trail, error) {
 	for rows.Next() {
 		var t Trail
 		if err := rows.Scan(&t.ID, &t.ThreadID, &t.Period, &t.Topic, &t.Mood, &t.Intent, &t.Resolved, &t.StartedAt, &t.ClassifiedAt, &t.NeedsRetry, &t.Error, &t.CostUSD, &t.ThreadTitle); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("search trails: %w", err)
 		}
 		out = append(out, t)
 	}
@@ -629,7 +611,7 @@ func (s *Store) SearchTrails(query string, limit int) ([]Trail, error) {
 // deterministic order matters more than recency here; Approaches are
 // independent, so order is cosmetic).
 //
-// Source exclusions are the plan doc's own eligibility filter: pulsiar
+// Source exclusions are the plan doc's own eligibility filter: pulsar
 // routine pulses, Weaver runs, and comet_approach runs themselves are not
 // conversations about the operator's interests. Atlas Quick Answers are
 // deliberately included: they're real assistant research (full web_search
@@ -655,7 +637,7 @@ func (s *Store) EligibleCometThreads(startStr, endStr, period string) ([]string,
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("eligible comet threads: %w", err)
 		}
 		ids = append(ids, id)
 	}
@@ -674,6 +656,20 @@ func (s *Store) EarliestMessageAt() (at string, ok bool, err error) {
 		return "", false, nil
 	}
 	return v.String, true, nil
+}
+
+// CometPeriodHasMessages reports whether any message exists in [startStr,
+// endStr) — Comet's "is there anything to look back on" gate, checked before
+// any classify or generate work so an empty month produces a clear
+// "nothing to generate" outcome rather than an edition of zeros.
+func (s *Store) CometPeriodHasMessages(startStr, endStr string) (bool, error) {
+	var has bool
+	if err := s.db.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM messages WHERE created_at >= ? AND created_at < ?)`, startStr, endStr,
+	).Scan(&has); err != nil {
+		return false, fmt.Errorf("comet period has messages: %w", err)
+	}
+	return has, nil
 }
 
 // CometPeriodCounts returns the stat row's raw counts for [startStr,
@@ -760,7 +756,7 @@ func (s *Store) CometPeriodCategoryBreakdown(period string, limit int) ([]CometC
 	for rows.Next() {
 		var c CometCategory
 		if err := rows.Scan(&c.Name, &c.Count); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("comet category breakdown: %w", err)
 		}
 		out = append(out, c)
 	}
@@ -799,7 +795,7 @@ func (s *Store) CometSearchQueryStats(startStr, endStr string) ([]CometQueryStat
 		var q, lastSeen string
 		var n int
 		if err := rows.Scan(&q, &n, &lastSeen); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("comet search query stats: %w", err)
 		}
 		if strings.TrimSpace(q) == "" {
 			continue
@@ -838,7 +834,7 @@ func (s *Store) CometPeriodNewStars(startStr, endStr string, limit int) ([]Comet
 	for rows.Next() {
 		var st CometStar
 		if err := rows.Scan(&st.ID, &st.Title, &st.Category); err != nil {
-			return nil, 0, err
+			return nil, 0, fmt.Errorf("comet new stars: %w", err)
 		}
 		out = append(out, st)
 	}
@@ -899,7 +895,7 @@ func (s *Store) CometPeriodActivity(startStr, endStr string) ([]time.Time, error
 		// parsing a string here silently dropped every row.
 		var t time.Time
 		if err := rows.Scan(&t); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("comet period activity: %w", err)
 		}
 		out = append(out, t.UTC())
 	}
@@ -925,7 +921,7 @@ func (s *Store) CometPeriodToolCounts(startStr, endStr string) ([]CometToolCount
 		var source string
 		var n int
 		if err := rows.Scan(&source, &n); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("comet period tool counts: %w", err)
 		}
 		name := strings.TrimPrefix(source, "tool.")
 		if cometInternalTools[name] || n == 0 {
@@ -970,7 +966,7 @@ func (s *Store) CometPeriodGrowth(startStr, endStr string) (grown, links int, fe
 	).Scan(&st.ID, &st.Title, &st.Category)
 	if ferr == nil {
 		featured = &st
-	} else if ferr != sql.ErrNoRows {
+	} else if !errors.Is(ferr, sql.ErrNoRows) {
 		return 0, 0, nil, fmt.Errorf("comet period growth (featured): %w", ferr)
 	}
 	return grown, links, featured, nil
@@ -1005,7 +1001,7 @@ func (s *Store) CometPeriodCandidateThreads(startStr, endStr, period string, lim
 	for rows.Next() {
 		var c CometThreadCandidate
 		if err := rows.Scan(&c.ThreadID, &c.Title, &c.Topic, &c.Mood, &c.Resolved, &c.Turns); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("comet period candidate threads: %w", err)
 		}
 		out = append(out, c)
 	}
@@ -1038,7 +1034,7 @@ func (s *Store) CometPeriodUnresolvedTopics(period string, limit int) (topics []
 	for rows.Next() {
 		var t string
 		if err := rows.Scan(&t); err != nil {
-			return nil, total, err
+			return nil, total, fmt.Errorf("comet period unresolved topics: %w", err)
 		}
 		topics = append(topics, t)
 	}
@@ -1079,7 +1075,7 @@ func (s *Store) CometPeriodFirstTopics(period string, limit int) ([]CometFirst, 
 	for rows.Next() {
 		var f CometFirst
 		if err := rows.Scan(&f.Name, &f.Count); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("comet period first topics: %w", err)
 		}
 		out = append(out, f)
 	}

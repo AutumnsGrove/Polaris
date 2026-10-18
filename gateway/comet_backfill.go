@@ -21,7 +21,10 @@ type CometBackfillResult struct {
 	Period    string `json:"period"`
 	Trails    int    `json:"trails"`
 	Generated bool   `json:"generated"`
-	Error     string `json:"error,omitempty"`
+	// Skipped is true for a month with no messages at all — nothing to
+	// classify or generate, which is not an error.
+	Skipped bool   `json:"skipped,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // BackfillComet classifies and generates every month in [from, to]. Either
@@ -39,7 +42,7 @@ func (s *Server) BackfillComet(reqCtx context.Context, from, to string) ([]Comet
 	}
 	if from == "" {
 		if at, ok, err := s.db.EarliestMessageAt(); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("comet backfill: %w", err)
 		} else if ok {
 			// at is a UTC "YYYY-MM-DD HH:MM:SS" string; parse it in UTC and
 			// take the month containing it in the active zone so a
@@ -65,23 +68,30 @@ func (s *Server) BackfillComet(reqCtx context.Context, from, to string) ([]Comet
 	var results []CometBackfillResult
 	for period := from; ; {
 		r := CometBackfillResult{Period: period}
-		if processed, err := s.RunCometClassify(period, 0); err != nil {
-			if errors.Is(err, store.ErrCometClassifyAlreadyRunning) {
-				return results, err
-			}
-			r.Error = "classify: " + err.Error()
+		startStr, endStr, _ := cometPeriodDB(period)
+		if has, err := s.db.CometPeriodHasMessages(startStr, endStr); err != nil {
+			r.Error = "check for data: " + err.Error()
+		} else if !has {
+			r.Skipped = true
 		} else {
-			r.Trails = processed
-		}
-		if r.Error == "" {
-			if err := s.runCometGeneration(reqCtx, period); err != nil {
-				r.Error = "generate: " + err.Error()
+			if processed, err := s.RunCometClassify(period, 0); err != nil {
+				if errors.Is(err, store.ErrCometClassifyAlreadyRunning) {
+					return results, err
+				}
+				r.Error = "classify: " + err.Error()
 			} else {
-				r.Generated = true
+				r.Trails = processed
+			}
+			if r.Error == "" {
+				if err := s.runCometGeneration(reqCtx, period); err != nil {
+					r.Error = "generate: " + err.Error()
+				} else {
+					r.Generated = true
+				}
 			}
 		}
 		results = append(results, r)
-		log.Info("comet backfill: month done", "period", period, "trails", r.Trails, "generated", r.Generated, "err", r.Error)
+		log.Info("comet backfill: month done", "period", period, "trails", r.Trails, "generated", r.Generated, "skipped", r.Skipped, "err", r.Error)
 
 		if period == to {
 			break

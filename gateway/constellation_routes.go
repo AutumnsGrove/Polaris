@@ -148,7 +148,9 @@ func (s *Server) handleListConstellationStars(w http.ResponseWriter, r *http.Req
 // never finished). A Daily generation run gets the same treatment for the
 // same reason — Stage A-D can take several minutes of real research calls
 // (see startDailyGenerationIfIdle's doc comment), all of it lost the
-// instant the container recreates out from under it.
+// instant the container recreates out from under it. Comet's pipeline, and the
+// blocking classify/backfill admin endpoints (via claimCometRun), hold
+// cometGenerationRunning for the same reason.
 func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 	constellationBusy, err := s.db.HasInFlightShootingStarRun()
 	if err != nil {

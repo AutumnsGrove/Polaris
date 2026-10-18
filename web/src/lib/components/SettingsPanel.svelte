@@ -38,7 +38,6 @@
 	import { constellationState } from '$lib/constellation.svelte';
 	import { cometState } from '$lib/comet.svelte';
 	import CometIcon from './icons/Comet.svelte';
-	import CometConfigModal from './CometConfigModal.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
@@ -99,10 +98,6 @@
 	// ConstellationUsageModal), just reached via a shortcut link from here.
 	let showConstellationUsage = $state(false);
 	let showPulsarUsage = $state(false);
-	// Comet's own settings (enable, generate time, model) open as a modal
-	// from its row below — the sidebar entry hides when it's off, so the
-	// toggle has to be reachable from here without visiting /comet first.
-	let showCometConfig = $state(false);
 
 	// The sidebar normally loads Comet's config at app start (so its footer
 	// icon can hide when off), but the settings toggle shouldn't depend on
@@ -814,9 +809,8 @@
 					{#snippet details()}
 						Once a month Comet looks back at that month's conversations — how many turns you asked, what
 						you searched, where your attention went, which topics spiked or went quiet, and any new stars
-						formed — and assembles one short page. Turning this off also hides Comet from the sidebar.
-						Generate time and the model it uses are in
-						<button class="inline-link" onclick={() => (showCometConfig = true)}>Comet's settings</button>.
+						formed — and assembles one short page. Turning this off also hides Comet from the sidebar. When
+						it generates and which model it uses are in the settings on Comet's own page.
 					{/snippet}
 				</SettingsRow>
 			</div>
@@ -884,10 +878,6 @@
 
 {#if showPulsarUsage}
 	<PulsarUsageModal onClose={() => (showPulsarUsage = false)} />
-{/if}
-
-{#if showCometConfig}
-	<CometConfigModal onClose={() => (showCometConfig = false)} />
 {/if}
 
 {#if showInstructionsWizard}
@@ -1192,16 +1182,6 @@
 		max-height: 180px;
 		overflow-y: auto;
 		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-	}
-
-	.inline-link {
-		background: none;
-		border: none;
-		padding: 0;
-		font: inherit;
-		color: var(--color-accent);
-		text-decoration: underline;
-		cursor: pointer;
 	}
 
 	:global(.spin) {

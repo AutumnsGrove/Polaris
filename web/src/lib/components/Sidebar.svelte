@@ -311,7 +311,6 @@
 				<span class="daily-dot" title="New edition"></span>
 			{/if}
 		</button>
-
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />
 			<input

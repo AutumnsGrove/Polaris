@@ -426,10 +426,8 @@
 {/if}
 
 <style>
-	/* Card-grouped row pattern, matching ConstellationSettingsModal.svelte
-	   exactly (issue #83's settings-menu unification). Duplicated per-file
-	   because Svelte scopes component styles, so there's no
-	   shared-import version of this. */
+	/* The card-grouped .settings-group/.settings-row pattern (issue #83's
+	   settings-menu unification) lives in app.css. */
 	/* See SettingsPanel.svelte's .section-head comment — same gold-icon
 	   + rule treatment, replacing the old all-dim .section-label. */
 	.section-head {
@@ -449,28 +447,8 @@
 		color: var(--color-text);
 	}
 
-	.settings-group {
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		overflow: hidden;
-		/* Tight on purpose — see SettingsPanel.svelte's identical comment. */
-		margin-bottom: var(--space-xs);
-	}
 
-	.settings-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-md);
-		padding: var(--space-md) var(--space-lg);
-		border-bottom: 1px solid var(--color-border);
-		font-size: 14px;
-	}
 
-	.settings-row:last-child {
-		border-bottom: none;
-	}
 
 	/* A block row with an inline sub-field (weather's location, sports'
 	   required team list, or any block with a custom-instructions
@@ -481,10 +459,6 @@
 		align-items: stretch;
 	}
 
-	.row-label {
-		font-size: 14px;
-		font-weight: 500;
-	}
 
 	.block-toggle-row {
 		display: flex;
