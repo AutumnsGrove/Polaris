@@ -38,15 +38,16 @@ export class CometState {
 	async loadConfig() {
 		try {
 			const res = await fetch('/api/comet/config');
-			if (!res.ok) {
-				this.config = null;
-				return;
-			}
+			// A failed refresh leaves whatever config was already loaded in
+			// place — a transient blip shouldn't blank the sidebar icon or flip
+			// the settings toggle off. Until a first load succeeds, config stays
+			// null and the UI treats Comet as "unknown", i.e. hidden.
+			if (!res.ok) return;
 			const body = (await res.json()) as CometConfigResponse;
 			this.config = body.config;
 			this.currentPeriod = body.current_period;
 		} catch {
-			this.config = null;
+			// silent — see above
 		}
 	}
 
@@ -132,9 +133,12 @@ export class CometState {
 				this.editionState = 'not-found';
 				return;
 			}
+			// Any other non-OK status is a failed load, not "no edition yet" —
+			// showing the first-run empty state (with a Generate button) for a
+			// 500 would send the person to regenerate a month that exists.
 			if (!res.ok) {
 				this.edition = null;
-				this.editionState = 'not-found';
+				this.editionState = 'error';
 				return;
 			}
 			this.edition = (await res.json()) as CometEdition;

@@ -1,9 +1,10 @@
-// comet_generate.go assembles one period's Comet edition — the four fixed
-// blocks (stat row, category breakdown, spiked/faded, new stars) plus the
-// one sentence of masthead framing the page is allowed. Everything except
-// the spike/fade clustering is straight aggregation over data Polaris
-// already timestamped; the one LLM call is a bounded, tool-forced synthesis
-// pass (see docs/plans/comet.md's "Spiked/faded" section).
+// comet_generate.go assembles one period's Comet edition — the stat row,
+// category breakdown, rhythm, tools, new stars and Constellation growth
+// blocks, plus the masthead hook and highlight picks. Everything except
+// the spike/fade clustering and those two picks is straight aggregation
+// over data Polaris already timestamped; the one LLM call is a bounded,
+// tool-forced synthesis pass (see docs/plans/comet.md's "Spiked/faded"
+// section).
 package gateway
 
 import (
@@ -191,33 +192,11 @@ func (s *Server) runCometGeneration(reqCtx context.Context, period string) error
 		}
 	}
 
-	// Normalize nil slices to empty ones before they're marshalled — Go's
+	// Normalize nil slices to empty ones in the struct below — Go's
 	// json.Marshal writes a nil slice as `null`, and a JSON `null` reaching
 	// the frontend's `.length`/`.slice` calls throws and freezes the page
 	// (a real bug, caught live navigating to a month with no faded topics
 	// or no new stars). An empty array is the honest wire shape here.
-	if categories == nil {
-		categories = []store.CometCategory{}
-	}
-	if stars == nil {
-		stars = []store.CometStar{}
-	}
-	if spiked == nil {
-		spiked = []store.CometTrend{}
-	}
-	if faded == nil {
-		faded = []store.CometTrend{}
-	}
-	if highlights == nil {
-		highlights = []store.CometHighlight{}
-	}
-	if firsts == nil {
-		firsts = []store.CometFirst{}
-	}
-	if tools == nil {
-		tools = []store.CometToolCount{}
-	}
-
 	data := store.CometEditionData{
 		PeriodLabel: cometPeriodLabel(period),
 		Stats: store.CometStats{
@@ -226,15 +205,15 @@ func (s *Server) runCometGeneration(reqCtx context.Context, period string) error
 			Searches: searches,
 			CostUSD:  periodCost,
 		},
-		Categories: categories,
-		Spiked:     spiked,
-		Faded:      faded,
-		Stars:      stars,
+		Categories: orEmpty(categories),
+		Spiked:     orEmpty(spiked),
+		Faded:      orEmpty(faded),
+		Stars:      orEmpty(stars),
 		StarTotal:  starTotal,
 		GhostCount: ghostCount,
-		Highlights: highlights,
+		Highlights: orEmpty(highlights),
 		Rhythm:     rhythm,
-		Tools:      tools,
+		Tools:      orEmpty(tools),
 		Growth: store.CometGrowth{
 			NewStars:   starTotal,
 			GrownStars: grownStars,
@@ -242,7 +221,7 @@ func (s *Server) runCometGeneration(reqCtx context.Context, period string) error
 			Featured:   featuredStar,
 		},
 		UnresolvedCount: unresolvedCount,
-		Firsts:          firsts,
+		Firsts:          orEmpty(firsts),
 	}
 	if err := s.db.UpsertCometEdition(period, "monthly", hook, data, synthCost); err != nil {
 		return fmt.Errorf("comet generation: %w", err)
@@ -277,7 +256,7 @@ func (s *Server) synthesizeCometTrends(
 	}
 	periodStats, err := s.db.CometSearchQueryStats(startStr, endStr)
 	if err != nil {
-		return nil, nil, "", nil, 0, err
+		return nil, nil, "", nil, 0, fmt.Errorf("period search stats: %w", err)
 	}
 	baselineStart, ok := cometBaselineStart(period, cometBaselineDays)
 	if !ok {
@@ -285,7 +264,7 @@ func (s *Server) synthesizeCometTrends(
 	}
 	baselineStats, err := s.db.CometSearchQueryStats(baselineStart, startStr)
 	if err != nil {
-		return nil, nil, "", nil, 0, err
+		return nil, nil, "", nil, 0, fmt.Errorf("baseline search stats: %w", err)
 	}
 	if len(periodStats) == 0 && len(baselineStats) == 0 && len(candidates) == 0 && len(categories) == 0 {
 		// Nothing at all to reflect on — skip the call entirely.
@@ -399,7 +378,7 @@ func (s *Server) synthesizeCometTrends(
 			resp, callErr = client.ChatCompletionWithTools(reqCtx, messages, []llm.ToolDef{cometTrendsToolDef}, func(string) {}, nil)
 		}
 		if callErr != nil {
-			return nil, nil, "", nil, cost, callErr
+			return nil, nil, "", nil, cost, fmt.Errorf("record_trends call: %w", callErr)
 		}
 		cost += resp.CostUSD
 		if len(resp.ToolCalls) > 0 {
@@ -427,7 +406,7 @@ func (s *Server) synthesizeCometTrends(
 		} `json:"highlights"`
 	}
 	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
-		return nil, nil, "", nil, cost, err
+		return nil, nil, "", nil, cost, fmt.Errorf("decode record_trends arguments: %w", err)
 	}
 	for _, sp := range args.Spiked {
 		if strings.TrimSpace(sp.Topic) == "" {
@@ -460,6 +439,16 @@ func (s *Server) synthesizeCometTrends(
 		}
 	}
 	return spiked, faded, strings.TrimSpace(args.Hook), highlights, cost, nil
+}
+
+// orEmpty returns s, or a non-nil empty slice when s is nil, so it marshals
+// as `[]` rather than `null` — see runCometGeneration's comment on why the
+// frontend can't tolerate a null collection.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }
 
 // truncateForLog caps a model response for a log line.

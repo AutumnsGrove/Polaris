@@ -77,7 +77,7 @@ func (s *Server) RunCometClassify(period string, limit int) (processed int, err 
 	}
 
 	if err := s.db.SetCometClassifyStarted(cometClassifyStaleAfter); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("comet classify: %w", err)
 	}
 	defer func() {
 		if clearErr := s.db.ClearCometClassifyStarted(); clearErr != nil {
@@ -91,7 +91,7 @@ func (s *Server) RunCometClassify(period string, limit int) (processed int, err 
 	}
 	ids, err := s.db.EligibleCometThreads(startStr, endStr, period)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("comet classify: %w", err)
 	}
 	if limit > 0 && len(ids) > limit {
 		ids = ids[:limit]
@@ -178,7 +178,7 @@ func (s *Server) runApproach(threadID, period string) error {
 		// retrying forever on a thread whose content vanished (an edited
 		// root whose variant is empty, say).
 		if ferr := s.db.FinishTrail(trailID, "", "", "", "", 0); ferr != nil {
-			return ferr
+			return fmt.Errorf("comet approach: %w", ferr)
 		}
 		return nil
 	}
@@ -240,12 +240,18 @@ func (s *Server) runApproach(threadID, period string) error {
 // hidden thread's ordinary events table, the same way
 // newWeaverToolContext does.
 func (s *Server) newApproachToolContext(cfg *config.Config, cfgRow *store.CometConfig, client llm.ChatClient, approachThreadID, turnID, analyzedThreadID string, imageFiles []string) *tools.Context {
+	// A failed vocabulary lookup degrades to an empty "already in use" list
+	// (the classifier still has the fixed starting vocabulary) rather than
+	// failing the Approach — but log it, since a silently empty list lets
+	// topic labels drift into near-synonyms with no trace of why.
 	categories, err := s.db.DistinctTrailTopics()
 	if err != nil {
+		log.Warn("comet approach: loading topic vocabulary failed", "err", err)
 		categories = nil
 	}
 	moods, err := s.db.DistinctTrailMoods()
 	if err != nil {
+		log.Warn("comet approach: loading mood vocabulary failed", "err", err)
 		moods = nil
 	}
 

@@ -79,15 +79,6 @@ func cometPeriodLabel(period string) string {
 	return start.Format("January 2006")
 }
 
-// cometPeriodShortLabel is the edition-nav label, e.g. "Sep 2026".
-func cometPeriodShortLabel(period string) string {
-	start, _, ok := cometPeriodBounds(period)
-	if !ok {
-		return period
-	}
-	return start.Format("Jan 2006")
-}
-
 // cometBaselineStart returns the start of the trailing baseline window a
 // period's spiked/faded pass compares against — baselineDays before the
 // period's own start, in UTC DB format. The operator's call (see the plan

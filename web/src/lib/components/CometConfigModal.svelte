@@ -122,7 +122,7 @@
 	.row-sub {
 		font-size: 0.72rem;
 		color: var(--color-text-dim);
-		margin-top: 2px;
+		margin-top: var(--space-xs);
 	}
 	.settings-row select,
 	.settings-row input[type='time'] {

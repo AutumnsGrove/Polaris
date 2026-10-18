@@ -8,10 +8,15 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"polaris/gateway"
 )
 
 var (
@@ -49,7 +54,7 @@ var cometBackfillCmd = &cobra.Command{
 }
 
 func init() {
-	cometClassifyCmd.Flags().IntVarP(&cometClassifyLimit, "n", "n", 0, "process only the N most recently active eligible threads, instead of the full period — useful for testing before committing to a full run")
+	cometClassifyCmd.Flags().IntVarP(&cometClassifyLimit, "n", "n", 0, "process only the first N eligible threads (oldest thread first), instead of the full period — useful for testing before committing to a full run")
 	cometClassifyCmd.Flags().StringVar(&cometClassifyPeriod, "period", "", "period to classify, \"YYYY-MM\" (default: the most recent complete month)")
 	cometGenerateCmd.Flags().StringVar(&cometGeneratePeriod, "period", "", "period to generate, \"YYYY-MM\" (default: the most recent complete month)")
 	cometBackfillCmd.Flags().StringVar(&cometBackfillFrom, "from", "", "first period to backfill, \"YYYY-MM\" (default: the month of the earliest message in the database)")
@@ -60,11 +65,37 @@ func init() {
 	rootCmd.AddCommand(cometCmd)
 }
 
-func runCometClassify(cmd *cobra.Command, args []string) error {
-	url := fmt.Sprintf("%s/api/comet/classify?limit=%d", dockerLocalBaseURL(), cometClassifyLimit)
-	if cometClassifyPeriod != "" {
-		url += "&period=" + cometClassifyPeriod
+// cometAPIError turns a non-success response from the Comet endpoints into an
+// error. Those handlers answer with http.Error (a plain-text body), not JSON,
+// so the body is read as text — decoding it as {"error": ...} silently threw
+// away the server's actual reason (e.g. "a comet run is already in progress")
+// and left only a bare status code.
+func cometAPIError(resp *http.Response, what string) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	if msg := strings.TrimSpace(string(body)); msg != "" {
+		return fmt.Errorf("%s failed (status %d): %s", what, resp.StatusCode, msg)
 	}
+	return fmt.Errorf("%s failed (status %d)", what, resp.StatusCode)
+}
+
+// cometURL builds a Comet endpoint URL, query-escaping each non-empty param
+// so a stray "&" in a --period/--from/--to value can't inject another one.
+func cometURL(path string, params ...string) string {
+	q := url.Values{}
+	for i := 0; i+1 < len(params); i += 2 {
+		if params[i+1] != "" {
+			q.Set(params[i], params[i+1])
+		}
+	}
+	u := dockerLocalBaseURL() + path
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	return u
+}
+
+func runCometClassify(cmd *cobra.Command, args []string) error {
+	url := cometURL("/api/comet/classify", "limit", fmt.Sprint(cometClassifyLimit), "period", cometClassifyPeriod)
 	// A full month's classify run can be a hundred-plus real LLM calls at
 	// ~5 concurrent — same generous-timeout reasoning as the Constellation
 	// backfill command.
@@ -83,14 +114,7 @@ func runCometClassify(cmd *cobra.Command, args []string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errBody struct {
-			Error string `json:"error"`
-		}
-		_ = readCappedJSON(resp, &errBody)
-		if errBody.Error != "" {
-			return fmt.Errorf("%s", errBody.Error)
-		}
-		return fmt.Errorf("classify failed (status %d)", resp.StatusCode)
+		return cometAPIError(resp, "classify")
 	}
 
 	var body struct {
@@ -105,20 +129,7 @@ func runCometClassify(cmd *cobra.Command, args []string) error {
 }
 
 func runCometBackfill(cmd *cobra.Command, args []string) error {
-	url := fmt.Sprintf("%s/api/comet/backfill", dockerLocalBaseURL())
-	params := ""
-	if cometBackfillFrom != "" {
-		params += "from=" + cometBackfillFrom
-	}
-	if cometBackfillTo != "" {
-		if params != "" {
-			params += "&"
-		}
-		params += "to=" + cometBackfillTo
-	}
-	if params != "" {
-		url += "?" + params
-	}
+	url := cometURL("/api/comet/backfill", "from", cometBackfillFrom, "to", cometBackfillTo)
 	client := &http.Client{Timeout: 4 * time.Hour}
 
 	fmt.Println("backfilling Comet month by month via the running container — this may take a long while...")
@@ -128,22 +139,10 @@ func runCometBackfill(cmd *cobra.Command, args []string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		var errBody struct {
-			Error string `json:"error"`
-		}
-		_ = readCappedJSON(resp, &errBody)
-		if errBody.Error != "" {
-			return fmt.Errorf("%s", errBody.Error)
-		}
-		return fmt.Errorf("backfill failed (status %d)", resp.StatusCode)
+		return cometAPIError(resp, "backfill")
 	}
 	var body struct {
-		Results []struct {
-			Period    string `json:"period"`
-			Trails    int    `json:"trails"`
-			Generated bool   `json:"generated"`
-			Error     string `json:"error"`
-		} `json:"results"`
+		Results []gateway.CometBackfillResult `json:"results"`
 	}
 	if err := readCappedJSON(resp, &body); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
@@ -162,10 +161,7 @@ func runCometBackfill(cmd *cobra.Command, args []string) error {
 }
 
 func runCometGenerate(cmd *cobra.Command, args []string) error {
-	url := fmt.Sprintf("%s/api/comet/generate", dockerLocalBaseURL())
-	if cometGeneratePeriod != "" {
-		url += "?period=" + cometGeneratePeriod
-	}
+	url := cometURL("/api/comet/generate", "period", cometGeneratePeriod)
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	resp, err := client.Post(url, "application/json", nil)
@@ -175,14 +171,7 @@ func runCometGenerate(cmd *cobra.Command, args []string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		var errBody struct {
-			Error string `json:"error"`
-		}
-		_ = readCappedJSON(resp, &errBody)
-		if errBody.Error != "" {
-			return fmt.Errorf("%s", errBody.Error)
-		}
-		return fmt.Errorf("generate failed (status %d)", resp.StatusCode)
+		return cometAPIError(resp, "generate")
 	}
 	fmt.Println("generation started — watch the container logs or reload /comet in a moment")
 	return nil

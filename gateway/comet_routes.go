@@ -36,6 +36,27 @@ func (s *Server) handleGetCometConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, cometConfigResponse{Config: cfg, CurrentPeriod: cometPeriodOf(tz.Now())})
 }
 
+// validCometPeriod reports whether p is a well-formed "YYYY-MM" period.
+func validCometPeriod(p string) bool {
+	_, _, ok := cometPeriodBounds(p)
+	return ok
+}
+
+// claimCometRun takes the same single-flight flag the scheduler's pipeline and
+// the "Generate now" button use, for the two blocking admin endpoints below.
+// Holding it for the whole classify/backfill run is what makes
+// handleServerBusy report busy for it — the Docker update watcher would
+// otherwise recreate the container between Approach batches (or mid-
+// generation during a backfill, which no per-Approach marker covers) — and
+// stops a backfill racing the scheduler over the same period. Callers must
+// defer the returned release func.
+func (s *Server) claimCometRun() (release func(), ok bool) {
+	if !s.cometGenerationRunning.CompareAndSwap(false, true) {
+		return nil, false
+	}
+	return func() { s.cometGenerationRunning.Store(false) }, true
+}
+
 type cometConfigRequest struct {
 	Enabled   bool   `json:"enabled"`
 	TimeOfDay string `json:"time_of_day"`
@@ -118,6 +139,10 @@ func (s *Server) handleCometClassify(w http.ResponseWriter, r *http.Request) {
 	if period == "" {
 		period = cometPeriodOf(tz.Now())
 	}
+	if !validCometPeriod(period) {
+		http.Error(w, "invalid period — expected YYYY-MM", http.StatusBadRequest)
+		return
+	}
 	limit := 0
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		n, err := strconv.Atoi(raw)
@@ -127,6 +152,12 @@ func (s *Server) handleCometClassify(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
+	release, ok := s.claimCometRun()
+	if !ok {
+		http.Error(w, "a comet run is already in progress", http.StatusConflict)
+		return
+	}
+	defer release()
 	processed, err := s.RunCometClassify(period, limit)
 	if errors.Is(err, store.ErrCometClassifyAlreadyRunning) {
 		http.Error(w, "a comet classify pass is already running", http.StatusConflict)
@@ -147,6 +178,22 @@ func (s *Server) handleCometClassify(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCometBackfill(w http.ResponseWriter, r *http.Request) {
 	from := strings.TrimSpace(r.URL.Query().Get("from"))
 	to := strings.TrimSpace(r.URL.Query().Get("to"))
+	for _, p := range []string{from, to} {
+		if p != "" && !validCometPeriod(p) {
+			http.Error(w, "from/to must be YYYY-MM periods", http.StatusBadRequest)
+			return
+		}
+	}
+	if from != "" && to != "" && from > to {
+		http.Error(w, "from is after to", http.StatusBadRequest)
+		return
+	}
+	release, ok := s.claimCometRun()
+	if !ok {
+		http.Error(w, "a comet run is already in progress", http.StatusConflict)
+		return
+	}
+	defer release()
 	results, err := s.BackfillComet(r.Context(), from, to)
 	if errors.Is(err, store.ErrCometClassifyAlreadyRunning) {
 		http.Error(w, "a comet classify pass is already running", http.StatusConflict)
@@ -170,7 +217,7 @@ func (s *Server) handleGenerateCometNow(w http.ResponseWriter, r *http.Request) 
 	if period == "" {
 		period = cometPeriodOf(tz.Now())
 	}
-	if _, _, ok := cometPeriodBounds(period); !ok {
+	if !validCometPeriod(period) {
 		http.Error(w, "invalid period — expected YYYY-MM", http.StatusBadRequest)
 		return
 	}

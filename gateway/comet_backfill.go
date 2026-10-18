@@ -39,7 +39,7 @@ func (s *Server) BackfillComet(reqCtx context.Context, from, to string) ([]Comet
 	}
 	if from == "" {
 		if at, ok, err := s.db.EarliestMessageAt(); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("comet backfill: %w", err)
 		} else if ok {
 			// at is a UTC "YYYY-MM-DD HH:MM:SS" string; parse it in UTC and
 			// take the month containing it in the active zone so a

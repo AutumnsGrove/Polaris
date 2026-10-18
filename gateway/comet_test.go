@@ -2,6 +2,9 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -284,5 +287,121 @@ func TestComputeCometRhythm(t *testing.T) {
 			}
 			return ""
 		}())
+	}
+}
+
+func cometPost(t *testing.T, h *testHarness, path string) (int, string) {
+	t.Helper()
+	resp, err := http.Post(h.url(path), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	var b strings.Builder
+	buf := make([]byte, 512)
+	for {
+		n, rerr := resp.Body.Read(buf)
+		b.Write(buf[:n])
+		if rerr != nil {
+			break
+		}
+	}
+	return resp.StatusCode, b.String()
+}
+
+func cometBusy(t *testing.T, h *testHarness) bool {
+	t.Helper()
+	resp, err := http.Get(h.url("/api/busy"))
+	if err != nil {
+		t.Fatalf("GET /api/busy: %v", err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Busy bool `json:"busy"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding /api/busy: %v", err)
+	}
+	return body.Busy
+}
+
+func TestHandleCometClassify_MalformedPeriod_Is400(t *testing.T) {
+	h := newTestHarness(t, "http://unused.invalid")
+	if code, _ := cometPost(t, h, "/api/comet/classify?period=nonsense"); code != http.StatusBadRequest {
+		t.Errorf("classify with a malformed period = %d, want 400 (not a 500 from deep inside the run)", code)
+	}
+}
+
+func TestHandleCometBackfill_BadBounds_Is400(t *testing.T) {
+	h := newTestHarness(t, "http://unused.invalid")
+	for _, q := range []string{"from=nonsense", "to=2026-13", "from=2026-09&to=2026-03"} {
+		if code, _ := cometPost(t, h, "/api/comet/backfill?"+q); code != http.StatusBadRequest {
+			t.Errorf("backfill?%s = %d, want 400", q, code)
+		}
+	}
+}
+
+func TestHandleCometClassify_WhileAnotherRunHoldsTheFlag_Is409(t *testing.T) {
+	h := newTestHarness(t, "http://unused.invalid")
+	h.srvObj.cometGenerationRunning.Store(true)
+
+	if code, _ := cometPost(t, h, "/api/comet/classify?period=2026-09"); code != http.StatusConflict {
+		t.Errorf("classify during a running pipeline = %d, want 409", code)
+	}
+	if code, _ := cometPost(t, h, "/api/comet/backfill"); code != http.StatusConflict {
+		t.Errorf("backfill during a running pipeline = %d, want 409", code)
+	}
+	if !cometBusy(t, h) {
+		t.Error("/api/busy should report busy while a Comet run holds the flag")
+	}
+}
+
+func TestHandleCometClassify_ReleasesTheFlagWhenDone(t *testing.T) {
+	h := newTestHarness(t, "http://unused.invalid")
+	if code, body := cometPost(t, h, "/api/comet/classify?period=2026-09"); code != http.StatusOK {
+		t.Fatalf("classify over an empty database = %d (%s), want 200", code, body)
+	}
+	if cometBusy(t, h) {
+		t.Error("/api/busy still reports busy after the classify run finished — the flag leaked")
+	}
+}
+
+// TestRunCometGeneration_DropsBogusHighlightsAndNeverStoresNullCollections
+// covers two properties of the synthesis → storage path at once: a highlight
+// whose index isn't in the candidate list is dropped (a model can't invent a
+// thread id), and a month with no spikes/fades/stars/etc. stores `[]`, not
+// `null` — the null that once froze the page's .length calls.
+func TestRunCometGeneration_DropsBogusHighlightsAndNeverStoresNullCollections(t *testing.T) {
+	srv := sequencedSSEServer(t, []string{
+		toolCallSSEBodyCost(`{"id":"call_1","type":"function","function":{"name":"record_trends","arguments":"{\"spiked\":[],\"faded\":[],\"hook\":\"A quiet month.\",\"highlights\":[{\"index\":9,\"why\":\"out of range\"},{\"index\":0,\"why\":\"zero\"}]}"}}`, 0.001),
+	})
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	period := cometMonthOf(time.Now())
+	threadID := "b3333333-3333-3333-3333-333333333333"
+	if err := h.db.CreateThread(threadID, "Only thread", "mimo-pro", "web"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.AddMessage(threadID, "user", "hello", "[]", "[]", 0, "turn-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.srvObj.runCometGeneration(context.Background(), period); err != nil {
+		t.Fatalf("runCometGeneration: %v", err)
+	}
+
+	edition, err := h.db.GetCometEdition(period)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edition.Data.Highlights) != 0 {
+		t.Errorf("highlights = %+v, want the out-of-range indexes dropped", edition.Data.Highlights)
+	}
+	// `[]` decodes to a non-nil empty slice, `null` to nil — so nil here means
+	// the stored JSON held a null collection.
+	d := edition.Data
+	if d.Categories == nil || d.Spiked == nil || d.Faded == nil || d.Stars == nil || d.Highlights == nil || d.Tools == nil || d.Firsts == nil {
+		t.Errorf("stored edition has a null collection: %+v", d)
 	}
 }
