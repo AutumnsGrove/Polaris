@@ -1,23 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Same constraint as mermaid.test.ts: happy-dom can't run the real mermaid, so
-// it is mocked. parse() accepts a source only if every complete line is one
-// the fake grammar knows ("graph ..." or an "X-->Y" edge); render() embeds
-// the source so a test can see exactly which prefix is on screen.
-const initialize = vi.fn();
-const parse = vi.fn(async (source: string) => {
+// Same constraint as mermaid.test.ts: happy-dom has no SVG layout, so Pele is
+// mocked. render() accepts a source only if every complete line is one the
+// fake grammar knows ("graph ..." or an "X-->Y" edge) and throws otherwise —
+// like the real thing, an invalid prefix is an exception, which is what lets
+// the stream keep the last good render. It embeds the source so a test can see
+// exactly which prefix is on screen.
+const render = vi.fn((source: string, _opts?: unknown) => {
 	const lines = source.split('\n').filter((l) => l.trim());
 	const ok = lines.length > 0 && lines.every((l) => /^graph\b/.test(l) || /^\w+-->\w+$/.test(l));
-	return ok ? { diagramType: 'flowchart' } : false;
+	if (!ok) throw new Error('Parse error: bad diagram');
+	return { svg: `<svg>${source}</svg>` };
 });
-const render = vi.fn(async (id: string, source: string) => ({ svg: `<svg data-id="${id}">${source}</svg>` }));
 
-vi.mock('mermaid', () => ({ default: { initialize, parse, render } }));
+vi.mock('pele', () => ({ render }));
 vi.mock('./clipboard', () => ({ copyToClipboard: vi.fn(async () => {}) }));
 
 const { mountMermaidStream } = await import('./mermaid');
 
-// Lets the stream's async pump (dynamic import, parse, render) settle.
+// Lets the stream's async pump (the dynamic import, then render) settle.
 async function settle() {
 	for (let i = 0; i < 20; i++) await Promise.resolve();
 	await new Promise((r) => setTimeout(r, 0));
@@ -30,7 +31,6 @@ describe('mountMermaidStream', () => {
 	beforeEach(() => {
 		host = document.createElement('div');
 		document.body.appendChild(host);
-		parse.mockClear();
 		render.mockClear();
 		// Zero the throttle: these tests exercise ordering, not pacing.
 		vi.spyOn(performance, 'now').mockReturnValue(0);
@@ -56,11 +56,11 @@ describe('mountMermaidStream', () => {
 		await settle();
 		expect(shown(host)).toContain('A--&gt;B');
 		expect(shown(host)).not.toContain('B--&gt;\n');
-		expect(render).toHaveBeenLastCalledWith(expect.any(String), 'graph TD\nA-->B\n');
+		expect(render).toHaveBeenLastCalledWith('graph TD\nA-->B\n', expect.objectContaining({ links: false, images: false }));
 		s.destroy();
 	});
 
-	it('keeps the last good render when a later prefix does not parse', async () => {
+	it('keeps the last good render when a later prefix does not render', async () => {
 		const s = mountMermaidStream(host);
 		s.update('graph TD\nA-->B\n', false);
 		await settle();
@@ -102,11 +102,8 @@ describe('mountMermaidStream', () => {
 		const s = mountMermaidStream(host);
 		s.update('graph TD\nA-->B\n', false);
 		await settle();
-		// Final text is invalid as a whole (the mock render() accepts anything,
-		// so make the final render itself fail). One rejection is enough: the
-		// auto-quote retry is skipped when it has nothing to repair, so a
-		// second queued rejection would leak into the next test.
-		render.mockRejectedValueOnce(new Error('bad'));
+		// The final text is invalid as a whole; the auto-quote retry has
+		// nothing to repair, so it is one failed render and then the fallback.
 		s.update('graph TD\nA-->B\nnonsense\n', true);
 		await settle();
 		const pre = host.querySelector('pre[data-mermaid-failed]');
