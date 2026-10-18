@@ -15,6 +15,25 @@ let mermaidPromise: ReturnType<typeof loadMermaid> | undefined;
 
 async function loadMermaid() {
 	const mod = await import('mermaid');
+	// SPIKE: A/B switch, `localStorage.diagramEngine = 'pele'` — not for merge.
+	let engine: string | null = null;
+	try {
+		engine = localStorage.getItem('diagramEngine');
+	} catch {
+		// no storage — stay on mermaid
+	}
+	if (engine === 'pele') {
+		const pele = await import('pele');
+		const adapter = {
+			initialize() {},
+			async render(id: string, source: string) {
+				const maxWidth = Math.min(document.documentElement.clientWidth - 48, 680);
+				const out = pele.render(source, { idPrefix: id, maxWidth, links: false, images: false });
+				return { svg: out.svg };
+			}
+		};
+		return adapter as unknown as typeof mod.default;
+	}
 	return mod.default;
 }
 

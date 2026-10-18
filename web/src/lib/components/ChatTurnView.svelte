@@ -1029,6 +1029,19 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		overflow-x: auto;
 	}
 
+	/* SPIKE: pele themes through CSS variables, so mapping them onto the app's
+	   own tokens makes a theme switch free (no re-render). */
+	.prose :global(.mermaid-render) {
+		--pele-bg: var(--color-bg);
+		--pele-fg: var(--color-text);
+		--pele-muted: var(--color-text-dim);
+		--pele-line: var(--color-border-strong);
+		--pele-surface: var(--color-surface-2);
+		--pele-surface-alt: var(--color-surface);
+		--pele-border: var(--color-border-strong);
+		--pele-accent: var(--color-accent);
+	}
+
 	.prose :global(.mermaid-render svg) {
 		max-width: 100%;
 		height: auto;
