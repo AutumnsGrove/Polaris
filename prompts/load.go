@@ -169,6 +169,12 @@ func fillDefaults(s Set) *Set {
 	if s.Vision.DescribeImage == "" {
 		s.Vision.DescribeImage = defaults.Vision.DescribeImage
 	}
+	if s.Comet.ApproachSystem == "" {
+		s.Comet.ApproachSystem = defaults.Comet.ApproachSystem
+	}
+	if s.Comet.TrendsSystem == "" {
+		s.Comet.TrendsSystem = defaults.Comet.TrendsSystem
+	}
 	if s.Weaver.System == "" {
 		s.Weaver.System = defaults.Weaver.System
 	}

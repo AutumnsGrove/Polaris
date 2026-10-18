@@ -61,7 +61,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	// turn's, so it gets its own ordering test (TestToolsPrompt_WeaverRunIsRestrictedToItsOwnTools).
 	lastIdx := -1
 	for _, name := range catalogOrder {
-		if catalogDefaults[name].Requires == "weaver_run" {
+		if catalogDefaults[name].Requires == "weaver_run" || catalogDefaults[name].Requires == "approach_run" {
 			continue
 		}
 		idx := strings.Index(prompt, "- "+name+":")
@@ -88,6 +88,24 @@ func TestToolsPrompt_WeaverRunIsRestrictedToItsOwnTools(t *testing.T) {
 	for _, name := range []string{"think", "calculator", "web_search", "web_read", "memory"} {
 		if strings.Contains(prompt, "- "+name+":") {
 			t.Errorf("ToolsPrompt() with WeaverRun should exclude %q (main catalog), got:\n%s", name, prompt)
+		}
+	}
+}
+
+func TestToolsPrompt_ApproachRunIsRestrictedToItsOwnTools(t *testing.T) {
+	ctx := newTestContext()
+	ctx.ApproachRun = true
+	ctx.ApproachSearchTrails = func(query string) ([]store.Trail, error) { return nil, nil }
+	prompt := ToolsPrompt(ctx)
+
+	for _, name := range []string{"view_image", "search_trails", "record_classification"} {
+		if !strings.Contains(prompt, "- "+name+":") {
+			t.Errorf("ToolsPrompt() with ApproachRun missing %q:\n%s", name, prompt)
+		}
+	}
+	for _, name := range []string{"think", "calculator", "web_search", "web_read", "memory", "search_stars"} {
+		if strings.Contains(prompt, "- "+name+":") {
+			t.Errorf("ToolsPrompt() with ApproachRun should exclude %q (main catalog), got:\n%s", name, prompt)
 		}
 	}
 }

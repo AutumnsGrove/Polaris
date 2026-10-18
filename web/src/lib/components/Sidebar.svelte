@@ -11,6 +11,8 @@
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
 	import HelpModal from './HelpModal.svelte';
 	import { constellationState } from '$lib/constellation.svelte';
+	import { cometState } from '$lib/comet.svelte';
+	import CometIcon from '$lib/components/icons/Comet.svelte';
 	import { Plus, PanelLeftClose, Settings, CircleHelp, Star, Search, X, Orbit, Sunrise, Galaxy, FolderSymlink } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
@@ -56,6 +58,11 @@
 		// Decides whether the Constellation entry renders at all, so it has
 		// to be known at app load, not only once /constellation is visited.
 		if (!constellationState.config) void constellationState.loadConfig();
+		// Same reasoning for Comet: the footer icon is hidden until the
+		// config says enabled, so the config must load at app start; the
+		// unread ping needs the latest edition checked too.
+		if (!cometState.config) void cometState.loadConfig();
+		void cometState.checkForNewEdition(localStorage.getItem('polaris-comet-last-seen'));
 	});
 
 	let showHelp = $state(false);
@@ -304,6 +311,7 @@
 				<span class="daily-dot" title="New edition"></span>
 			{/if}
 		</button>
+
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />
 			<input
@@ -399,6 +407,22 @@
 	<div class="status">
 		<span class="dot" class:connected={appState.connected}></span>
 		<span class="status-text">{appState.connected ? 'connected' : 'reconnecting…'}</span>
+		<!-- Hidden until Comet's config has loaded AND says enabled — same
+		     "unknown shows nothing" treatment as the Constellation entry. The
+		     on/off switch lives in the main Settings panel. -->
+		{#if cometState.config?.enabled}
+			<button
+				class="icon-btn comet-btn"
+				onclick={() => goto('/comet')}
+				title="Comet — monthly retrospective"
+				aria-label="Comet: monthly retrospective"
+			>
+				<CometIcon size={15} />
+				{#if cometState.hasNewEdition}
+					<span class="comet-dot" title="New retrospective"></span>
+				{/if}
+			</button>
+		{/if}
 		<button class="icon-btn" onclick={() => (showHelp = true)} title="What's what" aria-label="Help: what each feature is">
 			<CircleHelp size={15} />
 		</button>
@@ -534,6 +558,34 @@
 		border-radius: 50%;
 		background: var(--color-accent);
 		flex-shrink: 0;
+	}
+
+	/* Comet's own unread ping — the footer icon is small, so unlike
+	   .daily-dot above this sits absolutely in the corner and breathes
+	   rather than taking a flex slot. */
+	.comet-btn {
+		position: relative;
+	}
+	.comet-dot {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--color-accent);
+		animation: comet-pulse 2s ease-in-out infinite;
+	}
+	@keyframes comet-pulse {
+		0%,
+		100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.45;
+			transform: scale(0.75);
+		}
 	}
 
 	.thread-search {

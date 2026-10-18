@@ -30,6 +30,10 @@ var catalogOrder = []string{
 	// Also appended last, for the same prefix-caching reason: alert_me is
 	// offered only on a Pulsar routine's scheduled pulse.
 	"alert_me",
+	// Same reasoning again: Comet's Approach classifier tools are offered
+	// only inside an Approach run (requires: approach_run), so appending
+	// them keeps every other tool's list position unchanged.
+	"search_trails", "record_classification",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -101,6 +105,16 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// comment in registry.go for why. Checked by name rather than
 		// Category so a sub-agent doesn't also lose think (Category ""),
 		// which it still needs for its own reasoning.
+		return false
+	}
+	if ctx.ApproachRun && e.Requires != "approach_run" && e.Name != "view_image" {
+		// Approach: restrict the menu to its own two tools plus view_image —
+		// never think/web_search/anything else from the main catalog. An
+		// Approach reads one already-written conversation and classifies it;
+		// it never researches, and the one exploration step it's allowed is
+		// looking at an image the thread itself referenced. view_image is
+		// allowed by name (not by Requires) because it has no Requires of its
+		// own — it's an ordinary always-available tool.
 		return false
 	}
 	if ctx.WeaverRun && e.Requires != "weaver_run" && e.Requires != "chat_search" {
@@ -209,6 +223,13 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// A Weaver shooting-star run only — see registry.go's WeaverRun
 		// doc comment. Never offered on a normal chat/pulse turn.
 		return ctx.WeaverRun
+	case "approach_run":
+		// A Comet Approach classification run only — see registry.go's
+		// ApproachRun doc comment. Never offered on a normal chat/pulse turn.
+		// Gated on the closure being wired as well as the flag, so a caller
+		// that set ApproachRun but forgot the closure gets a tool that
+		// cleanly errors rather than one that's silently absent.
+		return ctx.ApproachRun && ctx.ApproachSearchTrails != nil
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -316,6 +337,12 @@ var catalogDefaults = map[string]catalogEntry{
 	"alert_me": {Name: "alert_me", Requires: "pulsar_alert",
 		Description:    "flag this scheduled run as important news the user should see first.",
 		APIDescription: "Flag this run as genuinely important, so it stands out as big news. Pass a one-sentence reason."},
+	"search_trails": {Name: "search_trails", Requires: "approach_run", ExportPrivacy: "personal",
+		Description:    "keyword-search prior Comet trails, for cross-period consistency.",
+		APIDescription: "Keyword search over prior Comet trails (topic/mood/intent + thread titles). Use this when a thread you're classifying has an earlier trail, or to see how similar conversations were phrased before."},
+	"record_classification": {Name: "record_classification", Requires: "approach_run",
+		Description:    "record this conversation's topic, mood, intent, and whether it was resolved.",
+		APIDescription: "Record the finished classification (topic, mood, intent, resolved) — this ends the turn."},
 	"search_stars": {Name: "search_stars", Requires: "weaver_run", ExportPrivacy: "personal",
 		Description:    "keyword-search Constellation's existing stars, for dedup-checking and link-discovery.",
 		APIDescription: "Keyword search over Constellation's existing stars by title/summary. Always call this before create_star to check whether this topic already has a star."},
@@ -434,6 +461,7 @@ func loadCatalog() map[string]catalogEntry {
 var nonToggleable = map[string]bool{
 	"think": true, "ask_user_question": true, "memory": true,
 	"finalize_wizard_prompt": true, "finalize_daily_items": true, "alert_me": true,
+	"record_classification": true,
 }
 
 // ToolInfo is one individually toggleable tool's identity, for the
@@ -465,7 +493,7 @@ func ToggleableTools() []ToolInfo {
 		if nonToggleable[name] {
 			continue
 		}
-		if catalog[name].Requires == "weaver_run" {
+		if catalog[name].Requires == "weaver_run" || catalog[name].Requires == "approach_run" {
 			continue
 		}
 		out = append(out, ToolInfo{Name: name, Description: catalog[name].Description})

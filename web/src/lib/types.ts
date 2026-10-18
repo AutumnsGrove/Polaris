@@ -713,6 +713,84 @@ export interface PulsarDailyEdition {
 	created_at: string;
 }
 
+// CometConfig mirrors store.CometConfig — Comet's singleton settings row.
+// model empty means "use the deployment's default model".
+export interface CometConfig {
+	enabled: boolean;
+	time_of_day: string;
+	model: string;
+	created_at: string;
+	last_generated_at: string | null;
+	last_attempt_at: string | null;
+	classify_started_at: string | null;
+}
+
+// CometStats is one edition's stat row.
+export interface CometStats {
+	turns: number;
+	new_stars: number;
+	searches: number;
+	cost_usd: number;
+}
+
+// CometCategory is one category-breakdown row (count of trails whose topic
+// is this name).
+export interface CometCategory {
+	name: string;
+	count: number;
+}
+
+// CometTrend is one spiked or faded item.
+export interface CometTrend {
+	topic: string;
+	count: number;
+	delta?: string;
+	since?: string;
+}
+
+// CometStar is one entry in the capped new-stars showcase.
+export interface CometStar {
+	id: number;
+	title: string;
+	category: string;
+}
+
+// CometEditionData mirrors store.CometEditionData — the four fixed blocks
+// plus the framing bits.
+export interface CometEditionData {
+	period_label: string;
+	stats: CometStats;
+	categories: CometCategory[];
+	spiked: CometTrend[];
+	faded: CometTrend[];
+	stars: CometStar[];
+	star_total: number;
+	ghost_count: number;
+}
+
+// CometEdition mirrors store.CometEdition — one assembled period page.
+export interface CometEdition {
+	period: string;
+	kind: 'monthly' | 'yearly';
+	hook: string;
+	data: CometEditionData;
+	cost_usd: number;
+	created_at: string;
+}
+
+// CometConfigResponse is GET/PUT /api/comet/config — the config row plus
+// the period the scheduler would generate right now.
+export interface CometConfigResponse {
+	config: CometConfig;
+	current_period: string;
+}
+
+// CometPeriodsResponse is GET /api/comet/periods — the edition-nav data.
+export interface CometPeriodsResponse {
+	periods: string[];
+	current_period: string;
+}
+
 // WizardTarget says what a "help me write this" interview is writing —
 // mirrors tools.WizardTarget. kind is the wire value POST /api/wizard/start
 // takes (tools.Wizard* constants, the keys of prompts.yaml's

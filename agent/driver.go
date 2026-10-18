@@ -207,6 +207,17 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		return system
 	}
 
+	if ctx.ApproachRun {
+		// Comet's Approach classifier — a completely different task from
+		// the main assistant's own persona: read one past conversation and
+		// classify it on four axes, then end via record_classification.
+		// Returned as-is (no {tools}/mode-instruction appends), same as the
+		// Weaver and Wizard branches below. Its two %s verbs are the live
+		// topic/mood vocabularies already in use — see
+		// tools.Context.ApproachCategoriesInUse/ApproachMoodsInUse.
+		return fmt.Sprintf(p.Comet.ApproachSystem, ctx.ApproachCategoriesInUse, ctx.ApproachMoodsInUse)
+	}
+
 	if ctx.Wizard != nil {
 		// A completely different task from "Polaris the research
 		// assistant" — a narrow writing interview with its own 2-3 tool
@@ -468,6 +479,11 @@ type Result struct {
 	// early-exit shape as WizardFinal, just carrying a structured item
 	// list instead of a single drafted prompt.
 	DailyItemsFinal *tools.DailyItemsFinal
+	// TrailClassification is non-nil when the turn ended early because
+	// record_classification was called — only possible on a Comet Approach
+	// run (see tools.Context.ApproachRun). Same early-exit shape as
+	// DailyItemsFinal, carrying one thread's finished classification.
+	TrailClassification *tools.TrailClassification
 	// TurnCount is how many iterations of the main loop below actually
 	// ran before this Result was produced (1 for a plain first-turn
 	// answer, more for each tool-call round-trip) — including the forced
@@ -780,6 +796,28 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				TurnCount:       turn + 1,
 				ResearchCalls:   researchCalls,
 				DailyItemsFinal: ctx.DailyItemsFinal,
+			}), nil
+		}
+
+		// record_classification was called — same early-exit shape as
+		// DailyItemsFinal above, for a Comet Approach run. Answer is a
+		// short synthetic line (there's no natural prose for a
+		// classification), never shown to anyone live; the real payload is
+		// TrailClassification, which gateway/comet_approach.go reads off the
+		// Result to write the trail row.
+		if ctx.TrailClassification != nil {
+			answer := "(classified this conversation)"
+			ctx.Emit("token", map[string]interface{}{"content": answer})
+			return finish(&Result{
+				Answer:              answer,
+				Citations:           ctx.Citations,
+				Cards:               ctx.Cards,
+				Chart:               ctx.Chart,
+				CostUSD:             totalCost + ctx.ExtraCostUSD,
+				ContextTokens:       resp.PromptTokens + resp.CompletionTokens,
+				TurnCount:           turn + 1,
+				ResearchCalls:       researchCalls,
+				TrailClassification: ctx.TrailClassification,
 			}), nil
 		}
 

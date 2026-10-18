@@ -66,6 +66,17 @@
 			detail: 'Reads each message first and quietly adjusts how it’s answered. You can undo it.'
 		},
 		{
+			name: 'Comet',
+			means: 'Monthly retrospective',
+			detail:
+				'One page a month looking back at what you asked, searched, and learned — with charts of where your attention went.'
+		},
+		{
+			name: 'Trails',
+			means: 'Comet’s per-chat summaries',
+			detail: 'One short classification (topic, mood, intent, resolved) per conversation, built once a month.'
+		},
+		{
 			name: 'Prism',
 			means: 'Immersive UI',
 			detail:

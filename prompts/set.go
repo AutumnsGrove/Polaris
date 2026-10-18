@@ -136,6 +136,17 @@ type Set struct {
 		DescribeImage string `yaml:"describe_image"`
 	} `yaml:"vision"`
 
+	// Comet backs Comet, the monthly retrospective (docs/plans/comet.md).
+	// ApproachSystem is the classifier's whole system prompt — read one past
+	// conversation and record topic/mood/intent/resolved — and has exactly
+	// two %s verbs (the live topic and mood vocabularies already in use).
+	// TrendsSystem backs the one-shot spike/fade synthesis in
+	// gateway/comet_generate.go, which forces a record_trends tool call.
+	Comet struct {
+		ApproachSystem string `yaml:"approach_system"`
+		TrendsSystem   string `yaml:"trends_system"`
+	} `yaml:"comet"`
+
 	// Weaver is Constellation's own agent (docs/plans/constellation.md) —
 	// reads one thread and decides what belongs in the person's stars
 	// library. Sibling to PulsarDaily above, not nested under it: Weaver is

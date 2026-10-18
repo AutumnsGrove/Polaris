@@ -88,6 +88,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
 		   AND root.source != 'pulsar'
 		   AND root.source != 'weaver'
+		   AND root.source != 'comet_approach'
 		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
 		   AND `+notInFieldWhere(`root.field_id`, `exclude_from_chat_search = 1`)+`
 		 ORDER BY rank LIMIT ?`,

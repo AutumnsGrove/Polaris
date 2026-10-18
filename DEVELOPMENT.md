@@ -153,6 +153,9 @@ polaris export <thread-id> --trail --thinking -o thread.md   # one thread as Mar
 polaris backup list        # see SETUP.md's Backups
 polaris benchmark --dataset browse_comp_test_set.csv --n 20   # run a BrowseComp sample, graded by an LLM judge
 polaris oracle-bench --models jev-1.13,jev-1.14               # compare decision models on Oracle's task, see below
+polaris comet classify -n 5   # classify a handful of a period's threads into Comet trails, for testing
+polaris comet generate --period 2026-09   # assemble (or re-assemble) one month's Comet edition
+polaris comet backfill --from 2026-07      # classify + generate every month in a range
 ```
 
 ### Oracle benchmark
@@ -195,7 +198,8 @@ Lessons that cost time:
   through one judge model, with no progress output; expect ~20 minutes for ~8,000 calls.
 
 `search`/`stats`/`export`/`update`/`restart`/`backup create`/`backup list`/`atlas search`/`constellation
-backfill` are all thin HTTP clients hitting the running container's own REST API
+backfill`/`comet classify`/`comet generate`/`comet backfill` are all thin HTTP clients hitting the
+running container's own REST API
 (`cmd/docker_client.go`) — none of them assume a local `config.yaml`/git checkout. `backup
 restore`/`restore-remote` are the exception: there's no safe way to swap a live database file over
 HTTP, so those two always run directly against a local config/database path — under Docker that

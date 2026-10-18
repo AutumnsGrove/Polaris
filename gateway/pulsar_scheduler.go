@@ -61,6 +61,12 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 			}
 		}
 
+		// Comet's monthly due-check piggybacks on this same once-a-minute
+		// tick rather than running a second ticker — see
+		// gateway/comet_scheduler.go's package comment. Zero AI calls unless
+		// Comet is enabled and the month's slot is actually due.
+		s.maybeCometScheduled()
+
 		routines, err := s.db.ListActivePulsarRoutines()
 		if err != nil {
 			log.Warn("listing active pulsar routines failed", "err", err)

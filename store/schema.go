@@ -1094,4 +1094,108 @@ CREATE TABLE IF NOT EXISTS star_versions (
 	created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_star_versions_star_id ON star_versions(star_id, version_number);
+
+-- comet_config is Comet's singleton settings row (see docs/plans/comet.md)
+-- -- same shape as pulsar_daily_config/constellation_config: one row (id
+-- fixed to 1), not a per-item table, since there's only ever one Comet.
+CREATE TABLE IF NOT EXISTS comet_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- enabled: the Comet-wide on/off switch, checked by the scheduler
+	-- before any due-check runs at all. Defaults to 0 (off), unlike Pulsar
+	-- Daily's default-on: Comet's first real run is a full month's Approach
+	-- pass (real LLM spend per thread), so it stays off until the operator
+	-- explicitly turns it on, same conservative default Constellation uses.
+	enabled INTEGER NOT NULL DEFAULT 0,
+	-- time_of_day: "HH:MM", 24-hour, server-local -- when on the 1st of a
+	-- month the retrospective for the month that just ended is due. Same
+	-- convention as pulsar_routines/pulsar_daily_config.time_of_day.
+	time_of_day TEXT NOT NULL DEFAULT '06:00',
+	-- model: registry ID (models/models.go) used for both the Approach
+	-- classifier and the spike/fade synthesis pass. Empty means "use
+	-- whatever config.DefaultModel currently resolves to" -- same
+	-- empty-means-inherit pattern constellation_config.model uses.
+	model TEXT NOT NULL DEFAULT '',
+	-- last_generated_at: NULL means never generated. Set only after an
+	-- edition is actually assembled -- the due-check's own baseline, same
+	-- shape as pulsar_daily_config.last_generated_at.
+	last_generated_at DATETIME,
+	-- last_attempt_at: every generation attempt stamps this at the start,
+	-- success or failure. Retry throttling reads it: a failed run must not
+	-- re-fire on the very next once-a-minute tick (a full Approach pass is
+	-- real spend), but it also shouldn't be treated as "done for the month"
+	-- just because it failed -- the due-check combines both columns, see
+	-- gateway/comet_scheduler.go's cometDue.
+	last_attempt_at DATETIME,
+	-- classify_started_at: NULL means no manual classify run is in progress.
+	-- Set at the start of a 'polaris comet classify' run and cleared when it
+	-- finishes (defer on every exit path) -- a DB column, not an in-process
+	-- flag, for the exact reason constellation_config.backfill_started_at
+	-- documents: under Docker the CLI is a separate thin-client process but
+	-- bare-metal 'polaris comet classify' can be a distinct OS process
+	-- against the same SQLite file, and only a DB-visible marker closes that
+	-- race. Treated as stale past the scheduler's own staleness allowance so
+	-- a crashed run can't wedge the scheduler off forever.
+	classify_started_at DATETIME
+);
+
+-- comet_editions holds one assembled edition per period, keyed by a
+-- "YYYY-MM" string for a monthly edition (or "YYYY" for a yearly one,
+-- scaffolded but not yet generated -- see docs/plans/comet.md's "Yearly
+-- cadence"). One JSON blob of rendered blocks rather than a child table,
+-- same reasoning as pulsar_daily_editions.blocks: an edition is always
+-- read/written whole, never queried per-block.
+CREATE TABLE IF NOT EXISTS comet_editions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	period TEXT NOT NULL UNIQUE,
+	-- kind: 'monthly' | 'yearly' -- kept explicit rather than inferred from
+	-- the period string's length so a future cadence can share the table.
+	kind TEXT NOT NULL DEFAULT 'monthly',
+	-- hook: the one free-text editorial sentence the page is allowed
+	-- (masthead only -- see the plan doc's "Explicit scope discipline").
+	hook TEXT NOT NULL DEFAULT '',
+	data TEXT NOT NULL,
+	-- cost_usd: total LLM spend that produced this edition -- the
+	-- spike/fade synthesis call (Approaches' own cost lives on trails, not
+	-- here) -- shown so real generation cost isn't invisible.
+	cost_usd REAL NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- trails is one row per thread per period -- what an Approach classified a
+-- single thread as (see docs/plans/comet.md's "Category breakdown"). Named
+-- for consistency with Comet/Approach: a Trail is what a comet leaves
+-- visible behind it as it passes. topic deliberately reuses the same
+-- category vocabulary stars.category already uses, so Comet doesn't invent
+-- a second taxonomy to reconcile against Constellation's.
+CREATE TABLE IF NOT EXISTS trails (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	-- FK with CASCADE, same as star_sources.thread_id: a ghost thread's
+	-- hard-delete takes its trail with it. A soft-deleted (disabled=1)
+	-- thread keeps its trail -- the research really happened.
+	thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+	period TEXT NOT NULL,
+	topic TEXT NOT NULL DEFAULT '',
+	mood TEXT NOT NULL DEFAULT '',
+	-- intent: "what were you trying to do", one line.
+	intent TEXT NOT NULL DEFAULT '',
+	-- resolved: "did you get your answer" -- yes/no/partial.
+	resolved TEXT NOT NULL DEFAULT '',
+	-- started_at/classified_at: the run lifecycle in the row itself (no
+	-- separate runs table -- a Trail is the run's own record). classified_at
+	-- NULL means the Approach hasn't finished; a row can therefore exist in a
+	-- not-yet-complete state, which is also what lets a retry reuse the same
+	-- (thread_id, period) row instead of duplicating it.
+	started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	classified_at DATETIME,
+	-- needs_retry/error: Constellation's exact failure-and-retry shape (see
+	-- shooting_star_runs) -- a stale sweep marks an abandoned in-flight row
+	-- needs_retry, and eligibility re-selects it.
+	needs_retry INTEGER NOT NULL DEFAULT 0,
+	error TEXT NOT NULL DEFAULT '',
+	cost_usd REAL NOT NULL DEFAULT 0,
+	UNIQUE (thread_id, period)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trails_period ON trails(period);
 `

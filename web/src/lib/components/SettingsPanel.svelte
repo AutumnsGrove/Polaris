@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { appState } from '$lib/state.svelte';
 	import ToolUsageBars from './ToolUsageBars.svelte';
 	import {
@@ -35,6 +36,9 @@
 	} from '@lucide/svelte';
 	import { VISUALS_MODES, type VisualsMode } from '$lib/settings.svelte';
 	import { constellationState } from '$lib/constellation.svelte';
+	import { cometState } from '$lib/comet.svelte';
+	import CometIcon from './icons/Comet.svelte';
+	import CometConfigModal from './CometConfigModal.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
@@ -95,6 +99,17 @@
 	// ConstellationUsageModal), just reached via a shortcut link from here.
 	let showConstellationUsage = $state(false);
 	let showPulsarUsage = $state(false);
+	// Comet's own settings (enable, generate time, model) open as a modal
+	// from its row below — the sidebar entry hides when it's off, so the
+	// toggle has to be reachable from here without visiting /comet first.
+	let showCometConfig = $state(false);
+
+	// The sidebar normally loads Comet's config at app start (so its footer
+	// icon can hide when off), but the settings toggle shouldn't depend on
+	// that fetch having won a race — ensure it here too.
+	onMount(() => {
+		if (!cometState.config) void cometState.loadConfig();
+	});
 	// "Help me write this" for the global custom instructions box below —
 	// see WizardOverlay / gateway/wizard.go's global_instructions target.
 	// Unlike a Field's instructions tab (which has an explicit Save), this
@@ -334,6 +349,14 @@
 							>${usage.cost_by_source.constellation.period_cost_usd.toFixed(
 								2
 							)} / ${usage.cost_by_source.constellation.total_cost_usd.toFixed(2)}</span
+						>
+					</div>
+					<div class="usage-stat-row">
+						<span class="label">Comet</span>
+						<span class="value"
+							>${usage.cost_by_source.comet.period_cost_usd.toFixed(2)} / ${usage.cost_by_source.comet.total_cost_usd.toFixed(
+								2
+							)}</span
 						>
 					</div>
 				</div>
@@ -779,6 +802,23 @@
 					desc="Turn individual tools on or off"
 					onclick={() => (showTools = true)}
 				/>
+				<SettingsRow icon={CometIcon} title="Comet" desc="Monthly retrospective of what you asked and learned">
+					{#snippet control()}
+						<Switch
+							label="Comet enabled"
+							checked={cometState.config?.enabled ?? false}
+							disabled={!cometState.config}
+							onchange={(v) => void cometState.setEnabled(v)}
+						/>
+					{/snippet}
+					{#snippet details()}
+						Once a month Comet looks back at that month's conversations — how many turns you asked, what
+						you searched, where your attention went, which topics spiked or went quiet, and any new stars
+						formed — and assembles one short page. Turning this off also hides Comet from the sidebar.
+						Generate time and the model it uses are in
+						<button class="inline-link" onclick={() => (showCometConfig = true)}>Comet's settings</button>.
+					{/snippet}
+				</SettingsRow>
 			</div>
 
 			<div class="settings-label usage-section-label">System</div>
@@ -844,6 +884,10 @@
 
 {#if showPulsarUsage}
 	<PulsarUsageModal onClose={() => (showPulsarUsage = false)} />
+{/if}
+
+{#if showCometConfig}
+	<CometConfigModal onClose={() => (showCometConfig = false)} />
 {/if}
 
 {#if showInstructionsWizard}
@@ -1148,6 +1192,16 @@
 		max-height: 180px;
 		overflow-y: auto;
 		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	}
+
+	.inline-link {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		color: var(--color-accent);
+		text-decoration: underline;
+		cursor: pointer;
 	}
 
 	:global(.spin) {

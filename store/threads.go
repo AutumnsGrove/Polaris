@@ -280,7 +280,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, field_id, created_at, updated_at
 		 FROM threads
-		 WHERE disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)
+		 WHERE disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND source != 'comet_approach' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -330,4 +330,17 @@ func (s *Store) AddCost(threadID string, costUSD float64) error {
 func (s *Store) SetContextTokens(threadID string, tokens int) error {
 	_, err := s.db.Exec(`UPDATE threads SET context_tokens = ? WHERE id = ?`, tokens, threadID)
 	return err
+}
+
+// CountThreadsBySource counts every thread with the given source value —
+// including the hidden/internal sources (weaver, comet_approach) that
+// ListThreads/ListThreadsPage deliberately filter out of the sidebar. For
+// tests and diagnostics that need to see those rows, which no listing
+// method exposes.
+func (s *Store) CountThreadsBySource(source string) (int, error) {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM threads WHERE source = ?`, source).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }

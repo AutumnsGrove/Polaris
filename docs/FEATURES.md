@@ -133,9 +133,9 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's
   homescreen as a standalone app, since [mobile is the primary surface](../PRODUCT.md).
 
-## Beyond chat: Pulsar, Pulsar Daily, and Constellation
+## Beyond chat: Pulsar, Pulsar Daily, Constellation, and Comet
 
-Three background systems that go beyond "ask a question, get an answer" — each runs on its own
+Four background systems that go beyond "ask a question, get an answer" — each runs on its own
 schedule and turns into something you read rather than something you type into.
 
 **Pulsar** (`/pulsar`) — a saved prompt that fires on a schedule (daily/weekly/monthly) instead of
@@ -160,4 +160,12 @@ short, evergreen "stars," collapsing repeated mentions into one growing card ins
 notes. Browsable by category, plus a star-map view of how stars connect to each other. Runs
 cheaply on an interval, never live-per-message. Its settings panel takes an optional name and
 pronouns so Weaver has real guidance instead of guessing when writing personal stars about you.
+
+**Comet** (`/comet`) — a monthly retrospective: one page a month looking back at what you asked
+and searched. A stat row (turns, new stars, searches, cost), a breakdown of where your attention
+went by topic, the topics that spiked or quietly faded versus the past few months, and a capped
+showcase of the stars formed that month. Built entirely from data Polaris already timestamps: a
+once-a-month pass classifies each conversation into a short "trail" (topic, mood, intent,
+whether it got resolved), then one synthesis call writes the page — no re-reading of every
+transcript. Generates on the 1st of each month, covering the month that just ended, or on demand.
 

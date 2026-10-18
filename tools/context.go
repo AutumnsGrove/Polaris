@@ -156,6 +156,36 @@ type Context struct {
 	// WeaverRun is also true.
 	WeaverInteractive bool
 
+	// ApproachRun is true inside Comet's Approach classifier
+	// (gateway/comet_approach.go) — one agent.Run over one past thread
+	// deciding its topic/mood/intent/resolved. Gates the two approach-run
+	// tools (tools/search_trails.go, tools/record_classification.go) and
+	// narrows the whole menu to {view_image, search_trails,
+	// record_classification} in catalog.go's offered(), same structural
+	// isolation WeaverRun gives Weaver's five. agent/driver.go's
+	// loadSystemPrompt swaps in prompts.yaml's comet.approach_system for
+	// this context instead of prompt.md. Never set on a normal chat/pulse
+	// turn.
+	ApproachRun bool
+
+	// ApproachSearchTrails backs the search_trails tool — a narrow closure
+	// over store.Store (its SearchTrails method), same pattern as the
+	// WeaverSearchStars closure. Wired only alongside ApproachRun being
+	// true; nil everywhere else, which is also what offered()'s
+	// "approach_run" case re-checks defensively.
+	ApproachSearchTrails func(query string) ([]store.Trail, error)
+
+	// ApproachCategoriesInUse/ApproachMoodsInUse are the live lists of
+	// topic/mood values already recorded in trails beyond the fixed
+	// starting vocabulary — substituted into comet.approach_system's two
+	// %s verbs so the classifier extends the existing labels rather than
+	// fragmenting them into near-synonyms, same "check what's already in
+	// use first" mechanism WeaverCategoriesInUse backs for stars. Empty on
+	// a from-scratch install; that's fine, the escape hatch just has
+	// nothing to reuse yet.
+	ApproachCategoriesInUse string
+	ApproachMoodsInUse      string
+
 	// WeaverSearchStars/WeaverReadStar/WeaverCreateStar/WeaverUpdateStar/
 	// WeaverLinkStars back Weaver's five tools — narrow closures over
 	// store.Store plus the current shooting_star_runs.id (create_star/
@@ -660,6 +690,15 @@ type Context struct {
 	// dispatch reason WizardFinal's mutex exists.
 	dailyItemsFinalMu sync.Mutex
 	DailyItemsFinal   *DailyItemsFinal
+
+	// TrailClassification, once set, tells agent.Run to end the turn the
+	// same way DailyItemsFinal does — see record_classification.go and
+	// ApproachRun above. Only ever populated on an Approach run, since
+	// record_classification is never offered otherwise.
+	// trailClassificationMu guards it for the same concurrent-dispatch
+	// reason dailyItemsFinalMu exists.
+	trailClassificationMu sync.Mutex
+	TrailClassification   *TrailClassification
 
 	// PendingImageMessages accumulates synthetic "user" messages carrying a
 	// real image (view_image's "see" mode — see llm.ChatMessage.ImageURLs)

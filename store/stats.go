@@ -163,16 +163,24 @@ type SourceCost struct {
 }
 
 // CostBySource is Stats.TotalCostUSD/PeriodCostUSD broken down by where
-// the cost actually came from. Polaris + Pulsar + Daily + Constellation
-// always sums back to the plain total/period figures exactly — see
+// the cost actually came from. Polaris + Pulsar + Daily + Constellation +
+// Comet always sums back to the plain total/period figures exactly — see
 // GetStats. There's no separate "ghost" bucket: ghost-mode spend is
 // folded straight into Polaris, the same source a ghost thread would
 // have been tagged if it were persisted — see GetStats.
+//
+// Comet's bucket is two payers: its Approaches are real turns, so their
+// spend rides ordinary messages.cost_usd on a source = 'comet_approach'
+// hidden thread (routed here instead of into Polaris), and the once-a-month
+// trend synthesis has no thread at all, so it's billed through aux_usage
+// under a comet_* kind (split out of the aux fold below). trails.cost_usd
+// stays an audit mirror and is deliberately never summed anywhere.
 type CostBySource struct {
 	Polaris       SourceCost `json:"polaris"`
 	Pulsar        SourceCost `json:"pulsar"`
 	Daily         SourceCost `json:"daily"`
 	Constellation SourceCost `json:"constellation"`
+	Comet         SourceCost `json:"comet"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -236,18 +244,24 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// a late cost (suggestions, verification) only ever lands on the
 	// original row. Deleted threads count too: that money was really spent.
 	if err := s.costBySource("", func(source string, cost float64) {
-		if source == "pulsar" {
+		switch source {
+		case "pulsar":
 			stats.CostBySource.Pulsar.TotalCostUSD += cost
-		} else {
+		case "comet_approach":
+			stats.CostBySource.Comet.TotalCostUSD += cost
+		default:
 			stats.CostBySource.Polaris.TotalCostUSD += cost
 		}
 	}); err != nil {
 		return nil, err
 	}
 	if err := s.costBySource(since, func(source string, cost float64) {
-		if source == "pulsar" {
+		switch source {
+		case "pulsar":
 			stats.CostBySource.Pulsar.PeriodCostUSD += cost
-		} else {
+		case "comet_approach":
+			stats.CostBySource.Comet.PeriodCostUSD += cost
+		default:
 			stats.CostBySource.Polaris.PeriodCostUSD += cost
 		}
 	}); err != nil {
@@ -361,8 +375,27 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 			return nil, err
 		}
 	}
-	stats.CostBySource.Polaris.TotalCostUSD += auxTotal
-	stats.CostBySource.Polaris.PeriodCostUSD += auxPeriod
+	// Comet's trend-synthesis call is aux spend too, but it belongs in the
+	// Comet bucket rather than Polaris — split out by its comet_* kind
+	// prefix. Everything else stays chat-adjacent and folds into Polaris as
+	// before.
+	var cometAuxTotal, cometAuxPeriod float64
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind LIKE 'comet_%'`,
+	).Scan(&cometAuxTotal); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		cometAuxPeriod = cometAuxTotal
+	} else if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind LIKE 'comet_%' AND created_at >= ?`, since,
+	).Scan(&cometAuxPeriod); err != nil {
+		return nil, err
+	}
+	stats.CostBySource.Comet.TotalCostUSD += cometAuxTotal
+	stats.CostBySource.Comet.PeriodCostUSD += cometAuxPeriod
+	stats.CostBySource.Polaris.TotalCostUSD += auxTotal - cometAuxTotal
+	stats.CostBySource.Polaris.PeriodCostUSD += auxPeriod - cometAuxPeriod
 
 	// TotalCostUSD/PeriodCostUSD: the true, complete grand total across
 	// every real spend path — computed last, once every bucket above
@@ -372,9 +405,9 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// excluded — see CostBySource's own doc comment for why that looked
 	// like the breakdown didn't add up.
 	stats.TotalCostUSD = stats.CostBySource.Polaris.TotalCostUSD + stats.CostBySource.Pulsar.TotalCostUSD +
-		stats.CostBySource.Daily.TotalCostUSD + stats.CostBySource.Constellation.TotalCostUSD
+		stats.CostBySource.Daily.TotalCostUSD + stats.CostBySource.Constellation.TotalCostUSD + stats.CostBySource.Comet.TotalCostUSD
 	stats.PeriodCostUSD = stats.CostBySource.Polaris.PeriodCostUSD + stats.CostBySource.Pulsar.PeriodCostUSD +
-		stats.CostBySource.Daily.PeriodCostUSD + stats.CostBySource.Constellation.PeriodCostUSD
+		stats.CostBySource.Daily.PeriodCostUSD + stats.CostBySource.Constellation.PeriodCostUSD + stats.CostBySource.Comet.PeriodCostUSD
 
 	// VerificationCostUSD: a breakout, not an addition — this money is
 	// already inside TotalCostUSD/CostBySource above (it arrived via

@@ -584,6 +584,22 @@ func (c *Client) ChatCompletionWithTools(reqCtx context.Context, messages []Chat
 	return c.doRequest(reqCtx, messages, tools, "auto", onChunk, onReasoning)
 }
 
+// ChatCompletionForcedTool is ChatCompletionWithTools with tool_choice
+// pinned to exactly one function, so the model must call it rather than
+// free-flowing between a tool call and a plain-prose answer. For one-shot
+// structured-output passes where prose is a failure, not a valid outcome —
+// Comet's spike/fade synthesis is the first caller. Deliberately a method on
+// the concrete *Client, not part of the ChatClient interface: only the one
+// call site needs it, and the interface's test doubles have no meaningful
+// way to model a forced choice anyway.
+func (c *Client) ChatCompletionForcedTool(reqCtx context.Context, messages []ChatMessage, tool ToolDef, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
+	choice := map[string]interface{}{
+		"type":     "function",
+		"function": map[string]interface{}{"name": tool.Function.Name},
+	}
+	return c.doRequest(reqCtx, messages, []ToolDef{tool}, choice, onChunk, onReasoning)
+}
+
 // ChatCompletionStreaming sends a plain (no-tools) conversation and
 // streams tokens to onChunk as they arrive. Used for the final
 // user-facing answer once the tool loop is done gathering context.

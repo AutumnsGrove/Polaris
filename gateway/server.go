@@ -142,6 +142,14 @@ type Server struct {
 	// go through handleTurn/markTurnInFlight, so it needs its own check.
 	dailyGenerationRunning atomic.Bool
 
+	// cometGenerationRunning is the same single-flight guard for Comet —
+	// both the scheduler's monthly due-check and the manual "Generate now"
+	// button go through startCometGenerationIfIdle, which CAS-guards this.
+	// Read by handleServerBusy too, so a Docker update watcher waits for an
+	// in-flight Comet run rather than recreating the container out from
+	// under it (same reason dailyGenerationRunning is).
+	cometGenerationRunning atomic.Bool
+
 	// devMode is staticFS == nil (see New's doc comment) — true exactly
 	// when `polaris run --dev` is splitting the frontend (vite's own dev
 	// server) and backend (this process) across two ports instead of the
@@ -629,6 +637,13 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/constellation/weaver-threads", s.handleListWeaverThreads)
 	s.mux.HandleFunc("GET /api/constellation/map", s.handleGetConstellationMap)
 	s.mux.HandleFunc("POST /api/constellation/backfill", s.handleConstellationBackfill)
+	s.mux.HandleFunc("GET /api/comet/config", s.handleGetCometConfig)
+	s.mux.HandleFunc("PUT /api/comet/config", s.handleUpdateCometConfig)
+	s.mux.HandleFunc("GET /api/comet/periods", s.handleListCometPeriods)
+	s.mux.HandleFunc("GET /api/comet/editions/{period}", s.handleGetCometEdition)
+	s.mux.HandleFunc("POST /api/comet/classify", s.handleCometClassify)
+	s.mux.HandleFunc("POST /api/comet/backfill", s.handleCometBackfill)
+	s.mux.HandleFunc("POST /api/comet/generate", s.handleGenerateCometNow)
 	s.mux.HandleFunc("GET /api/workspace/{thread_id}/{filename}", s.handleGetWorkspaceFile)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 

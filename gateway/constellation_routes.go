@@ -156,7 +156,7 @@ func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load()})
+	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load() || s.cometGenerationRunning.Load()})
 }
 
 // handleSearchConstellationStars backs the Library's search box —

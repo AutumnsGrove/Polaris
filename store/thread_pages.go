@@ -77,7 +77,7 @@ func decodeThreadCursor(cursor string) (updatedAtStr, id string, err error) {
 // per-thread context for a model reasoning over "what have I been asking
 // about lately" without a separate query per thread.
 func (s *Store) ListThreadsPage(cursor string) (threads []ThreadSummary, nextCursor string, err error) {
-	where := "disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)"
+	where := "disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND source != 'comet_approach' AND (source != 'atlas' OR continued_in_assistant = 1)"
 	args := []interface{}{}
 	if cursor != "" {
 		cursorUpdatedAt, cursorID, derr := decodeThreadCursor(cursor)
