@@ -162,10 +162,13 @@ cheaply on an interval, never live-per-message. Its settings panel takes an opti
 pronouns so Weaver has real guidance instead of guessing when writing personal stars about you.
 
 **Comet** (`/comet`) — a monthly retrospective: one page a month looking back at what you asked
-and searched. A stat row (turns, new stars, searches, cost), a breakdown of where your attention
-went by topic, the topics that spiked or quietly faded versus the past few months, and a capped
-showcase of the stars formed that month. Built entirely from data Polaris already timestamps: a
-once-a-month pass classifies each conversation into a short "trail" (topic, mood, intent,
-whether it got resolved), then one synthesis call writes the page — no re-reading of every
-transcript. Generates on the 1st of each month, covering the month that just ended, or on demand.
+and searched. A stat row (turns, new stars, searches, cost), a one-sentence read of the month plus
+the three conversations that defined it, a breakdown of where your attention went by topic, the
+topics that spiked or quietly faded versus the past few months, an activity heatmap with the tools
+you leaned on, and Constellation's growth (new stars, stars that grew, new links). Built entirely
+from data Polaris already timestamps: a once-a-month pass classifies each conversation into a
+short "trail" (topic, mood, intent, whether it got resolved), and one synthesis call writes only
+the framing sentence and the highlight picks — everything else is straight aggregation, no
+re-reading of every transcript. Hides the Constellation block when Constellation is off. Generates
+on the 1st of each month, covering the month that just ended, or on demand.
 

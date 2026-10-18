@@ -92,6 +92,44 @@
 	const spiked = $derived(data?.spiked ?? []);
 	const faded = $derived(data?.faded ?? []);
 	const stars = $derived(data?.stars ?? []);
+	const highlights = $derived(data?.highlights ?? []);
+	const tools = $derived(data?.tools ?? []);
+	const rhythm = $derived(data?.rhythm ?? null);
+	const growth = $derived(data?.growth ?? { new_stars: 0, grown_stars: 0, new_links: 0 });
+	// Constellation can be off while Comet is on: every growth number is then
+	// zero, and the whole card should disappear rather than show empty.
+	const hasConstellation = $derived(
+		(data?.star_total ?? 0) > 0 || (growth.grown_stars ?? 0) > 0 || (growth.new_links ?? 0) > 0
+	);
+
+	const rhythmMax = $derived(Math.max(...(rhythm?.days ?? []).map((d) => d.count), 1));
+
+	// The heatmap is a 7-column grid aligned to weekday; pad the start with
+	// blanks so the first day lands under its real weekday.
+	const heatmapOffset = $derived.by(() => {
+		const first = rhythm?.days?.[0]?.date;
+		if (!first) return 0;
+		const [y, m, d] = first.split('-').map(Number);
+		return new Date(y, m - 1, d).getDay();
+	});
+	const heatmapCells = $derived([
+		...Array.from({ length: heatmapOffset }, () => null),
+		...(rhythm?.days ?? [])
+	]);
+
+	function hourLabel(h: number): string {
+		if (h === 0) return '12am';
+		if (h === 12) return '12pm';
+		return h < 12 ? `${h}am` : `${h - 12}pm`;
+	}
+	function shortDate(d: string): string {
+		const [y, m, day] = d.split('-').map(Number);
+		if (!y) return d;
+		return new Date(y, m - 1, day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	}
+	function toolLabel(name: string): string {
+		return name.replaceAll('_', ' ');
+	}
 
 	// A manual run can take minutes — poll for the new edition to appear
 	// rather than blocking. Stops as soon as the target period shows up (or
@@ -177,6 +215,16 @@
 			<p class="dateline">{periodLabel(cometState.edition.period)}</p>
 			{#if cometState.edition.hook}
 				<p class="hook">{cometState.edition.hook}</p>
+			{/if}
+			{#if highlights.length > 0}
+				<ul class="highlights">
+					{#each highlights as h (h.thread_id)}
+						<li>
+							<a href={`/t/${h.thread_id}`}>{h.title}</a>
+							{#if h.why}<span class="why"> — {h.why}</span>{/if}
+						</li>
+					{/each}
+				</ul>
 			{/if}
 		{/if}
 		<div class="edition-nav">
@@ -300,26 +348,78 @@
 			</div>
 		{/if}
 
-		<!-- Block 4 — new stars this month -->
-		{#if stars.length > 0}
+		<!-- Rhythm + tools -->
+		{#if rhythm}
+			<div class="split-row" class:single={tools.length === 0}>
+				<div class="card rhythm-card">
+					<div class="card-head">
+						<h2>Your rhythm</h2>
+						<span class="meta">{rhythm.active_days}/{rhythm.days_in_period} days</span>
+					</div>
+					<div class="heat-head">
+						{#each ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as w, i (i)}<span>{w}</span>{/each}
+					</div>
+					<div class="heat-grid">
+						{#each heatmapCells as cell}
+							{#if cell}
+								{@const level = cell.count === 0 ? 0 : Math.min(4, Math.ceil((cell.count / rhythmMax) * 4))}
+								<span class={`heat heat-${level}`} title={`${shortDate(cell.date)}: ${cell.count}`}></span>
+							{:else}
+								<span class="heat heat-blank"></span>
+							{/if}
+						{/each}
+					</div>
+					<p class="rhythm-note">
+						Most often around {hourLabel(rhythm.peak_hour)}{#if rhythm.busiest_count > 0}, busiest on {shortDate(rhythm.busiest_date)}{/if}.
+					</p>
+				</div>
+				{#if tools.length > 0}
+					<div class="card tools-card">
+						<div class="card-head"><h2>Tools you leaned on</h2></div>
+						{#each tools.slice(0, 6) as tool (tool.name)}
+							<div class="tool-row">
+								<span class="tool-name">{toolLabel(tool.name)}</span>
+								<div class="tool-track"><div class="tool-fill" style="width:{Math.round((tool.count / tools[0].count) * 100)}%"></div></div>
+								<span class="tool-count">{tool.count}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Constellation growth -->
+		{#if hasConstellation}
 			<div class="card">
 				<div class="card-head">
-					<h2>New stars this month</h2>
-					<span class="meta">{data?.star_total ?? 0} formed</span>
+					<h2>Constellation grew</h2>
+					<span class="meta">{data?.star_total ?? 0} new</span>
 				</div>
-				<div class="star-grid">
-					{#each stars.slice(0, 4) as star (star.id)}
-						<a class="mini-star" href="/constellation" title="Open in Constellation">
-							<div class="tile" style="background:color-mix(in srgb, {colorForCategory(star.category)} 18%, transparent); color:{colorForCategory(star.category)}">
-								<Star size={13} />
-							</div>
-							<div>
-								<div class="star-title">{star.title}</div>
-								<div class="star-cat">{star.category}</div>
-							</div>
-						</a>
-					{/each}
-				</div>
+				<p class="growth-line">
+					{data?.star_total ?? 0} new star{(data?.star_total ?? 0) === 1 ? '' : 's'}{#if growth.grown_stars > 0} · {growth.grown_stars} grew{/if}{#if growth.new_links > 0} · {growth.new_links} new link{growth.new_links === 1 ? '' : 's'}{/if}
+				</p>
+				{#if growth.featured}
+					<a class="featured-star" href="/constellation" title="Most-revisited star this month">
+						<Star size={13} />
+						<span class="f-title">{growth.featured.title}</span>
+						<span class="f-cat">{growth.featured.category}</span>
+					</a>
+				{/if}
+				{#if stars.length > 0}
+					<div class="star-grid">
+						{#each stars.slice(0, 4) as star (star.id)}
+							<a class="mini-star" href="/constellation" title="Open in Constellation">
+								<div class="tile" style="background:color-mix(in srgb, {colorForCategory(star.category)} 18%, transparent); color:{colorForCategory(star.category)}">
+									<Star size={13} />
+								</div>
+								<div>
+									<div class="star-title">{star.title}</div>
+									<div class="star-cat">{star.category}</div>
+								</div>
+							</a>
+						{/each}
+					</div>
+				{/if}
 				{#if (data?.star_total ?? 0) > 4}
 					<a class="more-link" href="/constellation">+{(data?.star_total ?? 0) - 4} more · view in Constellation →</a>
 				{/if}
@@ -711,6 +811,134 @@
 		color: var(--color-danger, oklch(65% 0.19 25));
 		font-size: 0.82rem;
 		margin: var(--space-sm) 0 0;
+	}
+
+	.highlights {
+		list-style: none;
+		margin: var(--space-md) 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+	}
+	.highlights li {
+		font-size: 0.82rem;
+		line-height: 1.4;
+	}
+	.highlights a {
+		color: var(--color-accent-2);
+		text-decoration: none;
+	}
+	.highlights a:hover {
+		text-decoration: underline;
+	}
+	.highlights .why {
+		color: var(--color-text-dim);
+	}
+
+	.split-row.single {
+		grid-template-columns: 1fr;
+	}
+
+	.heat-head,
+	.heat-grid {
+		display: grid;
+		grid-template-columns: repeat(7, 1fr);
+		gap: 3px;
+		max-width: 260px;
+		margin: 0 auto;
+	}
+	.heat-head {
+		margin-bottom: var(--space-xs);
+	}
+	.heat-head span {
+		font-size: 0.62rem;
+		color: var(--color-text-dim);
+		text-align: center;
+	}
+	.heat {
+		aspect-ratio: 1;
+		border-radius: 3px;
+		background: var(--color-surface-3);
+	}
+	.heat-blank {
+		background: transparent;
+	}
+	.heat-1 {
+		background: color-mix(in srgb, var(--color-accent) 22%, var(--color-surface-3));
+	}
+	.heat-2 {
+		background: color-mix(in srgb, var(--color-accent) 45%, var(--color-surface-3));
+	}
+	.heat-3 {
+		background: color-mix(in srgb, var(--color-accent) 68%, var(--color-surface-3));
+	}
+	.heat-4 {
+		background: var(--color-accent);
+	}
+	.rhythm-note {
+		font-size: 0.72rem;
+		color: var(--color-text-dim);
+		margin: var(--space-md) 0 0;
+		text-align: center;
+	}
+
+	.tool-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		padding: 5px 0;
+	}
+	.tool-name {
+		font-size: 0.8rem;
+		width: 12ch;
+		flex-shrink: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.tool-track {
+		flex: 1;
+		height: 6px;
+		border-radius: var(--radius-full);
+		background: var(--color-surface-3);
+		overflow: hidden;
+	}
+	.tool-fill {
+		height: 100%;
+		border-radius: var(--radius-full);
+		background: var(--color-accent-2);
+	}
+	.tool-count {
+		font-size: 0.75rem;
+		color: var(--color-text-dim);
+		width: 5ch;
+		text-align: right;
+	}
+
+	.growth-line {
+		font-size: 0.85rem;
+		margin: 0 0 var(--space-md);
+	}
+	.featured-star {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
+		margin-bottom: var(--space-md);
+		border-radius: var(--radius-md);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		color: var(--color-text-dim);
+		text-decoration: none;
+		font-size: 0.82rem;
+	}
+	.featured-star .f-title {
+		color: var(--color-text);
+		flex: 1;
+	}
+	.featured-star .f-cat {
+		font-size: 0.7rem;
 	}
 
 	@media (max-width: 620px) {

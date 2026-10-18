@@ -273,3 +273,40 @@ func TestCometPeriodCost_IncludesCometSpend(t *testing.T) {
 		t.Errorf("CostBySource.Comet.TotalCostUSD = %v, want ~0.025", stats.CostBySource.Comet.TotalCostUSD)
 	}
 }
+
+func TestCometPeriodToolCounts_ExcludesAutomatedTools(t *testing.T) {
+	s := openTestStore(t)
+	period := "2026-09"
+	start, end := period+"-01 00:00:00", "2026-10-01 00:00:00"
+
+	threadID := "a1111111-1111-1111-1111-111111111111"
+	if err := s.CreateThread(threadID, "t", "deepseek", "web"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"web_search", "web_search", "web_read", "code_exec", "create_star", "read_star", "think", "record_classification"} {
+		s.LogEvent(threadID, "info", "tool."+tool, "tool call finished", map[string]interface{}{}, "turn-1")
+	}
+	if _, err := s.db.Exec(`UPDATE events SET created_at = ? WHERE thread_id = ?`, period+"-15 12:00:00", threadID); err != nil {
+		t.Fatal(err)
+	}
+
+	tools, err := s.CometPeriodToolCounts(start, end)
+	if err != nil {
+		t.Fatalf("CometPeriodToolCounts: %v", err)
+	}
+	got := map[string]int{}
+	for _, tc := range tools {
+		got[tc.Name] = tc.Count
+	}
+	if got["web_search"] != 2 || got["web_read"] != 1 || got["code_exec"] != 1 {
+		t.Errorf("tool counts = %v, want web_search:2, web_read:1, code_exec:1", got)
+	}
+	for _, internal := range []string{"create_star", "read_star", "think", "record_classification"} {
+		if _, ok := got[internal]; ok {
+			t.Errorf("internal tool %q leaked into tool texture: %v", internal, got)
+		}
+	}
+	if len(tools) == 0 || tools[0].Name != "web_search" {
+		t.Errorf("tool list should be sorted most-used first, got %+v", tools)
+	}
+}

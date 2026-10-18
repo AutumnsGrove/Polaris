@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -177,6 +178,81 @@ type CometEditionData struct {
 	// was used this period, nothing about content — see the plan doc's
 	// "Eligibility filter".
 	GhostCount int `json:"ghost_count"`
+
+	// Highlights are the (up to three) conversations the synthesis pass
+	// picked as defining the month — the "sentence + short list" the
+	// masthead carries alongside Hook. Titles/ids are resolved server-side
+	// from the candidate list the model chose from, never trusted verbatim.
+	Highlights []CometHighlight `json:"highlights"`
+	// Rhythm is the activity heatmap/time-of-day read, pure aggregation over
+	// user-message timestamps.
+	Rhythm CometRhythm `json:"rhythm"`
+	// Tools is how often each user-facing tool actually fired this period,
+	// most-used first. Weaver/Approach-internal tools are excluded — see
+	// CometPeriodToolCounts.
+	Tools []CometToolCount `json:"tools"`
+	// Growth is Constellation's month: new stars, stars that grew via a
+	// content merge, new star-to-star links, and a featured star. All zero
+	// when Constellation is off or unused — the frontend hides the block
+	// rather than showing an empty shell.
+	Growth CometGrowth `json:"growth"`
+	// UnresolvedCount is how many of the period's trails ended 'no' or
+	// 'partial' — feeds the hook's framing, not (yet) its own block.
+	UnresolvedCount int `json:"unresolved_count"`
+}
+
+// CometHighlight is one conversation picked as defining the month.
+type CometHighlight struct {
+	ThreadID string `json:"thread_id"`
+	Title    string `json:"title"`
+	Topic    string `json:"topic,omitempty"`
+	// Why is the model's one-line justification, shown after the title.
+	Why string `json:"why"`
+}
+
+// CometRhythm is the activity-rhythm block: one count per calendar day in
+// the period (for the heatmap), an hour-of-day histogram, and the peak.
+type CometRhythm struct {
+	Days         []CometDayCount `json:"days"`
+	ActiveDays   int             `json:"active_days"`
+	DaysInPeriod int             `json:"days_in_period"`
+	// Hours is a 24-slot histogram in the operator's own zone.
+	Hours    [24]int `json:"hours"`
+	PeakHour int     `json:"peak_hour"`
+	// BusiestDate is "YYYY-MM-DD", the day with the most messages.
+	BusiestDate  string `json:"busiest_date"`
+	BusiestCount int    `json:"busiest_count"`
+}
+
+// CometDayCount is one calendar day's message count.
+type CometDayCount struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
+// CometToolCount is one tool's period usage.
+type CometToolCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// CometGrowth is Constellation's month-over-month growth.
+type CometGrowth struct {
+	NewStars   int        `json:"new_stars"`
+	GrownStars int        `json:"grown_stars"`
+	NewLinks   int        `json:"new_links"`
+	Featured   *CometStar `json:"featured,omitempty"`
+}
+
+// CometThreadCandidate is one thread offered to the synthesis pass to pick
+// highlights from — its title/topic/mood plus how many turns it ran.
+type CometThreadCandidate struct {
+	ThreadID string
+	Title    string
+	Topic    string
+	Mood     string
+	Resolved string
+	Turns    int
 }
 
 // CometStats is the stat row — straight aggregation, no synthesis.
@@ -769,4 +845,192 @@ func (s *Store) CometPeriodGhostCount(startStr, endStr string) (int, error) {
 		return 0, fmt.Errorf("comet ghost count: %w", err)
 	}
 	return n, nil
+}
+
+// cometInternalTools are the tools Comet's own reporting deliberately
+// hides from its "tool texture" block: Weaver's five (search_stars/
+// read_star/create_star/update_star/link_stars), the Approach classifier's
+// own tools, and the other internal pipeline/UI helpers. They're part of
+// automated subsystems (Constellation, Comet, Pulsar Daily, the wizard),
+// not things the operator asked for — and Constellation may be off
+// entirely while Comet is on, so surfacing its tools would be misleading.
+var cometInternalTools = map[string]bool{
+	"think":                  true,
+	"search_stars":           true,
+	"read_star":              true,
+	"create_star":            true,
+	"update_star":            true,
+	"link_stars":             true,
+	"search_trails":          true,
+	"record_classification":  true,
+	"finalize_daily_items":   true,
+	"finalize_wizard_prompt": true,
+	"alert_me":               true,
+}
+
+// CometPeriodActivity returns the timestamps of every user message in
+// [startStr, endStr), oldest first — the raw material for the rhythm
+// block. Bucketing happens in the gateway (not SQL) so it uses the
+// operator's own time zone, DST included, rather than UTC date() strings.
+func (s *Store) CometPeriodActivity(startStr, endStr string) ([]time.Time, error) {
+	rows, err := s.db.Query(
+		`SELECT created_at FROM messages WHERE role = 'user' AND created_at >= ? AND created_at < ? ORDER BY created_at ASC`,
+		startStr, endStr,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("comet period activity: %w", err)
+	}
+	defer rows.Close()
+	var out []time.Time
+	for rows.Next() {
+		// Scan into time.Time, not string: modernc.org/sqlite hands a
+		// DATETIME column back as a real time.Time (its string form is
+		// RFC3339, not the "2006-01-02 15:04:05" the column stores), so
+		// parsing a string here silently dropped every row.
+		var t time.Time
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t.UTC())
+	}
+	return out, rows.Err()
+}
+
+// CometPeriodToolCounts returns how often each user-facing tool fired in
+// [startStr, endStr), most-used first. Internal/automated tools are
+// filtered out — see cometInternalTools.
+func (s *Store) CometPeriodToolCounts(startStr, endStr string) ([]CometToolCount, error) {
+	rows, err := s.db.Query(
+		`SELECT source, COUNT(*) FROM events
+		 WHERE source LIKE 'tool.%' AND message = 'tool call finished' AND created_at >= ? AND created_at < ?
+		 GROUP BY source`,
+		startStr, endStr,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("comet period tool counts: %w", err)
+	}
+	defer rows.Close()
+	var out []CometToolCount
+	for rows.Next() {
+		var source string
+		var n int
+		if err := rows.Scan(&source, &n); err != nil {
+			return nil, err
+		}
+		name := strings.TrimPrefix(source, "tool.")
+		if cometInternalTools[name] || n == 0 {
+			continue
+		}
+		out = append(out, CometToolCount{Name: name, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, rows.Err()
+}
+
+// CometPeriodGrowth reports Constellation's growth in [startStr, endStr):
+// stars that already existed and got a real content merge (grown), star
+// links added, and the single most-updated star (the featured one). New
+// stars are counted by CometPeriodNewStars; the caller adds them. Every
+// number is zero when Constellation is off — callers must treat that as
+// "hide the block", never as an error.
+func (s *Store) CometPeriodGrowth(startStr, endStr string) (grown, links int, featured *CometStar, err error) {
+	if err = s.db.QueryRow(
+		`SELECT COUNT(*) FROM stars WHERE content_updated_at >= ? AND content_updated_at < ? AND created_at < ?`,
+		startStr, endStr, startStr,
+	).Scan(&grown); err != nil {
+		return 0, 0, nil, fmt.Errorf("comet period growth (grown): %w", err)
+	}
+	if err = s.db.QueryRow(
+		`SELECT COUNT(*) FROM star_edges WHERE created_at >= ? AND created_at < ?`,
+		startStr, endStr,
+	).Scan(&links); err != nil {
+		return 0, 0, nil, fmt.Errorf("comet period growth (links): %w", err)
+	}
+	var st CometStar
+	ferr := s.db.QueryRow(
+		`SELECT s.id, s.title, s.category FROM star_versions v JOIN stars s ON s.id = v.star_id
+		 WHERE v.created_at >= ? AND v.created_at < ?
+		 GROUP BY v.star_id ORDER BY COUNT(*) DESC, MAX(v.created_at) DESC LIMIT 1`,
+		startStr, endStr,
+	).Scan(&st.ID, &st.Title, &st.Category)
+	if ferr == nil {
+		featured = &st
+	} else if ferr != sql.ErrNoRows {
+		return 0, 0, nil, fmt.Errorf("comet period growth (featured): %w", ferr)
+	}
+	return grown, links, featured, nil
+}
+
+// CometPeriodCandidateThreads lists up to limit threads active in
+// [startStr, endStr) for the synthesis pass to pick highlights from —
+// most turns first, with whatever trail the period already has. title is
+// used for display; the model only ever chooses by index, so a thread id
+// never has to survive a round trip through the model.
+func (s *Store) CometPeriodCandidateThreads(startStr, endStr, period string, limit int) ([]CometThreadCandidate, error) {
+	if limit <= 0 {
+		limit = 15
+	}
+	rows, err := s.db.Query(
+		`SELECT t.id, t.title, COALESCE(tr.topic, ''), COALESCE(tr.mood, ''), COALESCE(tr.resolved, ''),
+			(SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user' AND m.created_at >= ? AND m.created_at < ?) AS turns
+		 FROM threads t
+		 LEFT JOIN trails tr ON tr.thread_id = t.id AND tr.period = ?
+		 WHERE t.disabled = 0 AND t.ghost = 0 AND t.fork_root_id = ''
+		   AND t.source NOT IN ('pulsar', 'weaver', 'comet_approach')
+		   AND EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.created_at >= ? AND m.created_at < ?)
+		 ORDER BY turns DESC, t.updated_at DESC
+		 LIMIT ?`,
+		startStr, endStr, period, startStr, endStr, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("comet period candidate threads: %w", err)
+	}
+	defer rows.Close()
+	var out []CometThreadCandidate
+	for rows.Next() {
+		var c CometThreadCandidate
+		if err := rows.Scan(&c.ThreadID, &c.Title, &c.Topic, &c.Mood, &c.Resolved, &c.Turns); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// CometPeriodUnresolvedTopics lists distinct topics from the period's
+// completed trails that ended 'no' or 'partial' (most-common first), plus
+// the total number of unresolved trails — the hook's "what didn't get
+// settled" signal.
+func (s *Store) CometPeriodUnresolvedTopics(period string, limit int) (topics []string, total int, err error) {
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM trails WHERE period = ? AND classified_at IS NOT NULL AND resolved IN ('no', 'partial')`, period,
+	).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("comet period unresolved count: %w", err)
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+	rows, err := s.db.Query(
+		`SELECT topic FROM trails
+		 WHERE period = ? AND classified_at IS NOT NULL AND resolved IN ('no', 'partial') AND topic != ''
+		 GROUP BY topic ORDER BY COUNT(*) DESC, topic ASC LIMIT ?`,
+		period, limit,
+	)
+	if err != nil {
+		return nil, total, fmt.Errorf("comet period unresolved topics: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, total, err
+		}
+		topics = append(topics, t)
+	}
+	return topics, total, rows.Err()
 }

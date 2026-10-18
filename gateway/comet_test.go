@@ -161,7 +161,7 @@ func TestApproachRun_RecordsTrail(t *testing.T) {
 // model forced to call record_trends, and checks the four blocks land.
 func TestRunCometGeneration_BuildsEdition(t *testing.T) {
 	srv := sequencedSSEServer(t, []string{
-		toolCallSSEBodyCost(`{"id":"call_1","type":"function","function":{"name":"record_trends","arguments":"{\"spiked\":[{\"topic\":\"Docker\",\"count\":5}],\"faded\":[{\"topic\":\"Kubernetes\",\"count\":3,\"since\":\"quiet since Aug 1\"}],\"hook\":\"A Docker-heavy month.\"}"}}`, 0.003),
+		toolCallSSEBodyCost(`{"id":"call_1","type":"function","function":{"name":"record_trends","arguments":"{\"spiked\":[{\"topic\":\"Docker\",\"count\":5}],\"faded\":[{\"topic\":\"Kubernetes\",\"count\":3,\"since\":\"quiet since Aug 1\"}],\"hook\":\"A Docker-heavy month.\",\"highlights\":[{\"index\":1,\"why\":\"the thread that framed the month\"}]}"}}`, 0.003),
 	})
 	defer srv.Close()
 
@@ -172,6 +172,11 @@ func TestRunCometGeneration_BuildsEdition(t *testing.T) {
 	// the showcase, and a web_search event for the synthesis input.
 	threadID := "f1111111-1111-1111-1111-111111111111"
 	if err := h.db.CreateThread(threadID, "Docker notes", "mimo-pro", "web"); err != nil {
+		t.Fatal(err)
+	}
+	// A user message makes the thread a highlight candidate and gives the
+	// rhythm block a real timestamp.
+	if _, err := h.db.AddMessage(threadID, "user", "how does docker compose networking work?", "[]", "[]", 0, "turn-1"); err != nil {
 		t.Fatal(err)
 	}
 	tid, err := h.db.StartTrail(threadID, period)
@@ -185,6 +190,8 @@ func TestRunCometGeneration_BuildsEdition(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.db.LogEvent(threadID, "info", "tool.web_search", "tool call started", map[string]interface{}{"args": map[string]interface{}{"query": "docker compose networking"}}, "turn-1")
+	h.db.LogEvent(threadID, "info", "tool.web_search", "tool call finished", map[string]interface{}{}, "turn-1")
+	h.db.LogEvent(threadID, "info", "tool.create_star", "tool call finished", map[string]interface{}{}, "turn-1")
 
 	if err := h.srvObj.runCometGeneration(context.Background(), period); err != nil {
 		t.Fatalf("runCometGeneration: %v", err)
@@ -209,10 +216,57 @@ func TestRunCometGeneration_BuildsEdition(t *testing.T) {
 	if edition.Data.Stats.Searches < 1 {
 		t.Errorf("stat row searches = %d, want the logged web_search counted", edition.Data.Stats.Searches)
 	}
+	if len(edition.Data.Highlights) != 1 || edition.Data.Highlights[0].ThreadID != threadID {
+		t.Errorf("highlights = %+v, want the candidate thread resolved from index 1", edition.Data.Highlights)
+	}
+	if len(edition.Data.Highlights) == 1 && edition.Data.Highlights[0].Why != "the thread that framed the month" {
+		t.Errorf("highlight why = %q", edition.Data.Highlights[0].Why)
+	}
+	if edition.Data.Rhythm.DaysInPeriod == 0 || edition.Data.Rhythm.ActiveDays == 0 {
+		t.Errorf("rhythm = %+v, want a populated day grid", edition.Data.Rhythm)
+	}
+	if len(edition.Data.Tools) == 0 || edition.Data.Tools[0].Name != "web_search" {
+		t.Errorf("tools = %+v, want web_search counted", edition.Data.Tools)
+	}
 	if edition.CostUSD <= 0 {
 		t.Errorf("edition cost = %v, want the synthesis spend recorded", edition.CostUSD)
 	}
 	if cfg, _ := h.db.GetCometConfig(); cfg.LastGeneratedAt == nil {
 		t.Error("runCometGeneration should stamp last_generated_at on success")
+	}
+}
+
+// TestComputeCometRhythm checks the day/hour bucketing, including that the
+// peak and busiest day are picked from real counts.
+func TestComputeCometRhythm(t *testing.T) {
+	loc := tz.Location()
+	times := []time.Time{
+		time.Date(2026, 9, 1, 9, 0, 0, 0, loc),
+		time.Date(2026, 9, 1, 22, 0, 0, 0, loc),
+		time.Date(2026, 9, 3, 22, 0, 0, 0, loc),
+	}
+	r := computeCometRhythm("2026-09", times)
+	if r.DaysInPeriod != 30 {
+		t.Errorf("DaysInPeriod = %d, want 30", r.DaysInPeriod)
+	}
+	if r.ActiveDays != 2 {
+		t.Errorf("ActiveDays = %d, want 2", r.ActiveDays)
+	}
+	if r.Hours[22] != 2 || r.Hours[9] != 1 {
+		t.Errorf("Hours = %v, want 2 at 22 and 1 at 9", r.Hours)
+	}
+	if r.PeakHour != 22 {
+		t.Errorf("PeakHour = %d, want 22", r.PeakHour)
+	}
+	if r.BusiestCount != 2 || r.BusiestDate != "2026-09-01" {
+		t.Errorf("busiest = %d on %s, want 2 on 2026-09-01", r.BusiestCount, r.BusiestDate)
+	}
+	if len(r.Days) != 30 || r.Days[0].Date != "2026-09-01" {
+		t.Errorf("Days grid = %d entries starting %q", len(r.Days), func() string {
+			if len(r.Days) > 0 {
+				return r.Days[0].Date
+			}
+			return ""
+		}())
 	}
 }

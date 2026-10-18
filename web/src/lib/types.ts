@@ -755,8 +755,49 @@ export interface CometStar {
 	category: string;
 }
 
-// CometEditionData mirrors store.CometEditionData — the four fixed blocks
-// plus the framing bits.
+// CometHighlight is one conversation the synthesis pass picked as
+// defining the month.
+export interface CometHighlight {
+	thread_id: string;
+	title: string;
+	topic?: string;
+	why: string;
+}
+
+// CometDayCount is one calendar day's message count, for the heatmap.
+export interface CometDayCount {
+	date: string;
+	count: number;
+}
+
+// CometRhythm is the activity-rhythm block.
+export interface CometRhythm {
+	days: CometDayCount[];
+	active_days: number;
+	days_in_period: number;
+	hours: number[];
+	peak_hour: number;
+	busiest_date: string;
+	busiest_count: number;
+}
+
+// CometToolCount is one user-facing tool's period usage.
+export interface CometToolCount {
+	name: string;
+	count: number;
+}
+
+// CometGrowth is Constellation's month (all zero when Constellation is off).
+export interface CometGrowth {
+	new_stars: number;
+	grown_stars: number;
+	new_links: number;
+	featured?: CometStar;
+}
+
+// CometEditionData mirrors store.CometEditionData — the fixed blocks plus
+// the framing bits. Collections may arrive as null from older editions, so
+// the page always guards them with ?? [].
 export interface CometEditionData {
 	period_label: string;
 	stats: CometStats;
@@ -766,6 +807,11 @@ export interface CometEditionData {
 	stars: CometStar[];
 	star_total: number;
 	ghost_count: number;
+	highlights: CometHighlight[];
+	rhythm: CometRhythm;
+	tools: CometToolCount[];
+	growth: CometGrowth;
+	unresolved_count: number;
 }
 
 // CometEdition mirrors store.CometEdition — one assembled period page.
