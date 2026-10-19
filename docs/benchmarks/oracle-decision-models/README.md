@@ -6,20 +6,24 @@ person?", "is the user asking for something deep?") and quietly adjusts how the 
 decision model sits in front of every message, so it has to be **fast, cheap, and right**, in that
 order.
 
-This page records a full run of `polaris oracle-bench` across thirteen candidate models, and how to
+This page records a full run of `polaris oracle-bench` across fifteen candidate models, and how to
 repeat it.
 
-<p align="center"><img src="scorecard.svg" alt="Scorecard: thirteen decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
+<p align="center"><img src="scorecard.svg" alt="Scorecard: fifteen decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
 
 ## The short version
 
 - **Nobody beats Jev 1.14 on the thing that matters most: speed.** Its median call takes 152ms and
   every call finished inside Oracle's real 2.5s timeout. No other model matches both.
-- **Perplexity's 27B decider is the most accurate model (91.4),** and its lead over Jev 1.14 (87.8) is
+- **Perplexity's 27B decider v1.1 is the most accurate model (91.4),** and its lead over Jev 1.14 (87.8) is
   larger than the 2.5-point noise floor. But it takes 2.0s at the median and about **1 in 9 calls
   would miss Oracle's 2.5s cutoff** and silently turn Oracle off for that turn.
-- **Four models are statistically tied with Jev 1.14:** Liquid's **D1 Ultra (87.9)**, Microsoft Decision 1
-  (87.5), Jev 1.13 (86.5), and Mercury Decide's free tier (89.0). D1 Ultra is the strongest alternative: the
+- **Perplexity's newer Decider v1.2 trades accuracy for speed:** 86.5, about 5 points below v1.1 (a
+  statistical tie with Jev 1.14, not with v1.1), but 871ms at the median instead of 2.0s and about 7% of
+  calls past the 2.5s cutoff instead of 11%. It is still far slower than Jev, and it is weak on
+  `clarify` (50) and `emotional` (42).
+- **Five models are statistically tied with Jev 1.14:** Liquid's **D1 Ultra (87.9)**, Microsoft Decision 1
+  (87.5), Jev 1.13 (86.5), Perplexity Decider v1.2 (86.5), and Mercury Decide's free tier (89.0). D1 Ultra is the strongest alternative: the
   same score, 100% of calls under 2.5s, only about 85ms slower at the median, no weak question family,
   and it fixes Jev's weak spot (88 on `locale`, against Jev's 61). It is weaker at focus actions (90% vs
   98%), and that decision changes what Oracle actually does.
@@ -33,18 +37,20 @@ repeat it.
 - **Two models couldn't be fully scored:** Nace's Drex 2.0 rejects Oracle's 23-question call outright, and
   Upstage's regular Solar Decide takes 13 to 21 seconds per call. See
   [Models that couldn't be scored](#models-that-couldnt-be-scored).
-- **Paid Mercury Decide could not be scored.** 96% of its calls returned an upstream HTTP 429, so it is
-  disqualified for this run. That says nothing about its quality; see [Mercury](#mercury-decide).
+- **Paid Mercury Decide and Perplexity Decider Flash v1.2 could not be benchmarked.** Upstream HTTP 429s
+  hit 96% of Mercury's calls and all of Flash's, so both are disqualified for this run. That says nothing
+  about their quality; see [Mercury](#mercury-decide) and
+  [Perplexity Decider Flash v1.2](#perplexity-decider-flash-v12).
 
 Recommendation: **keep `typesafe/jev-1.14` pinned.** Details and caveats below.
 
 ## Results
 
-Runs of 2026-10-16: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
+Runs of 2026-10-16 and 2026-10-19: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
 separately), 3 repeats each, 2 calls in flight, weights `a6cbc140bd53`. The raw leaderboards are saved in
-[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in three
+[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in four
 invocations with identical settings (the first nine models, then Luna, then D1 Ultra, Classify 1 and
-Solar Flash); the report command refuses to merge runs that differ in cases, repeats, concurrency or
+Solar Flash, then on 2026-10-19 Perplexity's Decider v1.2 and Flash v1.2); the report command refuses to merge runs that differ in cases, repeats, concurrency or
 weights. The two earlier files in `runs/` (2026-10-15) used an older, smaller case bank and weights, so
 they are not comparable to these runs.
 
@@ -56,20 +62,22 @@ they are not comparable to these runs.
 | 4 | `typesafe/jev-1.14` (pinned) | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
 | 5 | `microsoft/microsoft-decision-1` | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
 | 6 | `typesafe/jev-1.13` | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
-| 7 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
-| 8 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 9 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 10 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 11 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
-| 12 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 7 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.081 |
+| 8 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 9 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 10 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 11 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 12 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 13 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
 | x | `inception/mercury-decide` | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
+| x | `perplexity/pplx-decider-flash-v1.2` | not benchmarkable | n/a | n/a | n/a | n/a | 100% | n/a | n/a | n/a | n/a |
 
 *Under 2.5s* is the share of all calls that returned an answer inside Oracle's real timeout
 (`oracleTimeout` in `gateway/oracle.go`); a call over that is dropped and the turn runs without Oracle.
 *$/1k turns* is the decision-call cost for 1,000 Oracle turns (one call each). Trigger and focus
 describe what production's rules *did* with the answer, not just the raw answer. The whole run cost
-**$2.91** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the last three), of which about
-$0.26 was the judge.
+**$3.00** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
+Perplexity's two new models), of which about $0.28 was the judge.
 
 ### Overall quality
 
@@ -78,8 +86,8 @@ The headline score on its own, with speed deliberately left out.
 <p align="center"><img src="overall-quality.svg" alt="Overall quality score by model with 95% intervals" width="860"></p>
 
 The intervals overlap heavily across the top six. With 274 scored cases, a gap under about 2.5 points is
-noise, so the honest reading is four tiers: **Perplexity and Mercury free** at the top, **D1 Ultra, Jev 1.14,
-Microsoft and Jev 1.13** tied just behind, **Luna, D1, Clef and Classify 1** clearly below, and **Clef Flash
+noise, so the honest reading is four tiers: **Perplexity v1.1 and Mercury free** at the top, **D1 Ultra, Jev 1.14,
+Microsoft, Jev 1.13 and Perplexity v1.2** tied just behind, **Luna, D1, Clef and Classify 1** clearly below, and **Clef Flash
 and Solar Flash** at the bottom.
 
 ### Accuracy against speed
@@ -90,7 +98,8 @@ actually enforces.
 <p align="center"><img src="accuracy-vs-latency.svg" alt="Scatter of score against median latency with Oracle's 2.5 second timeout marked" width="860"></p>
 
 Only Jev 1.14, Jev 1.13, D1 and Microsoft are both fast and consistent: their 95th-percentile call
-finishes well under half a second. Perplexity and Mercury free score highest, but their slowest
+finishes well under half a second. Perplexity (both versions) and Mercury free have a 95th-percentile call of
+3.7s to 4.3s; v1.1 and Mercury free score highest, but their slowest
 calls are exactly the ones Oracle throws away.
 
 <p align="center"><img src="latency.svg" alt="Median and 95th percentile latency per model" width="860"></p>
@@ -105,7 +114,8 @@ Cost is a rounding error at this scale: even the priciest models (Solar Flash an
 per 1,000 turns) cost cents in a heavy month. Note the bills run higher than the catalog's per-token prices
 suggest for several models (Classify 1 and Solar Flash especially), so compare the measured figures here, not
 the list prices. The frontier is only useful for the free-versus-paid question: Mercury
-free and Perplexity are the only models nothing beats on both price and score. Jev 1.14 is off the
+free and Perplexity v1.1 are the only models nothing beats on both price and score (v1.2 is cheaper than
+v1.1 at $0.081, but Mercury free beats it on both counts). Jev 1.14 is off the
 frontier on cost, which is the price of its speed.
 
 ### Refusals
@@ -133,7 +143,7 @@ actions, the contested-label cases, calibration, dangerous false nudges, and err
 
 <p align="center"><img src="metrics.svg" alt="Eight ranked panels, one per metric" width="860"></p>
 
-Two details worth knowing. Jev 1.14 is the **best of all twelve scored models at focus actions (98%)**, which is the
+Two details worth knowing. Jev 1.14 is the **best of all thirteen scored models at focus actions (98%)**, which is the
 decision that changes what Oracle *does* rather than what it says. And every model but one keeps dangerous
 false nudges to about 1% or less. The exception is Solar Flash at 4% (14 of 391 opportunities), close to the 5%
 disqualification line.
@@ -150,6 +160,7 @@ Where a model is unusually weak (25+ points below its own overall score):
   a real gap rather than a hard question; Jev 1.13, Microsoft, D1 and Clef sit at 60 to 62 too.
 - **Microsoft Decision 1:** `clarify` (43), `locale` (62) and `private_person` (62).
 - **Mercury free:** `clarify` (62) and `emotional` (43).
+- **Perplexity Decider v1.2:** `clarify` (50) and `emotional` (42).
 - **Clef:** `emotional` (42).
 - **Luna:** `depth` (56), `emotional` (41) and `private_person` (48, mostly refusals).
 - **D1 Ultra:** none. Its lowest families are `emotional` (63) and `contested` (66), both within 25 points of its
@@ -162,13 +173,15 @@ Where a model is unusually weak (25+ points below its own overall score):
 Judged on the operator's stated priorities (speed first, then accuracy):
 
 1. **Keep Jev 1.14.** It is the fastest model tested, 100% inside the timeout, best at focus actions,
-   and tied on score with every model except Perplexity. The 1.14 over 1.13 gain (87.8 vs 86.5) is
+   and tied on score with every model except Perplexity v1.1. The 1.14 over 1.13 gain (87.8 vs 86.5) is
    inside the noise, so the decision to pin 1.14 stands but is not a strong claim.
 2. **If Jev ever needs replacing, try D1 Ultra first.** Same score, 100% inside the timeout, about 85ms
    slower at the median, about 12% cheaper, no weak question family, and it handles `locale` far better
    than Jev. The cost is focus actions (90% vs 98%). Microsoft Decision 1 is the next choice (same score,
    cheaper, but weak on `clarify`, `locale` and `private_person`).
-3. **Perplexity only wins if Oracle's timeout is raised.** To use it without dropping turns, the 2.5s
+3. **Perplexity only wins if Oracle's timeout is raised.** v1.2 is the faster of the two (871ms median,
+   about 7% of calls past 2.5s) but gives up the accuracy lead: it ties Jev on score at 6x the median
+   latency, so it has no reason to replace Jev. v1.1 is the accurate one. To use v1.1 without dropping turns, the 2.5s
    cutoff would have to rise to roughly 4s, which adds seconds of dead air before every answer. At
    today's 2.5s it would turn Oracle off for about 11% of turns. Not recommended.
 4. **Skip Luna.** Fast (243ms median) but 5.5 points behind Jev 1.14, about 2.6x the cost per turn,
@@ -188,6 +201,17 @@ Judged on the operator's stated priorities (speed first, then accuracy):
 - **`upstage/solar-decide`** (the regular, non-Flash model) answers correctly (79.9 on a 6-case probe) but
   takes 13 to 21 seconds per call, about 100x Oracle's 2.5s timeout, and it timed out at the bench's 15s
   limit on most of a 12-case smoke test. It was not run in full: there is no way for it to be usable here.
+
+### Perplexity Decider Flash v1.2
+
+`perplexity/pplx-decider-flash-v1.2` (a 4B-parameter sibling of Decider v1.2, $0.01 per million input
+tokens) is **not benchmarkable right now**. Every call, 885 of 885 in the full run and again in a separate
+5-call probe, returned `HTTP 429 Token rate limit exceeded` from the upstream provider, so it is shown as
+disqualified (100% errors) rather than scored. The model ID is valid (OpenRouter's endpoints API returns
+it) and it is not an unsupported-question-format problem; the limit is on the provider side for our
+account. That says nothing about its quality, and it was not retried. Like the other decision models it is
+hidden from OpenRouter's public `/models` list (output modality `decisions`), so look it up through
+`/api/v1/models/perplexity/pplx-decider-flash-v1.2/endpoints`.
 
 ### Mercury Decide
 
@@ -240,16 +264,22 @@ Mercury has two entries and neither is a clean result:
 
 ```bash
 # one invocation so every model sees the same cases, weights and load
-# (Luna, then D1 Ultra, Classify 1 and Solar Flash, were later invocations with the same flags)
+# (Luna, then D1 Ultra, Classify 1 and Solar Flash, then perplexity/pplx-decider-v1.2 and
+# perplexity/pplx-decider-flash-v1.2, were later invocations with the same flags)
 polaris oracle-bench --repeats 3 --seed 1 --concurrency 2 --timeout 15s \
   --label "full run" \
   --models typesafe/jev-1.14,typesafe/jev-1.13,liquid/d1,microsoft/microsoft-decision-1,cloudflare/clef-flash,cloudflare/clef,inception/mercury-decide,inception/mercury-decide:free,perplexity/pplx-decider-v1.1-27b
 
 # regenerate every chart and results.md from the saved leaderboard
 polaris oracle-bench report \
-  --run docs/benchmarks/oracle-decision-models/runs/<first>.json,docs/benchmarks/oracle-decision-models/runs/<second>.json \
+  --run docs/benchmarks/oracle-decision-models/runs/<first>.json,docs/benchmarks/oracle-decision-models/runs/<second>.json,... \
   --calls 'oraclebench/results/*-calls.jsonl'
 ```
+
+`--calls` **rewrites `call-stats.json` from only the logs it matches**, and those raw logs are gitignored, so
+a fresh checkout has only the latest run's. When adding a model, tally just its own log, then merge the new
+entries into the committed `call-stats.json` by hand and re-run `report` *without* `--calls`; passing the
+glob against a partial set of logs silently drops every other model's timeout and refusal share.
 
 The run saves its leaderboard to `runs/` on its own, and `report` saves the per-model call tallies (timeout
 share, refusals by family) to `call-stats.json` so charts can be rebuilt without the raw log. Do not edit `prompts.yaml` or pull while a run is
