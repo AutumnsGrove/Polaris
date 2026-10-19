@@ -193,14 +193,19 @@ var Registry = []config.ModelConfig{
 		// Diffusion-based (dLLM), not autoregressive — generates/refines
 		// tokens in parallel instead of one at a time, which is the whole
 		// reason it's here: a speed comparison against the sequential
-		// models above. Text-only per live OpenRouter endpoint metadata
+		// models above. Bumped from Mercury 2.5 (2026-10-19) with the same
+		// ID kept stable so existing thread selections and
+		// model_overrides.mercury keep resolving, same pattern as the MiMo
+		// and DeepSeek bumps above. Per a live GET /api/v1/models/
+		// inception/mercury-3/endpoints survey: text-only
 		// (input_modalities: ["text"] only), single-provider (Inception
-		// itself, 99.99% 1-day uptime per GET /api/v1/models/inception/
-		// mercury-2.5-20260908/endpoints), full tool_choice support
-		// (none/auto/required/function all true).
+		// itself, ~97.8% 1-day uptime), 1M-token context (up from 2.5's
+		// 260K), full tool_choice support (none/auto/required/function all
+		// true), implicit caching. It costs ~2.5x Mercury 2.5 ($0.10/$0.35
+		// per M vs. $0.04/$0.15) — still among the cheapest here.
 		ID:          "mercury",
-		Name:        "Mercury 2.5",
-		Model:       "inception/mercury-2.5",
+		Name:        "Mercury 3",
+		Model:       "inception/mercury-3",
 		Provider:    []string{"inception"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
@@ -208,7 +213,7 @@ var Registry = []config.ModelConfig{
 			Enabled: true,
 			Effort:  "medium",
 		},
-		Pricing: &config.PricingConfig{PromptPerM: 0.04, CompletionPerM: 0.15},
+		Pricing: &config.PricingConfig{PromptPerM: 0.10, CompletionPerM: 0.35},
 	},
 	{
 		// Replaces ling-flash-vl (2026-10-05): inclusionai/ling-3.0-flash-

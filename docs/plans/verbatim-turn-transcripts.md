@@ -126,7 +126,7 @@ a cache hit**. Only the final answer and the new message are uncached. That's th
 - The `full_turn_history` setting: `settings.go`, the `SettingsPanel.svelte` toggle,
   `settings.svelte.ts`, `ClientMessage.FullTurnHistoryOverride`, `AskRequest.FullTurnHistory`.
 - `effectiveContextWindowTokens`. `config.ContextWindowTokens` defaults to **200 000** (config.go
-  plus both `config.yaml.example` files). The smallest registry window is Mercury 2.5 at 260K.
+  plus both `config.yaml.example` files). The smallest registry window is Mercury 3 at 1M.
 - `gateway/history_replay.go` shrinks to the legacy-turn fallback only: always on for turns without
   a transcript, no longer behind a setting. `appendCitedSources` and `StripFakeSourcesNote` stay
   while legacy turns can still show up in history, and apply only to those turns. New turns never
