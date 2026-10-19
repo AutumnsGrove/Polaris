@@ -67,49 +67,54 @@ var Registry = []config.ModelConfig{
 	// store/store.go's schema comment and migration for the retirement
 	// of that reference too.
 	{
-		// Deprecates the old V4 Flash "deepseek" entry (2026-09-22) —
-		// deepseek/deepseek-v4-flash-0731 with its five-deep Baidu/
-		// DeepInfra/StreamLake/BaseTen/Novita fallback chain — in favor of
-		// V4.1 Flash. Reused the "deepseek" ID (rather than dropping the
-		// separate "deepseek-v41-flash" ID) so existing thread selections
-		// and config.yaml's default_model/model_overrides keep resolving
-		// across the swap, same ID-stability approach as the MiMo v2.6
-		// replacement above.
+		// DeepSeek V4.1 Flash, moved onto the dated snapshot
+		// deepseek/deepseek-v4.1-flash-1017 (2026-10-19). The "deepseek"
+		// ID is kept across the swap — it's the shipped default_model, so
+		// existing thread selections and config.yaml's default_model/
+		// model_overrides must keep resolving — same ID-stability approach
+		// as the MiMo v2.6 and Mercury 3 bumps.
 		//
-		// Per a live GET /api/v1/models/deepseek/deepseek-v4.1-flash/
-		// endpoints survey (originally 2026-09-12, re-confirmed
-		// 2026-09-22). Genuinely multimodal per
-		// architecture.input_modalities (["text","image"]), unlike the V4
-		// Flash entry it replaces.
+		// Per a live GET /api/v1/models/deepseek/deepseek-v4.1-flash-1017/
+		// endpoints survey: genuinely multimodal per
+		// architecture.input_modalities (["text","image"]), 1M-token
+		// context on every route below, pinged with an identical
+		// ~3.2k-token prefix twice per provider, each pinned with
+		// allow_fallbacks:false. All three answered, all three hit their
+		// prompt cache on the second call (~99% of tokens cached), all
+		// three billed exactly their listed rates, and all three were at
+		// 100% 1-day uptime when surveyed:
 		//
-		// Provider order, re-surveyed and live-spiked 2026-09-30 (pinned
-		// each with allow_fallbacks:false, ~12.8k-token prefix, 3 calls):
-		// DeepInfra (fp8, $0.14/$0.42, $0.0042/M cache reads) first, then
-		// StreamLake (fp8, $0.147/$0.588, $0.00294/M reads), AtlasCloud
-		// (fp8, $0.114/$0.456, $0.0114/M reads), Fireworks (flat
-		// $0.22/$0.66; the "fireworks" tag, not "fireworks/us" at 2x), and
-		// the official route last. All five hit their prompt cache on the
-		// second identical request (~99% of tokens cached) and billed
-		// exactly the listed rates. Cache reads dominate an agent thread's
-		// cost, so they drove the ranking, not input price: per 100k
-		// cached + 5k fresh + 2k out, DeepInfra ~0.196c, StreamLake ~0.221c,
-		// official off-peak ~0.225c, official peak ~0.45c. Several
-		// cheap-input endpoints (Wafer, Relace, Io Net, CoreWeave) lose to
-		// the official route because their cache reads are 3-13x higher.
+		//   DeepInfra fp8   $0.098 / $0.294 per M, $0.00294/M cache reads
+		//   Cloudflare      $0.10  / $0.60  per M, $0.003/M   cache reads
+		//   DeepSeek        $0.15  / $0.60  per M, $0.003/M   cache reads
 		//
-		// Official is last, not excluded: it is the fastest (~123 tok/s vs
-		// ~40-60 for the third-party fp8 tier) and most reliable (99.99%
-		// uptime), but its pricing.overrides double the rate to
+		// Order is DeepInfra, then Cloudflare, then DeepSeek's own route
+		// (trimmed from the previous five-deep chain). Cache reads dominate
+		// an agent thread's cost, and DeepInfra and Cloudflare sit within
+		// 2% of each other on them, so input/completion price decides the
+		// top two — DeepInfra wins both. Cloudflare is the mid-rung on
+		// rate rather than on reputation: flat $0.10/$0.60 with no
+		// time-of-day surcharge, so it stays under the official route's
+		// cost even at DeepSeek's off-peak price.
+		//
+		// The official route is last, not excluded: it doubles to
 		// $0.30/$1.20/$0.006 on weekdays 01:00-04:00 and 06:00-10:00 UTC
-		// (~21% of the week); otherwise $0.15/$0.60/$0.003. DeepInfra and
-		// StreamLake list a `discount` (30%/51%) on their endpoints; if
-		// those are promotional, re-run the survey when they lapse. Don't
-		// copy this order onto other models without re-running the survey —
-		// pricing shape differs per model.
+		// (~21% of the week) via pricing.overrides, and its
+		// supports_tool_choice only covers none/auto — required and
+		// function are false there, so a forced-tool call (Comet's trends
+		// extraction is the one caller) would fail on it. It's still the
+		// wide-context / highest-throughput route, which is why it's kept
+		// rather than dropped. DeepInfra also lists deepinfra/fp8/flex
+		// ($0.0784/$0.2352) and deepinfra/fp8/priority ($0.147/$0.441);
+		// this entry takes the plain fp8 tier, same as before. DeepInfra's
+		// endpoints carry a `discount` (51%); if that's promotional,
+		// re-survey when it lapses. Don't copy this order onto other
+		// models without re-running the survey — pricing shape differs per
+		// model.
 		ID:          "deepseek",
 		Name:        "DeepSeek V4.1 Flash",
-		Model:       "deepseek/deepseek-v4.1-flash",
-		Provider:    []string{"deepinfra/fp8", "streamlake/fp8", "atlas-cloud/fp8", "fireworks", "deepseek"},
+		Model:       "deepseek/deepseek-v4.1-flash-1017",
+		Provider:    []string{"deepinfra/fp8", "cloudflare", "deepseek"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{
@@ -117,8 +122,8 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
-		// Primary route's (DeepInfra) list rate; see the comment above.
-		Pricing: &config.PricingConfig{PromptPerM: 0.14, CompletionPerM: 0.42},
+		// Primary route's (DeepInfra fp8) list rate; see the comment above.
+		Pricing: &config.PricingConfig{PromptPerM: 0.098, CompletionPerM: 0.294},
 	},
 	{
 		// Claude Haiku 5.5 (2026-10-08). Per GET /api/v1/models/anthropic/
