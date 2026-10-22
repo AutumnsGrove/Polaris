@@ -69,8 +69,8 @@ tmdb:
 default_location: ""
 
 voice:
-  stt_model: "mistralai/voxtral-mini-transcribe"
-  stt_fallback_model: "openai/whisper-large-v3"
+  stt_model: "mistralai/voxtral-small-transcribe-3-0"
+  stt_fallback_model: "mistralai/voxtral-mini-transcribe"
   tts_model: "hexgrad/kokoro-82m"
   tts_voice: "bf_lily"
   tts_format: "mp3"

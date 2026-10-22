@@ -165,7 +165,9 @@ type Config struct {
 
 	Voice struct {
 		// STTModel/STTFallbackModel are OpenRouter model slugs for push-to-talk
-		// transcription.
+		// transcription. The fallback is deliberately the previous generation of
+		// the same model family rather than a different vendor's — a Voxtral
+		// serving hiccup shouldn't also change the transcript's shape/wording.
 		STTModel         string `yaml:"stt_model"`
 		STTFallbackModel string `yaml:"stt_fallback_model"`
 
@@ -534,10 +536,10 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 		cfg.Service.Label = "polaris"
 	}
 	if cfg.Voice.STTModel == "" {
-		cfg.Voice.STTModel = "mistralai/voxtral-mini-transcribe"
+		cfg.Voice.STTModel = "mistralai/voxtral-small-transcribe-3-0"
 	}
 	if cfg.Voice.STTFallbackModel == "" {
-		cfg.Voice.STTFallbackModel = "openai/whisper-large-v3"
+		cfg.Voice.STTFallbackModel = "mistralai/voxtral-mini-transcribe"
 	}
 	if cfg.Voice.TTSModel == "" {
 		cfg.Voice.TTSModel = "hexgrad/kokoro-82m"

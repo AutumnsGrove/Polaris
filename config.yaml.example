@@ -56,8 +56,8 @@ default_location: ""   # e.g. "Seattle, WA" or "47.6062, -122.3321"
 # (no local sidecar processes — this is a stateless web app, not a
 # persistent companion process like her-go).
 voice:
-  stt_model: "mistralai/voxtral-mini-transcribe"
-  stt_fallback_model: "openai/whisper-large-v3"   # tried once if the primary model times out/errors
+  stt_model: "mistralai/voxtral-small-transcribe-3-0"
+  stt_fallback_model: "mistralai/voxtral-mini-transcribe"   # tried once if the primary model times out/errors
   tts_model: "hexgrad/kokoro-82m"
   tts_voice: "bf_lily"   # default voice until one is picked in Settings (bf_lily, af_sky, am_onyx, bm_daniel)
   tts_format: "mp3"      # OpenRouter's Kokoro endpoint only documents mp3/pcm
