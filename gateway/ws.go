@@ -242,6 +242,22 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			return // client disconnected or sent garbage
 		}
 
+		// App-level heartbeat, distinct from the gorilla-level ping/pong
+		// keepalive above: that one is transport-only (the browser answers it
+		// internally and no JS ever sees it) and fires every 54s, far too slow
+		// to read as a pulse. The frontend pings every 2s instead and draws one
+		// beat in the sidebar's connection trace per pong (see ws.ts's
+		// HEARTBEAT_MS and Sidebar.svelte's .trace) — so what's on screen is a
+		// measurement of this socket rather than an animation that would keep
+		// looping even if the connection had silently stopped answering.
+		//
+		// Must be handled here, before TryStartTurn below: a "ping" carries no
+		// Content and would otherwise be taken for a turn.
+		if msg.Type == "ping" {
+			send(ServerEvent{Type: "pong"})
+			continue
+		}
+
 		if msg.Type == "stop" {
 			cancelMu.Lock()
 			if current != nil {

@@ -26,10 +26,11 @@ type AttachmentRef struct {
 // the original content unchanged; editing sends the revised text.
 type ClientMessage struct {
 	// Type is "message" for a normal turn, "stop" to cancel one in flight,
-	// or "location_response" replying to a server-initiated
-	// "location_request" (see ServerEvent's doc comment below) — only
-	// UserLocation is read for that last one, empty meaning denied/
-	// unavailable/timed out rather than "field omitted".
+	// "location_response" replying to a server-initiated
+	// "location_request" (see ServerEvent's doc comment below), or "ping"
+	// for the sidebar's connection heartbeat (answered with a "pong").
+	// Only UserLocation is read for the location_response one, empty meaning
+	// denied/unavailable/timed out rather than "field omitted".
 	Type       string `json:"type"`
 	ThreadID   string `json:"thread_id,omitempty"`
 	Content    string `json:"content"`

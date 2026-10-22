@@ -147,6 +147,16 @@ export class AppState {
 	// away. newThread() clears it too, since it supersedes any in-flight load.
 	threadLoading = $state(false);
 	connected = $state(false);
+	// One entry per answered heartbeat ping, newest last — the sidebar's
+	// connection trace draws one travelling beat per entry (Sidebar.svelte's
+	// .trace). Capped at 3 because a beat takes 6s to cross the box while a
+	// ping goes out every 2s (ws.ts's HEARTBEAT_MS): by the time a fourth
+	// lands, the first is already past the box's right edge, so keeping it
+	// would only pile up invisible elements. Cleared the moment the socket
+	// closes, so a reconnecting trace shows a broken line instead of beats
+	// still arriving from nowhere.
+	heartbeats = $state<number[]>([]);
+	private beatSeq = 0;
 	busy = $state(false);
 	totalCost = $state(0);
 	// Version polling lives in VersionState; these delegates keep the
@@ -334,9 +344,22 @@ export class AppState {
 	constructor() {
 		this.socket = new AgentSocket(
 			(e) => this.handleEvent(e),
-			(connected) => (this.connected = connected),
-			() => this.resyncAfterReconnect()
+			(connected) => {
+				this.connected = connected;
+				if (!connected) this.heartbeats = [];
+			},
+			() => this.resyncAfterReconnect(),
+			() => this.noteHeartbeat()
 		);
+	}
+
+	// A pong came back (see ws.ts's startHeartbeat). Appending rather than
+	// replacing is what makes the trace travel: each entry mounts a fresh
+	// element, whose CSS animation starts running at that moment.
+	private noteHeartbeat() {
+		this.beatSeq += 1;
+		const next = [...this.heartbeats, this.beatSeq];
+		this.heartbeats = next.length > 3 ? next.slice(next.length - 3) : next;
 	}
 
 	// Fires after the socket drops and reconnects. If a turn was in flight

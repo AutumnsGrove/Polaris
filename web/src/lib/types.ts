@@ -225,6 +225,12 @@ export interface ResearchPlan {
 }
 
 export type ServerEvent =
+	// Reply to a "ping" ClientMessage — the sidebar's connection heartbeat
+	// consumes this in ws.ts and never forwards it to the app's event switch
+	// (see state.svelte.ts's handleEvent). "pong" is not a synonym for the
+	// WebSocket protocol's own ping/pong frames, which the browser answers
+	// internally and no JS ever sees.
+	| { type: 'pong' }
 	// agent_id (on this and the tool_call/tool_result/commentary variants below)
 	// is set only on a Deep Research sub-agent's events: the timeline files
 	// them under that agent's own 'subagent' item instead of the main list.
@@ -508,7 +514,10 @@ export type ClientMessage =
 	// way the server treats "no answer" as normal and falls back to its
 	// own default, so this should be sent promptly rather than held back
 	// waiting for a "good" answer.
-	| { type: 'location_response'; user_location?: string };
+	| { type: 'location_response'; user_location?: string }
+	// The sidebar's connection heartbeat (ws.ts sends one every 2s while the
+	// socket is open; the server answers 'pong'). Carries nothing.
+	| { type: 'ping' };
 
 // 'off' isn't a selectable mode in the sheet — it's just what focusMode
 // resets to when the active mode is tapped again to turn it off.
