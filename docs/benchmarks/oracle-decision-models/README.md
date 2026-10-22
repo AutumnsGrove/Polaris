@@ -46,29 +46,31 @@ Recommendation: **keep `typesafe/jev-1.14` pinned.** Details and caveats below.
 
 ## Results
 
-Runs of 2026-10-16 and 2026-10-19: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
+Runs of 2026-10-16, 2026-10-19 and 2026-10-22: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
 separately), 3 repeats each, 2 calls in flight, weights `a6cbc140bd53`. The raw leaderboards are saved in
-[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in four
+[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in five
 invocations with identical settings (the first nine models, then Luna, then D1 Ultra, Classify 1 and
-Solar Flash, then on 2026-10-19 Perplexity's Decider v1.2 and Flash v1.2); the report command refuses to merge runs that differ in cases, repeats, concurrency or
+Solar Flash, then on 2026-10-19 Perplexity's Decider v1.2 and Flash v1.2, then on 2026-10-22 Baseten's
+Mammoth 1, paced at one call per 3.5s because it is a `:free` model; see [Reproduce it](#reproduce-it)); the report command refuses to merge runs that differ in cases, repeats, concurrency or
 weights. The two earlier files in `runs/` (2026-10-15) used an older, smaller case bank and weights, so
 they are not comparable to these runs.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
 |--:|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
 | 1 | `perplexity/pplx-decider-v1.1-27b` | **91.4** (87.7-94.4) | 97% | 98% | 95% | 0% | 1% | 2.0s | 3.7s | 88.9% | $0.115 |
-| 2 | `inception/mercury-decide:free` | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | free |
-| 3 | `liquid/d1-ultra` | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
-| 4 | `typesafe/jev-1.14` (pinned) | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
-| 5 | `microsoft/microsoft-decision-1` | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
-| 6 | `typesafe/jev-1.13` | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
-| 7 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.081 |
-| 8 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
-| 9 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 10 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 11 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 12 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
-| 13 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 2 | `baseten/mammoth-1:free` | **90.1** (87.1-92.9) | 97% | 97% | 92% | 0% | 0% | 621ms | 1.1s | 99.4% | free |
+| 3 | `inception/mercury-decide:free` | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | free |
+| 4 | `liquid/d1-ultra` | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
+| 5 | `typesafe/jev-1.14` (pinned) | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
+| 6 | `microsoft/microsoft-decision-1` | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
+| 7 | `typesafe/jev-1.13` | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
+| 8 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.081 |
+| 9 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 10 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 11 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 12 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 13 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 14 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
 | x | `inception/mercury-decide` | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 | x | `perplexity/pplx-decider-flash-v1.2` | not benchmarkable | n/a | n/a | n/a | n/a | 100% | n/a | n/a | n/a | n/a |
 
@@ -76,8 +78,8 @@ they are not comparable to these runs.
 (`oracleTimeout` in `gateway/oracle.go`); a call over that is dropped and the turn runs without Oracle.
 *$/1k turns* is the decision-call cost for 1,000 Oracle turns (one call each). Trigger and focus
 describe what production's rules *did* with the answer, not just the raw answer. The whole run cost
-**$3.00** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
-Perplexity's two new models), of which about $0.28 was the judge.
+**$3.01** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
+Perplexity's two new models, $0.01 for Mammoth, which is free and cost only its judging), of which about $0.29 was the judge.
 
 ### Overall quality
 
@@ -275,6 +277,13 @@ polaris oracle-bench report \
   --run docs/benchmarks/oracle-decision-models/runs/<first>.json,docs/benchmarks/oracle-decision-models/runs/<second>.json,... \
   --calls 'oraclebench/results/*-calls.jsonl'
 ```
+
+`:free` models are paced automatically (`--free-interval`, default 3.5s between calls, about 52 minutes
+for a full run). OpenRouter limits free models to roughly 20 calls a minute across the whole account, and
+the bench never retries a 429, so an unpaced free model is disqualified for our account's limit rather than
+its own quality. There is also a daily cap of 1000 free-model requests per key (`GET /api/v1/key` reports
+it as `free_model_daily_requests`), so run one free model per day. The wait is outside the latency timer, so
+it does not affect measured latency.
 
 `--calls` **rewrites `call-stats.json` from only the logs it matches**, and those raw logs are gitignored, so
 a fresh checkout has only the latest run's. When adding a model, tally just its own log, then merge the new
