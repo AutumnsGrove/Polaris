@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heartbeat sweep — beats on screen at once</title>
+<!--
+  Follow-on from B (sweep, 38 wide) in mockups/status-indicator-heartbeat-box.html.
+
+  The knobs are: how often a beat is born (tied to the ping, 2s) and how long it
+  takes to cross the box (travel time). Travel = k x 2s puts k beats on screen at
+  once, evenly spaced, and slows the drift as k grows:
+
+      1 beat   2s travel   19 px/s, one at a time
+      2 beats  4s travel    9.5 px/s, ~20px apart   <- the ask
+      3 beats  6s travel    6.3 px/s, ~14px apart
+
+  Because the box is 38 wide with ~36px of usable inner width, 2 beats sit about
+  20px apart and 3 about 13px apart. Nothing here is decorative: each beat is a
+      ping that actually came back (see the footer note).
+
+  Strip is the real 260px footer, tokens from web/src/app.css. "freeze" stops
+  every animation so the spacing can be judged as a still.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Asimovian&family=Lexend:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-bg: oklch(15% 0.014 65);
+    --color-surface: oklch(19% 0.014 65);
+    --color-surface-2: oklch(23% 0.016 65);
+    --color-surface-3: oklch(28% 0.018 65);
+    --color-border: oklch(30% 0.016 65);
+    --color-border-strong: oklch(40% 0.02 65);
+    --color-text: oklch(93% 0.01 75);
+    --color-text-dim: oklch(64% 0.014 70);
+    --color-accent: oklch(82% 0.17 78);
+    --shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+    --shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+    --radius-sm: 6px;
+    --radius-lg: 16px;
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+    --space-2xl: 32px;
+    --font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  :root[data-theme='light'] {
+    --color-bg: oklch(97% 0.008 75);
+    --color-surface: oklch(99% 0.004 80);
+    --color-surface-2: oklch(95% 0.01 75);
+    --color-surface-3: oklch(91% 0.012 75);
+    --color-border: oklch(87% 0.012 75);
+    --color-border-strong: oklch(78% 0.016 75);
+    --color-text: oklch(24% 0.016 60);
+    --color-text-dim: oklch(46% 0.018 60);
+    --color-accent: oklch(54% 0.17 68);
+    --shadow-well: inset 0 1px 3px rgba(50, 40, 28, 0.16), inset 0 0 0 1px rgba(50, 40, 28, 0.08);
+    --shadow-md: 0 8px 24px -8px rgba(60, 48, 32, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: var(--space-2xl) var(--space-lg);
+    background: var(--color-bg); color: var(--color-text);
+    font-family: var(--font-sans); font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1240px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: var(--space-lg); flex-wrap: wrap; }
+  h1 { font-family: var(--font-wordmark); font-weight: 400; font-size: 24px; letter-spacing: 0.02em; margin: 0; }
+  .btns { margin-left: auto; display: flex; gap: var(--space-sm); }
+  .btn {
+    font: inherit; font-size: 12px; color: var(--color-text-dim);
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  }
+  .btn:hover { color: var(--color-text); border-color: var(--color-border-strong); }
+  .btn[aria-pressed='true'] { color: var(--color-text); border-color: var(--color-accent); }
+  .lede { color: var(--color-text-dim); font-size: 13.5px; line-height: 1.65; max-width: 88ch; margin: var(--space-md) 0 0; }
+  .lede b { color: var(--color-text); font-weight: 500; }
+  .lede code, .note code, .footer code {
+    font-family: var(--font-mono); font-size: 0.92em;
+    background: var(--color-surface-2); padding: 1px 5px; border-radius: 4px;
+  }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(356px, 1fr)); gap: var(--space-xl); margin-top: var(--space-xl); }
+  .card { background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-lg) var(--space-lg) var(--space-md); box-shadow: var(--shadow-md); }
+  .card-head { display: flex; align-items: baseline; gap: var(--space-sm); }
+  .tag { font-family: var(--font-wordmark); font-size: 15px; color: var(--color-accent); line-height: 1; }
+  .card-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .dims { font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text-dim); opacity: 0.6; margin-left: auto; }
+  .idea { font-size: 12.5px; line-height: 1.6; color: var(--color-text-dim); margin: var(--space-sm) 0 var(--space-lg); }
+  .idea b { color: var(--color-text); font-weight: 500; }
+
+  .state-label {
+    font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--color-text-dim); opacity: 0.6; margin: 0 0 var(--space-xs);
+  }
+  .state-label + .strip { margin-bottom: var(--space-md); }
+
+  .strip {
+    width: 260px;
+    display: flex; align-items: center; gap: var(--space-sm);
+    padding: var(--space-md);
+    box-shadow: var(--shadow-well);
+    font-size: 12px; color: var(--color-text-dim);
+    white-space: nowrap; position: relative;
+  }
+  .fill { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .foot { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .ib {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: var(--space-sm); border-radius: var(--radius-sm); color: var(--color-text-dim);
+  }
+
+  /* ---------------- the box ---------------- */
+  .box { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; }
+  .tr { display: block; overflow: visible; color: var(--color-accent); }
+  .tr.down { color: var(--color-text-dim); opacity: 0.55; }
+
+  .box.hair {
+    width: 38px; height: 18px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+
+  /* sweep: k beats alive at once = travel time / 2s */
+  .box.sweep { overflow: hidden; }
+  .sweep .base { fill: none; stroke: currentColor; stroke-width: 1; stroke-linecap: round; opacity: 0.3; }
+  .sweep .beat { transform-box: view-box; animation: travel var(--t) linear infinite; }
+  .sweep .beat path { fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+  .sweep .b2 { animation-delay: calc(var(--t) / -2); }
+  .sweep .b3 { animation-delay: calc(var(--t) / -3); }
+  .sweep .b4 { animation-delay: calc(var(--t) / -3 * 2); }
+
+  @keyframes travel {
+    from { transform: translateX(-8px); }
+    to   { transform: translateX(48px); }
+  }
+
+  /* ageing: the newest beat is bright, the older ones dim as they drift right */
+  .sweep.age .beat { animation:
+      travel var(--t) linear infinite,
+      age var(--t) linear infinite; }
+  .sweep.age .b2 { animation-delay: calc(var(--t) / -2), calc(var(--t) / -2); }
+  @keyframes age {
+    from { opacity: 1; }
+    to   { opacity: 0.28; }
+  }
+
+  .note { font-size: 11.5px; line-height: 1.6; color: var(--color-text-dim); margin: var(--space-md) 0 var(--space-xs); }
+  .note .k { color: var(--color-text); font-weight: 500; }
+  .note.warn { opacity: 0.92; }
+
+  .section-title { margin: var(--space-2xl) 0 0; font-size: 15px; font-weight: 600; }
+  .hint { margin: var(--space-xs) 0 0; font-size: 12.5px; color: var(--color-text-dim); line-height: 1.6; max-width: 82ch; }
+
+  .ladder { display: flex; flex-direction: column; gap: var(--space-xl); margin-top: var(--space-lg); }
+  .ladder .label {
+    font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--color-text-dim); opacity: 0.6; margin-bottom: var(--space-md);
+  }
+  .scale-wrap { display: flex; align-items: flex-start; }
+  .scale-wrap .strip { transform-origin: left top; }
+
+  .footer {
+    margin-top: var(--space-2xl); padding-top: var(--space-lg);
+    border-top: 1px solid var(--color-border);
+    font-size: 12px; color: var(--color-text-dim); line-height: 1.7; max-width: 100ch;
+  }
+  .footer b { color: var(--color-text); font-weight: 500; }
+
+  /* freeze: judge the spacing as a still frame */
+  body.freeze *, body.freeze *::before, body.freeze *::after {
+    animation-play-state: paused !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<template id="i-comet"><span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span></template>
+<template id="i-help"><span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span></template>
+<template id="i-gear"><span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span></template>
+
+<main>
+  <div class="top">
+    <h1>Beats on screen at once</h1>
+    <div class="btns">
+      <button class="btn" id="freezeBtn" type="button" aria-pressed="false">freeze</button>
+      <button class="btn" id="themeBtn" type="button">light theme</button>
+    </div>
+  </div>
+  <p class="lede">
+    Two knobs: how often a beat is born (the ping — 2s) and how long it takes to cross the box. Travel time
+    = k × 2s puts <b>k beats on screen at once</b>, evenly spaced, and slows the drift as k grows. Because
+    the box is 38 wide, two beats land about <b>20px apart</b> and three about 14px.
+  </p>
+
+  <div class="cards">
+
+    <!-- 1 -->
+    <div class="card">
+      <div class="card-head"><span class="tag">1</span><h2>One beat · 2s</h2><span class="dims">19 px/s</span></div>
+      <p class="idea">
+        The original: a beat appears at the left, crosses, leaves before the next arrives. Punctuated —
+        <b>a single tick moving</b>. Reads as an event each time it starts.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair sweep" style="--t: 2s">
+          <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+            <path class="base" d="M2 10.5 L42 10.5"/>
+            <g class="beat b1"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+          </svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">reconnecting…</span>
+        <span class="box hair" style="width:38px">
+          <svg class="tr down" width="32" height="16" viewBox="0 0 44 16"><path d="M2 10.5 L22 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M26 10.5 L42 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/></svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note"><span class="k">Feel:</span> alert, slightly busy — there's a small pause between
+        passes, so it reads as "something keeps happening" rather than "a screen is running".</p>
+    </div>
+
+    <!-- 2 -->
+    <div class="card">
+      <div class="card-head"><span class="tag">2</span><h2>Two beats · 4s</h2><span class="dims">9.5 px/s</span></div>
+      <p class="idea">
+        Slower drift, so a new beat is born before the last one leaves — <b>two on screen, ~20px apart</b>,
+        always. Much calmer than 1: the box stops looking like it's flashing and starts looking like
+        it's <i>running</i>.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair sweep" style="--t: 4s">
+          <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+            <path class="base" d="M2 10.5 L42 10.5"/>
+            <g class="beat b1"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            <g class="beat b3"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+          </svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">reconnecting…</span>
+        <span class="box hair" style="width:38px">
+          <svg class="tr down" width="32" height="16" viewBox="0 0 44 16"><path d="M2 10.5 L22 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M26 10.5 L42 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/></svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note"><span class="k">Feel:</span> the steady one. Both beats always present means nothing
+        ever "appears" — the eye just sees a live trace, and the down state (nothing moving, line broken)
+        is unmistakable by contrast.</p>
+    </div>
+
+    <!-- 3 -->
+    <div class="card">
+      <div class="card-head"><span class="tag">3</span><h2>Three beats · 6s</h2><span class="dims">6.3 px/s</span></div>
+      <p class="idea">
+        Slower still, three on screen about 14px apart. The densest that still reads — closer to an ECG
+        strip than a moving tick, but at 38px the beats start crowding each other.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair sweep" style="--t: 6s">
+          <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+            <path class="base" d="M2 10.5 L42 10.5"/>
+            <g class="beat b1"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            <g class="beat b3"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            <g class="beat b4"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+          </svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">reconnecting…</span>
+        <span class="box hair" style="width:38px">
+          <svg class="tr down" width="32" height="16" viewBox="0 0 44 16"><path d="M2 10.5 L22 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M26 10.5 L42 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/></svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note warn"><span class="k">Watch:</span> three beats at 38px means ~11px of flat line
+        between spikes — it stops reading as separate beats and starts reading as a small zig-zag again.
+        This is where the same "too small for a waveform" problem comes back.</p>
+    </div>
+
+    <!-- 4 -->
+    <div class="card">
+      <div class="card-head"><span class="tag">4</span><h2>Two beats · ageing</h2><span class="dims">4s, newest brightest</span></div>
+      <p class="idea">
+        Same as 2, but each beat fades as it drifts right, so <b>the newest is the brightest</b>. You read
+        the left edge as "now" and the fade as "that already happened" — direction is legible without
+        watching for a full pass.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair sweep age" style="--t: 4s">
+          <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+            <path class="base" d="M2 10.5 L42 10.5"/>
+            <g class="beat b1"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            <g class="beat b3"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+          </svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">reconnecting…</span>
+        <span class="box hair" style="width:38px">
+          <svg class="tr down" width="32" height="16" viewBox="0 0 44 16"><path d="M2 10.5 L22 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M26 10.5 L42 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/></svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note"><span class="k">Why it might win:</span> the fade gives the box a direction and a
+        "now", which the flat version lacks at a glance. Costs nothing in width.</p>
+    </div>
+
+    <!-- 5 -->
+    <div class="card">
+      <div class="card-head"><span class="tag">5</span><h2>Two beats, 50 wide</h2><span class="dims">4s, ~27px apart</span></div>
+      <p class="idea">
+        Her width with her spacing: 50 wide puts the two beats ~27px apart with real flat line between
+        them, so each one reads as a distinct beat instead of a pair.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair sweep" style="--t: 4s; width: 50px">
+          <svg class="tr" width="44" height="16" viewBox="0 0 58 16">
+            <path class="base" d="M2 10.5 L56 10.5"/>
+            <g class="beat b1"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            <g class="beat b3"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+          </svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">retrying…</span>
+        <span class="box hair" style="width: 50px">
+          <svg class="tr down" width="44" height="16" viewBox="0 0 58 16"><path d="M2 10.5 L29 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M33 10.5 L56 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/></svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note warn"><span class="k">Fit:</span> word gets 77px, so the down copy becomes
+        "retrying…" — the same trade as A in the previous pass.</p>
+    </div>
+
+  </div>
+
+  <h2 class="section-title">The steady one, at 1× / 2× / 3×</h2>
+  <p class="hint">
+    Option 2 (two beats, 4s travel) at real device pixels. At 1× you should be able to tell there are two
+    beats without counting — that's the whole reason to slow it down.
+  </p>
+
+  <div class="ladder">
+    <div class="row">
+      <div class="label">1× — desktop, unscaled</div>
+      <div class="scale-wrap" style="height: 52px">
+        <div class="strip" style="transform: scale(1)">
+          <span class="fill">connected</span>
+          <span class="box hair sweep" style="--t: 4s">
+            <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+              <path class="base" d="M2 10.5 L42 10.5"/>
+              <g class="beat b1"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+              <g class="beat b3"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            </svg>
+          </span>
+          <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="label">2× — phone density</div>
+      <div class="scale-wrap" style="height: 104px">
+        <div class="strip" style="transform: scale(2)">
+          <span class="fill">connected</span>
+          <span class="box hair sweep" style="--t: 4s">
+            <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+              <path class="base" d="M2 10.5 L42 10.5"/>
+              <g class="beat b1"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+              <g class="beat b3"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            </svg>
+          </span>
+          <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="label">3× — close inspection</div>
+      <div class="scale-wrap" style="height: 156px">
+        <div class="strip" style="transform: scale(3)">
+          <span class="fill">connected</span>
+          <span class="box hair sweep" style="--t: 4s">
+            <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+              <path class="base" d="M2 10.5 L42 10.5"/>
+              <g class="beat b1"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+              <g class="beat b3"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            </svg>
+          </span>
+          <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer">
+    Should be driven by real pongs, not a fixed ticker: <code>ws.ts</code> sends <code>ping</code> every 2s
+    and the server answers <code>pong</code>; each pong appends one beat to the DOM, and that beat animates
+    across for 4s and then removes itself. Two consequences worth keeping: the box can never show more
+    beats than pongs actually came back, and if a pong is late the gap between beats widens — the trace
+    reports the connection instead of decorating it. CSS-only fallback for the steady state: two
+    <code>&lt;use&gt;</code> elements on the same 4s keyframes, second delayed <code>-2s</code>, exactly
+    as in option 2 above.
+  </p>
+</main>
+
+<script>
+  const icons = {
+    comet: document.getElementById('i-comet'),
+    help: document.getElementById('i-help'),
+    gear: document.getElementById('i-gear'),
+  };
+  document.querySelectorAll('i[data-icon]').forEach((el) => {
+    const t = icons[el.dataset.icon];
+    if (t) el.replaceWith(t.content.cloneNode(true));
+  });
+
+  const root = document.documentElement;
+  const themeBtn = document.getElementById('themeBtn');
+  const setTheme = (light) => {
+    root.setAttribute('data-theme', light ? 'light' : 'dark');
+    themeBtn.textContent = light ? 'dark theme' : 'light theme';
+  };
+  setTheme(new URLSearchParams(location.search).get('theme') === 'light');
+  themeBtn.addEventListener('click', () => setTheme(root.getAttribute('data-theme') !== 'light'));
+
+  const freezeBtn = document.getElementById('freezeBtn');
+  freezeBtn.addEventListener('click', () => {
+    const on = document.body.classList.toggle('freeze');
+    freezeBtn.setAttribute('aria-pressed', String(on));
+    freezeBtn.textContent = on ? 'unfreeze' : 'freeze';
+  });
+</script>
+</body>
+</html>

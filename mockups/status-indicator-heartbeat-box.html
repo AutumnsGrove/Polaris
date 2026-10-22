@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Footer heartbeat box — proposals</title>
+<!--
+  Direction: J (heartbeat) from mockups/status-indicator-options-2.html, pulled
+  out of the empty middle of the strip and into the icon cluster next to Comet.
+
+  The thing set 1 and 2 both missed: J worked because the trace was 150px wide
+  — four beats with 37px each. A box that fits next to Comet has ~38-62px, so
+  the same trace becomes 5-6 beats of ~9px: a row of ticks, not a waveform.
+  There are only two honest ways around that, and this page tries both:
+
+      TICKS   accept it — a few fat beats, read as "a living icon"
+      SWEEP   draw ONE beat that travels across the box every 2s, so motion
+              carries "alive" instead of density
+
+  Five complete proposals (size + idea + treatment), then a DPI ladder and the
+  placement question. 260px strip, 24px padding, 93px of icons, 8px gap.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Asimovian&family=Lexend:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-bg: oklch(15% 0.014 65);
+    --color-surface: oklch(19% 0.014 65);
+    --color-surface-2: oklch(23% 0.016 65);
+    --color-surface-3: oklch(28% 0.018 65);
+    --color-border: oklch(30% 0.016 65);
+    --color-border-strong: oklch(40% 0.02 65);
+    --color-text: oklch(93% 0.01 75);
+    --color-text-dim: oklch(64% 0.014 70);
+    --color-accent: oklch(82% 0.17 78);
+    --shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+    --shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+    --radius-sm: 6px;
+    --radius-lg: 16px;
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+    --space-2xl: 32px;
+    --font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  :root[data-theme='light'] {
+    --color-bg: oklch(97% 0.008 75);
+    --color-surface: oklch(99% 0.004 80);
+    --color-surface-2: oklch(95% 0.01 75);
+    --color-surface-3: oklch(91% 0.012 75);
+    --color-border: oklch(87% 0.012 75);
+    --color-border-strong: oklch(78% 0.016 75);
+    --color-text: oklch(24% 0.016 60);
+    --color-text-dim: oklch(46% 0.018 60);
+    --color-accent: oklch(54% 0.17 68);
+    --shadow-well: inset 0 1px 3px rgba(50, 40, 28, 0.16), inset 0 0 0 1px rgba(50, 40, 28, 0.08);
+    --shadow-md: 0 8px 24px -8px rgba(60, 48, 32, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: var(--space-2xl) var(--space-lg);
+    background: var(--color-bg); color: var(--color-text);
+    font-family: var(--font-sans); font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1240px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: var(--space-lg); flex-wrap: wrap; }
+  h1 { font-family: var(--font-wordmark); font-weight: 400; font-size: 24px; letter-spacing: 0.02em; margin: 0; }
+  .theme-btn {
+    margin-left: auto; font: inherit; font-size: 12px; color: var(--color-text-dim);
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  }
+  .theme-btn:hover { color: var(--color-text); border-color: var(--color-border-strong); }
+  .lede { color: var(--color-text-dim); font-size: 13.5px; line-height: 1.65; max-width: 88ch; margin: var(--space-md) 0 0; }
+  .lede b { color: var(--color-text); font-weight: 500; }
+  .lede code, .note code, .footer code, .hint code {
+    font-family: var(--font-mono); font-size: 0.92em;
+    background: var(--color-surface-2); padding: 1px 5px; border-radius: 4px;
+  }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(356px, 1fr)); gap: var(--space-xl); margin-top: var(--space-xl); }
+  .card { background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-lg) var(--space-lg) var(--space-md); box-shadow: var(--shadow-md); }
+  .card-head { display: flex; align-items: baseline; gap: var(--space-sm); }
+  .tag { font-family: var(--font-wordmark); font-size: 15px; color: var(--color-accent); line-height: 1; }
+  .card-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .dims { font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text-dim); opacity: 0.6; margin-left: auto; }
+  .idea { font-size: 12.5px; line-height: 1.6; color: var(--color-text-dim); margin: var(--space-sm) 0 var(--space-lg); }
+  .idea b { color: var(--color-text); font-weight: 500; }
+
+  .state-label {
+    font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--color-text-dim); opacity: 0.6; margin: 0 0 var(--space-xs);
+  }
+  .state-label + .strip { margin-bottom: var(--space-md); }
+
+  /* real footer strip */
+  .strip {
+    width: 260px;
+    display: flex; align-items: center; gap: var(--space-sm);
+    padding: var(--space-md);
+    box-shadow: var(--shadow-well);
+    font-size: 12px; color: var(--color-text-dim);
+    white-space: nowrap; position: relative;
+  }
+  .fill { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .foot { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .ib {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: var(--space-sm); border-radius: var(--radius-sm); color: var(--color-text-dim);
+  }
+
+  /* ---------------- boxes ---------------- */
+  .box { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; }
+  .tr { display: block; overflow: visible; color: var(--color-accent); }
+  .tr.down { color: var(--color-text-dim); opacity: 0.55; }
+
+  .box.hair {
+    height: 18px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+  .box.tile {
+    width: 26px; height: 26px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+  .w38 { width: 38px; }
+  .w50 { width: 50px; }
+  .w62 { width: 62px; }
+
+  /* travel: one beat sweeping left -> right, 2s per pass. Motion carries
+     "alive" here because 9px beats can't. */
+  .box.sweep { overflow: hidden; }
+  .sweep .base { fill: none; stroke: currentColor; stroke-width: 1; stroke-linecap: round; opacity: 0.3; }
+  .sweep .beat { transform-box: view-box; animation: travel 2s linear infinite; }
+  .sweep .beat path { fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+  @keyframes travel {
+    0%   { transform: translateX(0);    opacity: 0; }
+    12%  { opacity: 1; }
+    88%  { opacity: 1; }
+    100% { transform: translateX(38px); opacity: 0; }
+  }
+  .sweep .spill { fill: none; stroke: currentColor; stroke-width: 1; stroke-linecap: round; opacity: 0.14; }
+
+  .note { font-size: 11.5px; line-height: 1.6; color: var(--color-text-dim); margin: var(--space-md) 0 var(--space-xs); }
+  .note .k { color: var(--color-text); font-weight: 500; }
+  .note.warn { opacity: 0.92; }
+
+  .section-title { margin: var(--space-2xl) 0 0; font-size: 15px; font-weight: 600; }
+  .hint { margin: var(--space-xs) 0 0; font-size: 12.5px; color: var(--color-text-dim); line-height: 1.6; max-width: 82ch; }
+
+  .ladder { display: flex; flex-direction: column; gap: var(--space-xl); margin-top: var(--space-lg); }
+  .ladder .label, .placements .label {
+    font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--color-text-dim); opacity: 0.6; margin-bottom: var(--space-md);
+  }
+  .scale-wrap { display: flex; align-items: flex-start; }
+  .scale-wrap .strip { transform-origin: left top; }
+
+  .placements { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: var(--space-xl); margin-top: var(--space-lg); }
+  .placements .card { padding: var(--space-lg); }
+
+  .footer {
+    margin-top: var(--space-2xl); padding-top: var(--space-lg);
+    border-top: 1px solid var(--color-border);
+    font-size: 12px; color: var(--color-text-dim); line-height: 1.7; max-width: 100ch;
+  }
+  .footer b { color: var(--color-text); font-weight: 500; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<template id="i-comet"><span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span></template>
+<template id="i-help"><span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span></template>
+<template id="i-gear"><span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span></template>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="sp20" viewBox="0 0 20 16">
+    <path d="M2 10.5 L18 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.42"/>
+    <path d="M3.17 10.5 L4.67 5.0 L6.17 10.5 Z M8.50 10.5 L10.00 5.0 L11.50 10.5 Z M13.83 10.5 L15.33 5.0 L16.83 10.5 Z" fill="currentColor" opacity="0.92"/>
+  </symbol>
+  <symbol id="sp20-off" viewBox="0 0 20 16">
+    <path d="M2 10.5 L11 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    <path d="M15 10.5 L18 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/>
+  </symbol>
+  <symbol id="sp32" viewBox="0 0 32 16">
+    <path d="M2 10.5 L30 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.42"/>
+    <path d="M4.00 10.5 L5.50 5.0 L7.00 10.5 Z M11.00 10.5 L12.50 5.0 L14.00 10.5 Z M18.00 10.5 L19.50 5.0 L21.00 10.5 Z M25.00 10.5 L26.50 5.0 L28.00 10.5 Z" fill="currentColor" opacity="0.92"/>
+  </symbol>
+  <symbol id="sp32-off" viewBox="0 0 32 16">
+    <path d="M2 10.5 L18 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    <path d="M22 10.5 L30 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/>
+  </symbol>
+  <symbol id="sp44" viewBox="0 0 44 16">
+    <path d="M2 10.5 L42 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.42"/>
+    <path d="M4.50 10.5 L6.00 5.0 L7.50 10.5 Z M12.50 10.5 L14.00 5.0 L15.50 10.5 Z M20.50 10.5 L22.00 5.0 L23.50 10.5 Z M28.50 10.5 L30.00 5.0 L31.50 10.5 Z M36.50 10.5 L38.00 5.0 L39.50 10.5 Z" fill="currentColor" opacity="0.92"/>
+  </symbol>
+  <symbol id="sp44-off" viewBox="0 0 44 16">
+    <path d="M2 10.5 L24 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    <path d="M28 10.5 L42 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/>
+  </symbol>
+  <symbol id="sp56" viewBox="0 0 56 16">
+    <path d="M2 10.5 L54 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.42"/>
+    <path d="M4.83 10.5 L6.33 5.0 L7.83 10.5 Z M13.50 10.5 L15.00 5.0 L16.50 10.5 Z M22.17 10.5 L23.67 5.0 L25.17 10.5 Z M30.83 10.5 L32.33 5.0 L33.83 10.5 Z M39.50 10.5 L41.00 5.0 L42.50 10.5 Z M48.17 10.5 L49.67 5.0 L51.17 10.5 Z" fill="currentColor" opacity="0.92"/>
+  </symbol>
+  <symbol id="sp56-off" viewBox="0 0 56 16">
+    <path d="M2 10.5 L31 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    <path d="M35 10.5 L54 10.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.22"/>
+  </symbol>
+</svg>
+
+<main>
+  <div class="top">
+    <h1>Heartbeat in a box</h1>
+    <button class="theme-btn" id="themeBtn" type="button">light theme</button>
+  </div>
+  <p class="lede">
+    J worked because the trace had 150px: four beats, 37px each. A box that fits next to Comet gets
+    38–62px, so the same line becomes 5–6 beats of ~9px — <b>a row of ticks, not a waveform</b>. There are
+    two honest ways around that, and both are below: keep it static and let a few fat beats read as a
+    <b>living icon</b>, or keep it small and let <b>one beat travel</b> across the box so motion carries
+    "alive" instead of density.
+  </p>
+
+  <div class="cards">
+
+    <!-- A -->
+    <div class="card">
+      <div class="card-head"><span class="tag">A</span><h2>Sweep, 50 wide</h2><span class="dims">50 × 18</span></div>
+      <p class="idea">
+        One beat travels left to right every 2s across a hairline box. Nothing is dense, so nothing
+        blurs — <b>you see the box is being written to</b>. Closest small-box equivalent of J.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair w38 sweep">
+          <svg class="tr" width="44" height="16" viewBox="0 0 44 16">
+            <path class="base" d="M2 10.5 L42 10.5"/>
+            <g class="beat"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+          </svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">retrying…</span>
+        <span class="box hair w50">
+          <svg class="tr down" width="44" height="16" viewBox="0 0 44 16"><use href="#sp44-off"/></svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note warn"><span class="k">Fit:</span> word gets 77px, which is not enough for
+        "reconnecting…" — so down copy has to shrink to "retrying…". Down = the beat stops and the line
+        breaks; nothing animates, which is the message.</p>
+    </div>
+
+    <!-- B -->
+    <div class="card">
+      <div class="card-head"><span class="tag">B</span><h2>Sweep, 38 wide</h2><span class="dims">38 × 18</span></div>
+      <p class="idea">
+        Same travelling beat, tighter. At 38 the beat's whole pass takes ~1.7s of travel and the box reads
+        more like <b>a small screen</b> than a strip — and the word gets real breathing room back.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair w38 sweep">
+          <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+            <path class="base" d="M2 10.5 L42 10.5"/>
+            <g class="beat"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+          </svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">reconnecting…</span>
+        <span class="box hair w38">
+          <svg class="tr down" width="32" height="16" viewBox="0 0 32 16"><use href="#sp32-off"/></svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note"><span class="k">Fit:</span> word gets 89px — "reconnecting…" (84px) still fits, so
+        this is the widest sweep that costs nothing. The 44-unit viewBox scaled into 32px keeps the beat
+        proportional.</p>
+    </div>
+
+    <!-- C -->
+    <div class="card">
+      <div class="card-head"><span class="tag">C</span><h2>Ticks, 38 wide</h2><span class="dims">38 × 18</span></div>
+      <p class="idea">
+        No motion: four fat beats on a faint baseline. Honest about what a small box can show — it reads
+        as <b>"four signals, alive"</b> more than as a heartbeat. The calmest of the five.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair w38"><svg class="tr" width="32" height="16" viewBox="0 0 32 16"><use href="#sp32"/></svg></span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">reconnecting…</span>
+        <span class="box hair w38"><svg class="tr down" width="32" height="16" viewBox="0 0 32 16"><use href="#sp32-off"/></svg></span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note warn"><span class="k">Fit:</span> word gets 89px. <span class="k">Watch:</span>
+        static ticks can be misread as signal-strength bars — a Wi-Fi/battery idea, not a liveness one. The break in the down state is what rescues it.</p>
+    </div>
+
+    <!-- D -->
+    <div class="card">
+      <div class="card-head"><span class="tag">D</span><h2>Tile, 26 square</h2><span class="dims">26 × 26</span></div>
+      <p class="idea">
+        The exact footprint of an icon button, so it becomes <b>a fourth icon that happens to be alive</b>
+        rather than a new kind of object in the row. Three beats, square, no word pressure at all.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box tile"><svg class="tr" width="20" height="16" viewBox="0 0 20 16"><use href="#sp20"/></svg></span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">reconnecting…</span>
+        <span class="box tile"><svg class="tr down" width="20" height="16" viewBox="0 0 20 16"><use href="#sp20-off"/></svg></span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note"><span class="k">Fit:</span> word gets 101px — the most room of any option, and the row
+        stays on one optical grid.</p>
+    </div>
+
+    <!-- E -->
+    <div class="card">
+      <div class="card-head"><span class="tag">E</span><h2>Ticks, 62 wide</h2><span class="dims">62 × 18</span></div>
+      <p class="idea">
+        Six static beats with real air between them — the most J-like still frame, and the widest thing
+        that fits at all. It costs the word: <b>only "connected" / "retrying" fit</b> beside it.
+      </p>
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair w62"><svg class="tr" width="56" height="16" viewBox="0 0 56 16"><use href="#sp56"/></svg></span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="fill">retrying</span>
+        <span class="box hair w62"><svg class="tr down" width="56" height="16" viewBox="0 0 56 16"><use href="#sp56-off"/></svg></span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+      <p class="note warn"><span class="k">Fit:</span> word gets 65px. "reconnecting…" clips and even
+        "retrying 2s" clips, so this option forces the word down to a single short verb — a real cost, not
+        a cosmetic one.</p>
+    </div>
+
+  </div>
+
+  <h2 class="section-title">Does it survive a phone screen?</h2>
+  <p class="hint">
+    The recommended 38-wide sweep at 1× / 2× / 3×. Watch one pass: the beat should stay legible at 1×
+    because it's a moving line rather than a dense one.
+  </p>
+
+  <div class="ladder">
+    <div class="row">
+      <div class="label">1× — desktop, unscaled</div>
+      <div class="scale-wrap" style="height: 52px">
+        <div class="strip" style="transform: scale(1)">
+          <span class="fill">connected</span>
+          <span class="box hair w38 sweep">
+            <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+              <path class="base" d="M2 10.5 L42 10.5"/>
+              <g class="beat"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            </svg>
+          </span>
+          <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="label">2× — phone density</div>
+      <div class="scale-wrap" style="height: 104px">
+        <div class="strip" style="transform: scale(2)">
+          <span class="fill">connected</span>
+          <span class="box hair w38 sweep">
+            <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+              <path class="base" d="M2 10.5 L42 10.5"/>
+              <g class="beat"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            </svg>
+          </span>
+          <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="label">3× — close inspection</div>
+      <div class="scale-wrap" style="height: 156px">
+        <div class="strip" style="transform: scale(3)">
+          <span class="fill">connected</span>
+          <span class="box hair w38 sweep">
+            <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+              <path class="base" d="M2 10.5 L42 10.5"/>
+              <g class="beat"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            </svg>
+          </span>
+          <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Where it sits, and what it's wearing</h2>
+  <p class="hint">
+    Left: before Comet, so the eye hits the trace while scanning the strip. Right: after Comet, which
+    clusters two ambient indicators into one group. Treatment below is the hairline box — recessed and
+    pill were tried in the previous pass and neither fit this app's chrome rules as cleanly (the pill's
+    round edge is the odd one out in a row of square icon hits; the recessed well disappears into the
+    strip it's sitting in, which is the opposite of what a box is for).
+  </p>
+
+  <div class="placements">
+    <div class="card">
+      <div class="label">before comet</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="box hair w38 sweep">
+          <svg class="tr" width="44" height="16" viewBox="0 0 44 16">
+            <path class="base" d="M2 10.5 L42 10.5"/>
+            <g class="beat"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+          </svg>
+        </span>
+        <span class="foot"><i data-icon="comet"></i><i data-icon="help"></i><i data-icon="gear"></i></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">after comet</div>
+      <div class="strip">
+        <span class="fill">connected</span>
+        <span class="foot">
+          <i data-icon="comet"></i>
+          <span class="box hair w38 sweep" style="margin: 0 4px">
+            <svg class="tr" width="32" height="16" viewBox="0 0 44 16">
+              <path class="base" d="M2 10.5 L42 10.5"/>
+              <g class="beat"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5"/></g>
+            </svg>
+          </span>
+          <i data-icon="help"></i>
+          <i data-icon="gear"></i>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer">
+    My pick: <b>B — sweep, 38 wide, hairline box, before Comet</b>. It's the only small-box option where
+    what you notice is motion rather than density, so it still reads at 1× on a phone; and because a
+    travelling beat doesn't need width the way a static trace does, 38 is enough — which leaves
+    "reconnecting…" intact. A (50 wide) is the same idea with more room but forces shorter down copy. <b>D (the 26px tile)</b> is the pick if you'd rather have a living icon than a
+    trace — it's the tidiest object and the most obviously "already part of the app". Avoid <b>E</b> unless
+    you're happy shortening the down copy to "retrying 2s". Implementation either way: a
+    <code>ping</code>/<code>pong</code> frame on the socket (the beat fires on each pong), and swapping the
+    dot's flex slot for this box.
+  </p>
+</main>
+
+<script>
+  const icons = {
+    comet: document.getElementById('i-comet'),
+    help: document.getElementById('i-help'),
+    gear: document.getElementById('i-gear'),
+  };
+  document.querySelectorAll('i[data-icon]').forEach((el) => {
+    const t = icons[el.dataset.icon];
+    if (t) el.replaceWith(t.content.cloneNode(true));
+  });
+
+  const btn = document.getElementById('themeBtn');
+  const root = document.documentElement;
+  const setTheme = (light) => {
+    root.setAttribute('data-theme', light ? 'light' : 'dark');
+    btn.textContent = light ? 'dark theme' : 'light theme';
+  };
+  setTheme(new URLSearchParams(location.search).get('theme') === 'light');
+  btn.addEventListener('click', () => setTheme(root.getAttribute('data-theme') !== 'light'));
+</script>
+</body>
+</html>
