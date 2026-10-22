@@ -1,0 +1,13 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                    score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   baseten/elephant-1:free  81.2   75.8-86.2  81.2       95%      89%    96%      80%    0%         0%   445ms  765ms  $0.009  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  baseten/elephant-1:free  ██░░                            |         p50 445ms  p95 765ms 
+
+Tracks scoring 25+ points below the model's own headline:
+  baseten/elephant-1:free: premise 40
