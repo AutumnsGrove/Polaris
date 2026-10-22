@@ -83,6 +83,14 @@ type RunConfig struct {
 	Repeats     int
 	Timeout     time.Duration
 	Concurrency int
+	// FreeInterval is the minimum gap between call starts for a ":free" model.
+	// OpenRouter caps free models per minute across the whole account, and a 429
+	// is recorded as that model's result and never retried, so an unpaced free
+	// model would be disqualified for our account's limit rather than its own
+	// quality (Elephant 1 lost 5 of 12 calls this way). The wait happens in the
+	// feeder, outside callOnce's timer, so it never inflates measured latency.
+	// Zero disables pacing.
+	FreeInterval time.Duration
 	// OnCall, if set, is called once per finished call, serialised.
 	OnCall func(CallEvent)
 	// OnProgress, if set, is called after each call with (done, total).
@@ -143,6 +151,10 @@ func callOnce(ctx context.Context, m Model, c Case, timeout time.Duration) Sampl
 
 type job struct{ model, cas, repeat int }
 
+// IsFreeModel reports whether an OpenRouter model ID is a rate-limited free
+// variant.
+func IsFreeModel(id string) bool { return strings.HasSuffix(id, ":free") }
+
 // Run executes every (model, case, repeat) call and returns the results in
 // input order. Failures are recorded as samples, never retried: a refusal or a
 // timeout is that model's result.
@@ -199,8 +211,21 @@ func Run(ctx context.Context, cfg RunConfig) ([]ModelRuns, error) {
 			}
 		}()
 	}
+	var lastStart time.Time
 feed:
 	for _, j := range jobs {
+		// Jobs are grouped by model, so one lastStart is enough: it only matters
+		// within a run of consecutive jobs for the same free model.
+		if cfg.FreeInterval > 0 && IsFreeModel(cfg.Models[j.model].ID) {
+			if wait := cfg.FreeInterval - time.Since(lastStart); wait > 0 {
+				select {
+				case <-time.After(wait):
+				case <-ctx.Done():
+					break feed
+				}
+			}
+			lastStart = time.Now()
+		}
 		select {
 		case queue <- j:
 		case <-ctx.Done():

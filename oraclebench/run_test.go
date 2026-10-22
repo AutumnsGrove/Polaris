@@ -128,6 +128,38 @@ func TestBuildInput(t *testing.T) {
 	}
 }
 
+func TestRun_PacesFreeModelsOnly(t *testing.T) {
+	const gap = 40 * time.Millisecond
+	run := func(id string) (time.Duration, []ModelRuns) {
+		asker := &stubAsker{model: id, pick: pickMedical, delay: 2 * time.Millisecond}
+		start := time.Now()
+		got, err := Run(context.Background(), RunConfig{
+			Cases: twoCases(), Models: []Model{{ID: id, Asker: asker}},
+			Repeats: 3, Timeout: time.Second, Concurrency: 2, FreeInterval: gap,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return time.Since(start), got
+	}
+
+	// 6 calls means 5 gaps; the first call has nothing to wait behind.
+	freeElapsed, free := run("baseten/mammoth-1:free")
+	if freeElapsed < 5*gap-5*time.Millisecond {
+		t.Errorf("free model finished in %v, want >= %v: calls were not spaced", freeElapsed, 5*gap)
+	}
+	for _, cr := range free[0].Runs {
+		for _, s := range cr.Samples {
+			if s.Latency >= gap {
+				t.Errorf("latency %v includes the pacing wait; it must be measured inside the call only", s.Latency)
+			}
+		}
+	}
+	if paidElapsed, _ := run("typesafe/jev-1.14"); paidElapsed >= 3*gap {
+		t.Errorf("paid model took %v: pacing must not apply to it", paidElapsed)
+	}
+}
+
 func TestRun_CollectsEveryCallThroughTheRealOraclePath(t *testing.T) {
 	asker := &stubAsker{model: "typesafe/jev-1.14-20261014", pick: pickMedical, delay: 5 * time.Millisecond}
 	var events, lastDone, lastTotal int

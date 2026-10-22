@@ -21,22 +21,23 @@ import (
 )
 
 var (
-	obCases       string
-	obModels      string
-	obAllDecision bool
-	obN           int
-	obSeed        int64
-	obRepeats     int
-	obTimeout     time.Duration
-	obConcurrency int
-	obJudgeModel  string
-	obJudgeAudit  float64
-	obNoJudge     bool
-	obWeights     string
-	obOut         string
-	obTracking    string
-	obSaveDir     string
-	obLabel       string
+	obCases        string
+	obModels       string
+	obAllDecision  bool
+	obN            int
+	obSeed         int64
+	obRepeats      int
+	obTimeout      time.Duration
+	obConcurrency  int
+	obFreeInterval time.Duration
+	obJudgeModel   string
+	obJudgeAudit   float64
+	obNoJudge      bool
+	obWeights      string
+	obOut          string
+	obTracking     string
+	obSaveDir      string
+	obLabel        string
 )
 
 var oracleBenchCmd = &cobra.Command{
@@ -65,6 +66,7 @@ func init() {
 	f.IntVar(&obRepeats, "repeats", 3, "identical calls per case; probabilities are averaged (they move +-0.03-0.07 run to run)")
 	f.DurationVar(&obTimeout, "timeout", 15*time.Second, "per-call timeout; generous on purpose, latency is scored separately against the weights file's budget")
 	f.IntVar(&obConcurrency, "concurrency", 2, "parallel calls; keep it low and fixed, latency measured at different loads isn't comparable")
+	f.DurationVar(&obFreeInterval, "free-interval", 3500*time.Millisecond, "minimum gap between calls to a :free model (OpenRouter allows about 20/min across all free models; 0 disables pacing)")
 	f.StringVar(&obJudgeModel, "judge-model", "deepseek", "registry id of the non-decision chat model that judges disputed cases and audits labels")
 	f.Float64Var(&obJudgeAudit, "judge-audit", 0.10, "share of ordinary labeled checks the judge spot-checks to measure label quality")
 	f.BoolVar(&obNoJudge, "no-judge", false, "skip the judge entirely (deterministic scores only)")
@@ -133,7 +135,19 @@ func runOracleBench(cmd *cobra.Command, args []string) error {
 
 	calls := len(roster) * len(cases) * obRepeats
 	fmt.Printf("cases: %d of %d (seed %d), models: %d, repeats: %d, concurrency: %d\n", len(cases), len(bank), obSeed, len(roster), obRepeats, obConcurrency)
-	fmt.Printf("about %d calls, roughly $%.3f for the decision calls (judge extra); weights %s, latency budget %s\n\n", calls, float64(calls)*0.0002, weights.Hash, weights.LatencyBudget)
+	fmt.Printf("about %d calls, roughly $%.3f for the decision calls (judge extra); weights %s, latency budget %s\n", calls, float64(calls)*0.0002, weights.Hash, weights.LatencyBudget)
+	// Pacing fixes the per-minute limit but not the daily one (1000 free requests
+	// for a funded key), so say up front when this run can't fit under it.
+	freeCalls := 0
+	for _, m := range roster {
+		if oraclebench.IsFreeModel(m.ID) {
+			freeCalls += len(cases) * obRepeats
+		}
+	}
+	if freeCalls > 0 {
+		fmt.Printf("%d calls go to :free models, paced %s apart (about %s). OpenRouter's daily free-model cap is 1000 requests per key, shared by every :free model.\n", freeCalls, obFreeInterval, (time.Duration(freeCalls) * obFreeInterval).Round(time.Minute))
+	}
+	fmt.Println()
 
 	// Everything this run saves is named from its start time, fixed once here, so
 	// the raw calls, scores, leaderboard and tracking table all line up.
@@ -164,7 +178,7 @@ func runOracleBench(cmd *cobra.Command, args []string) error {
 
 	started := time.Now()
 	results, err := oraclebench.Run(ctx, oraclebench.RunConfig{
-		Cases: cases, Models: roster, Repeats: obRepeats, Timeout: obTimeout, Concurrency: obConcurrency,
+		Cases: cases, Models: roster, Repeats: obRepeats, Timeout: obTimeout, Concurrency: obConcurrency, FreeInterval: obFreeInterval,
 		OnCall: func(ev oraclebench.CallEvent) { _ = enc.Encode(ev.Record()) },
 		OnProgress: func(done, total int) {
 			if done%25 == 0 || done == total {
