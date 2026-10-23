@@ -83,6 +83,13 @@ func parseTime(name string) (time.Time, bool) {
 	if err != nil {
 		return time.Time{}, false
 	}
+	// time.Parse tolerates a fractional-seconds suffix ("…030405.5", "…030405,0")
+	// that nameLayout doesn't have, so a stray non-Polaris file would be taken
+	// for one of our backups — and then listed and pruned as one. Only a name
+	// fileName could have produced counts. Found by FuzzParseTime.
+	if fileName(t) != name {
+		return time.Time{}, false
+	}
 	return t.UTC(), true
 }
 

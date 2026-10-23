@@ -31,3 +31,36 @@ func FuzzParse(f *testing.F) {
 		_ = parse(src)
 	})
 }
+
+func FuzzSites(f *testing.F) {
+	f.Add("```ui\n{\"c\":\"compare\",\"cols\":[\"A\"]}\n{\"row\":\"x\",\"v\":[\"[a](https://a.org)\"]}\n```\n")
+	f.Add("```ui\n{\"c\":\"stat\",\"value\":\"1\",\"src\":[\"https://a.org\"]}\n")
+	f.Fuzz(func(t *testing.T, content string) {
+		_ = Sites(content, func(string) bool { return true })
+	})
+}
+
+func FuzzCloseBrackets(f *testing.F) {
+	f.Add(`{"row":"x","v":["a","b"}`)
+	f.Add(`[1,[2}`)
+	f.Add(`{"a":"unterminated`)
+	f.Add(`]}`)
+	f.Fuzz(func(t *testing.T, s string) {
+		out, ok := closeBrackets(s)
+		if ok && len(out) < len(s) {
+			t.Errorf("repair shortened %q to %q", s, out)
+		}
+	})
+}
+
+func FuzzClip(f *testing.F) {
+	f.Add("hello", 3)
+	f.Add("😀😀😀", 2)
+	f.Add("", 1)
+	f.Fuzz(func(t *testing.T, s string, max int) {
+		if max < 1 || max > 1000 {
+			t.Skip()
+		}
+		_ = clip(s, max)
+	})
+}

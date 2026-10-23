@@ -520,3 +520,21 @@ func writeTempFile(t *testing.T, name, contents string) string {
 	}
 	return path
 }
+
+// time.Parse accepts a fractional-seconds suffix the layout doesn't have, so
+// a file Polaris never wrote used to parse as a backup (and could be pruned
+// as one). Found by FuzzParseTime.
+func TestParseTime_RejectsNonCanonicalNames(t *testing.T) {
+	for _, name := range []string{
+		"polaris-20260102-030405.5.db",
+		"polaris-20260102-030405,0.db",
+		"polaris-20260102-030405.123456789.db",
+	} {
+		if got, ok := parseTime(name); ok {
+			t.Errorf("parseTime(%q) accepted a name fileName never produces (%v)", name, got)
+		}
+	}
+	if _, ok := parseTime("polaris-20260102-030405.db"); !ok {
+		t.Error("canonical name rejected")
+	}
+}

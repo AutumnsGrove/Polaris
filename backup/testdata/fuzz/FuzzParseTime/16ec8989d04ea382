@@ -1,0 +1,2 @@
+go test fuzz v1
+string("polaris-00000101-000000,0.db")
