@@ -1,0 +1,57 @@
+name: Fuzz
+
+# Deliberately not on pull_request: fuzzing is open-ended and would slow every
+# merge. `go test ./...` in go-ci.yml already replays each target's seeds and
+# every checked-in testdata/fuzz crasher as ordinary tests, so regressions are
+# caught there; this job is for finding *new* crashers. See
+# docs/plans/fuzz-testing.md.
+on:
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: Time per target (Go duration, e.g. 60s)
+        default: 60s
+  schedule:
+    - cron: '17 6 * * 1'
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # web/embed.go needs a web/build/ to exist for anything importing it to
+      # compile; the fuzz targets don't use the frontend, so an empty dir is enough.
+      - name: stub web/build
+        run: mkdir -p web/build && touch web/build/.keep
+
+      # `go test -fuzz` accepts exactly one target per invocation, so list them
+      # from the source and loop. A failing input is written to testdata/fuzz/
+      # and uploaded below so it can be committed as a regression seed.
+      - name: fuzz every target
+        env:
+          FUZZTIME: ${{ inputs.fuzztime || '30s' }}
+        run: |
+          set -u
+          status=0
+          for file in $(grep -rl --include=fuzz_test.go '^func Fuzz' .); do
+            pkg=$(dirname "$file")
+            for target in $(grep -oE '^func Fuzz[A-Za-z0-9_]+' "$file" | awk '{print $2}'); do
+              echo "::group::$pkg $target"
+              go test "$pkg" -run='^$' -fuzz="^${target}\$" -fuzztime="$FUZZTIME" || status=1
+              echo "::endgroup::"
+            done
+          done
+          exit $status
+
+      - name: upload new crashers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashers
+          path: '**/testdata/fuzz/**'

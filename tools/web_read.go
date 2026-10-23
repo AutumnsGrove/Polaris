@@ -595,6 +595,17 @@ func pdfPageRawText(p pdf.Page) (string, error) {
 // tool-specific continuation hint appended, so the caller can write its own
 // ("call web_read again..."). page is 1-indexed; 0 (unset) defaults to page 1.
 func pdfPageText(data []byte, page int) (title, text string, totalPages int, err error) {
+	// ledongthuc/pdf signals malformed input by panicking (lex.go's
+	// buffer.errorf) rather than returning an error — found by
+	// FuzzExtractPDFPage with a truncated xref table. PDFs come off the open
+	// web, and not every caller sits under the agent driver's per-tool
+	// recover, so turn it into an ordinary error here.
+	defer func() {
+		if rec := recover(); rec != nil {
+			title, text, totalPages = "", "", 0
+			err = fmt.Errorf("malformed pdf: %v", rec)
+		}
+	}()
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return "", "", 0, fmt.Errorf("opening pdf: %w", err)

@@ -3,6 +3,7 @@ package gateway
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"polaris/tools"
 )
@@ -243,5 +244,23 @@ func TestRunVerificationNilSafe(t *testing.T) {
 	ctx := &tools.Context{}
 	if got := runVerification(ctx, "answer", []tools.Citation{{URL: "https://a.example"}}); got != nil {
 		t.Errorf("runVerification(nil Jev) = %v, want nil", got)
+	}
+}
+
+// The overlap carried into the next chunk is a byte offset; for non-ASCII
+// text it used to land mid-rune and start the chunk with stray bytes. Found
+// by reasoning beyond FuzzSplitIntoChunks, whose seed now covers it.
+func TestSplitIntoChunks_OverlapNeverStartsMidRune(t *testing.T) {
+	para := strings.Repeat("é", 700) + "x" // odd byte length so the cut is misaligned
+	text := strings.Repeat(para+"\n\n", 40)
+
+	chunks := splitIntoChunks(text)
+	if len(chunks) < 2 {
+		t.Fatalf("got %d chunks, need at least 2 to exercise the overlap", len(chunks))
+	}
+	for i, c := range chunks {
+		if !utf8.ValidString(c) {
+			t.Errorf("chunk %d is invalid UTF-8, starts %q", i, c[:6])
+		}
 	}
 }
