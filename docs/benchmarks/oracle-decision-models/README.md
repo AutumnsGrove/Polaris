@@ -40,7 +40,7 @@ repeat it.
   (68 to 75% right, against 90 to 98% for the leaders). **Scaledown Classify 1 (75.4) and Upstage Solar
   Decide Flash (57.3) trail further.** Solar Flash is also the closest to a disqualifying 5% of
   dangerous false nudges (4%).
-- **Two models couldn't be fully scored:** Nace's Drex 2.0 rejects Oracle's 23-question call outright, and
+- **Two models couldn't be fully scored:** Nace's Drex 2.0 and Drex Max reject Oracle's 23-question call outright, and
   Upstage's regular Solar Decide takes 13 to 21 seconds per call. See
   [Models that couldn't be scored](#models-that-couldnt-be-scored).
 - **Paid Mercury Decide and Perplexity Decider Flash v1.2 could not be benchmarked.** Upstream HTTP 429s
@@ -216,6 +216,10 @@ Judged on the operator's stated priorities (speed first, then accuracy):
   single call at 16 questions and Oracle asks 23, so it cannot run Oracle's question set as designed.
   Splitting the questions across several calls would change how Oracle works (more calls, more latency), so
   it was not attempted. `drex-v1.5` was not tried and probably has the same cap.
+- **`nace-ai/drex-max`** (Drex 2.0's successor, 2026-10-23, DeepInfra at $0.06/M prompt tokens, about 290ms
+  p50 in OpenRouter's own stats) has the same cap: a 12-case smoke test failed every call with
+  `HTTP 422: questions must be an object of 1..16 questions`. The 422 comes from the server's request
+  validation, so it says nothing about the model's accuracy. Not run in full, for the same reason as 2.0.
 - **`upstage/solar-decide`** (the regular, non-Flash model) answers correctly (79.9 on a 6-case probe) but
   takes 13 to 21 seconds per call, about 100x Oracle's 2.5s timeout, and it timed out at the bench's 15s
   limit on most of a 12-case smoke test. It was not run in full: there is no way for it to be usable here.
