@@ -1,0 +1,69 @@
+# Fuzz testing — native `testing.F` for the untrusted-text parsers
+
+**Added: 2026-10-23.**
+
+**Status: in progress — first tranche (Tranche 1 below) being implemented on `claude/fuzz-testing`.
+Update this line as tranches land.**
+
+## Why
+
+Polaris is a single long-running binary that parses text it does not control: LLM output
+(non-deterministic, often malformed) and web content (HTML, PDFs, URLs). A panic in any of those
+parsers takes down the whole process and every in-flight turn. The existing suite is example-based
+(177 test files, ~47 table-driven tests) and has no property or fuzz coverage, so it only exercises
+inputs someone already thought of.
+
+Go's built-in fuzzing (`func FuzzXxx(f *testing.F)`) is enough — no new dependency. Seed corpora run
+as ordinary tests under `go test ./...`, so CI gets regression protection with no workflow change;
+crashers found while fuzzing are saved to `testdata/fuzz/<Target>/` and replayed forever after.
+
+Not worth fuzzing: regex backtracking (Go uses RE2, linear time), gateway/agent concurrency (race
+tests and `dev/fakeopenrouter` own that), the frontend (`fast-check` + vitest if ever wanted).
+
+## Conventions
+
+- File name `fuzz_test.go` next to the code under test (same package, so unexported parsers are
+  reachable).
+- Name `FuzzXxx` after the function under test.
+- Seed with representative real-world inputs, including the inputs from existing table tests.
+- Every target asserts **no panic**, plus a cheap invariant where one exists (size caps, output
+  charset, idempotence, round-trip). Don't write an oracle that re-implements the function.
+- A crasher gets fixed in the code *and* gets a named regular regression test
+  (`TestXxx_<Behavior>`), per `docs/STANDARDS.md`; the `testdata/fuzz` file is kept too.
+- Run locally with `go test ./pkg -run=^$ -fuzz=FuzzXxx -fuzztime=60s`.
+
+## Targets
+
+### Tranche 1 — highest risk, pure functions
+
+| Target | Where | Invariant |
+|---|---|---|
+| `FuzzParse` / `FuzzStrip` | `uiblocks/uiblocks.go` `parse`, `Strip` | no panic; `Strip` of content with no ui fence is identity |
+| `FuzzExtractPDFPage` | `tools/web_read.go` | no panic on arbitrary bytes; `totalPages >= 0`; error implies empty text |
+| `FuzzParsePseudoToolCalls` | `agent/pseudocall.go` | no panic; every returned call has non-empty name and valid JSON args |
+| `FuzzExtractJSONBlock` | `tools/subagent_report.go` | no panic; non-empty result starts with `{` and ends with `}` |
+| `FuzzSplitIntoSpeechChunks` | `voice/chunk.go` | no panic; no empty chunks; chunks only exceed the cap if a single sentence does |
+
+### Tranche 2 — LLM-output parsers
+
+`gateway.parseReconcileResponse`, `gateway.parseDailyVerdict`, `gateway.parsePulsarSuggestion`,
+`tools.ParseSubAgentReport`, `oraclebench.parseJudgment`, `agent.extractSearchQuery`,
+`gateway.sanitizeGeneratedTitle`, `tools.parseTavilyYouTubeTranscript`.
+
+### Tranche 3 — identifiers, URLs, cursors, chunking
+
+`tools.parseGitHubRepo`, `tools.extractYouTubeID`, `tools.parseGitHubSince`,
+`tools.parseGitHubLastPage`, `search.normalizeDomain`, `store.decodeThreadCursor`,
+`llm.DecodeTranscript`, `gateway.splitIntoChunks`, `gateway.normalizeForQuote`,
+`gateway.extractClaims`, `tools.stripBoilerplateLines`, `voice.StripMarkdown`.
+
+### Tranche 4 (optional) — CI
+
+A manual/scheduled `fuzz.yml` workflow running each target for ~60s, kept out of the PR path so it
+can't slow merges.
+
+## Findings log
+
+Fill in as targets are run: target, input (or `testdata/fuzz` file), root cause, fix commit.
+
+_(none yet)_
