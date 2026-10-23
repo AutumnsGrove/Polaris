@@ -2,7 +2,7 @@
 
 **Added: 2026-10-23.**
 
-**Status: in progress — Tranche 1 implemented (all five targets, plus `FuzzParse` and `FuzzExtractSearchQuery`) on `claude/fuzz-testing`; Tranches 2–3 pending.
+**Status: in progress — Tranche 1 implemented (all five targets, plus `FuzzParse` and `FuzzExtractSearchQuery`) on `claude/fuzz-testing`; Tranche 2 implemented (7 of the 8 listed; `extractSearchQuery` moved into Tranche 1); Tranche 3 pending.
 Update this line as tranches land.**
 
 ## Why
@@ -69,3 +69,4 @@ Fill in as targets are run: target, input (or `testdata/fuzz` file), root cause,
 | Target | Input | Root cause | Fix |
 |---|---|---|---|
 | `FuzzExtractPDFPage` | `tools/testdata/fuzz/FuzzExtractPDFPage/29c386a38e140cad` (truncated xref, bogus `startxref`) | `ledongthuc/pdf` panics on malformed input instead of returning an error; would crash any caller not under the agent driver's per-tool `recover` | `pdfPageText` recovers and returns an error; `TestExtractPDFPage_MalformedPDF_ReturnsErrorInsteadOfPanicking` |
+| `FuzzSanitizeGeneratedTitle` | `gateway/testdata/fuzz/FuzzSanitizeGeneratedTitle/bfd3c63a68147d0b` | `title[:maxTitleLen]` cut mid-rune, storing invalid UTF-8 for CJK/accented titles | cut backs off to a rune boundary; `TestSanitizeGeneratedTitle_TruncatesOnRuneBoundary` |

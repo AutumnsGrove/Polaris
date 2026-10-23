@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"polaris/config"
 	"polaris/llm"
@@ -133,7 +134,14 @@ func sanitizeGeneratedTitle(raw string) string {
 	title = strings.TrimSpace(titleQuotePrefix.ReplaceAllString(title, ""))
 	title = strings.TrimRight(title, ".!。")
 	if len(title) > maxTitleLen {
-		title = title[:maxTitleLen]
+		// Back off to a rune boundary: a plain byte cut mid-rune (any CJK or
+		// accented title) stored invalid UTF-8 — found by
+		// FuzzSanitizeGeneratedTitle.
+		cut := maxTitleLen
+		for cut > 0 && !utf8.RuneStart(title[cut]) {
+			cut--
+		}
+		title = title[:cut]
 	}
 	if answerLikeTitle.MatchString(title) {
 		return ""

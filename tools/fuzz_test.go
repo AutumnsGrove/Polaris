@@ -43,3 +43,31 @@ func FuzzExtractJSONBlock(f *testing.F) {
 		}
 	})
 }
+
+func FuzzParseSubAgentReport(f *testing.F) {
+	f.Add("obj", "```json\n{\"findings\":[{\"claim\":\"c\",\"sources\":[\"u\"]}]}\n```")
+	f.Add("obj", "plain prose answer")
+	f.Add("obj", "{}")
+	f.Add("", "")
+	f.Fuzz(func(t *testing.T, objective, raw string) {
+		r := ParseSubAgentReport(objective, raw, []Citation{{URL: "https://a.org"}})
+		if r.Objective != objective {
+			t.Errorf("objective = %q, want fallback %q", r.Objective, objective)
+		}
+		if len(r.Findings) == 0 {
+			t.Errorf("no findings for %q", raw)
+		}
+	})
+}
+
+func FuzzParseTavilyYouTubeTranscript(f *testing.F) {
+	f.Add("Title line\n\nTranscript\n0:01 hello\n0:05 world", "fb")
+	f.Add("Transcript", "fb")
+	f.Add("", "")
+	f.Fuzz(func(t *testing.T, raw, fallback string) {
+		_, transcript, ok := parseTavilyYouTubeTranscript(raw, fallback)
+		if ok && strings.TrimSpace(transcript) == "" {
+			t.Errorf("ok with empty transcript for %q", raw)
+		}
+	})
+}
