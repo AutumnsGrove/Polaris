@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"polaris/jev"
 	"polaris/tools"
@@ -669,6 +670,11 @@ func splitIntoChunks(text string) []string {
 			overlapStart := len(prev) - overlapChars
 			if overlapStart < 0 {
 				overlapStart = 0
+			}
+			// A byte offset can land mid-rune for non-ASCII text, leaving the
+			// next chunk starting with stray continuation bytes.
+			for overlapStart < len(prev) && !utf8.RuneStart(prev[overlapStart]) {
+				overlapStart++
 			}
 			cur.Reset()
 			cur.WriteString(prev[overlapStart:])
