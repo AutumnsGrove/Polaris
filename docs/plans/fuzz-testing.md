@@ -2,7 +2,7 @@
 
 **Added: 2026-10-23.**
 
-**Status: in progress — first tranche (Tranche 1 below) being implemented on `claude/fuzz-testing`.
+**Status: in progress — Tranche 1 implemented (all five targets, plus `FuzzParse` and `FuzzExtractSearchQuery`) on `claude/fuzz-testing`; Tranches 2–3 pending.
 Update this line as tranches land.**
 
 ## Why
@@ -66,4 +66,6 @@ can't slow merges.
 
 Fill in as targets are run: target, input (or `testdata/fuzz` file), root cause, fix commit.
 
-_(none yet)_
+| Target | Input | Root cause | Fix |
+|---|---|---|---|
+| `FuzzExtractPDFPage` | `tools/testdata/fuzz/FuzzExtractPDFPage/29c386a38e140cad` (truncated xref, bogus `startxref`) | `ledongthuc/pdf` panics on malformed input instead of returning an error; would crash any caller not under the agent driver's per-tool `recover` | `pdfPageText` recovers and returns an error; `TestExtractPDFPage_MalformedPDF_ReturnsErrorInsteadOfPanicking` |

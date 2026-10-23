@@ -959,3 +959,19 @@ func TestAddCitation_MergesReadMeasurementIntoExistingCitation(t *testing.T) {
 		t.Errorf("citation = %+v, want the read's measurement merged in", cits[0])
 	}
 }
+
+// ledongthuc/pdf panics on some malformed files instead of returning an
+// error; found by FuzzExtractPDFPage (its crasher is kept under
+// testdata/fuzz). Input here: a bogus startxref pointing past a truncated
+// xref stream.
+func TestExtractPDFPage_MalformedPDF_ReturnsErrorInsteadOfPanicking(t *testing.T) {
+	data := []byte("%PDF-1.0\n000000000000000000000000000000000000000000000000000000000000000000000000\nstartxref\n091%%EOF")
+
+	_, text, _, err := ExtractPDFPage(data, 48)
+	if err == nil {
+		t.Fatal("expected an error for a malformed pdf, got nil")
+	}
+	if text != "" {
+		t.Errorf("text = %q, want empty alongside an error", text)
+	}
+}
