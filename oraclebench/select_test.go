@@ -57,3 +57,17 @@ func TestSampleCases(t *testing.T) {
 		t.Error("sampling must not reorder the caller's slice")
 	}
 }
+
+func TestMaxQuestionsFor(t *testing.T) {
+	for id, want := range map[string]int{
+		"nace-ai/drex-v2.0": 16,
+		"nace-ai/drex-max":  16,
+		// v1.5 accepted all 23 questions in a single request (2026-10-25), so it must not be split.
+		"nace-ai/drex-v1.5": 0,
+		"typesafe/jev-1.14": 0,
+	} {
+		if got := MaxQuestionsFor(id); got != want {
+			t.Errorf("MaxQuestionsFor(%q) = %d, want %d", id, got, want)
+		}
+	}
+}

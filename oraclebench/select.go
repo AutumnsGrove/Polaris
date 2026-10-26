@@ -42,6 +42,21 @@ func ParseModelList(csv string) []string {
 	return out
 }
 
+// questionCaps lists models that reject a request over a fixed question count,
+// so the bench splits Oracle's call for them (jev.Client.WithMaxQuestions).
+// Nace's Drex 2.0 and Max both 422 over 16 (measured 2026-10-25; 16 passes, 17
+// fails). Drex 1.5 has no cap (accepted 23), so it deliberately isn't listed:
+// it runs as one request like everything else. A capped model's score reflects
+// the split, which the write-up must say.
+var questionCaps = map[string]int{
+	"nace-ai/drex-v2.0": 16,
+	"nace-ai/drex-max":  16,
+}
+
+// MaxQuestionsFor returns the per-request question cap for a model, or 0 when
+// it has none.
+func MaxQuestionsFor(id string) int { return questionCaps[id] }
+
 // minContext is the smallest context window worth trying. The full Oracle
 // question set is ~4.8k input tokens (measured); anything under this can't hold
 // it. A catalog entry reporting 0 (the respan family) is NOT filtered here: it

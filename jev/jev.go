@@ -28,7 +28,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -63,6 +65,9 @@ type Client struct {
 	// only). Both speak the same request/response shape — see the package doc
 	// and WithDecisionsAPI.
 	decisions bool
+	// maxQuestions caps how many questions go in one request; 0 means no cap.
+	// See WithMaxQuestions.
+	maxQuestions int
 }
 
 // NewClient returns nil if apiKey is empty, mirroring brave.NewClient's
@@ -93,6 +98,25 @@ func (c *Client) WithDecisionsAPI() *Client {
 		return c
 	}
 	c.decisions = true
+	return c
+}
+
+// WithMaxQuestions makes AskChoice split a call with more than n questions into
+// the fewest balanced requests that each fit, sent concurrently and merged back
+// into one Response. Some decision models cap a single request (Nace's Drex 2.0
+// and Max reject anything over 16 with a 422, measured 2026-10-25); Oracle asks
+// up to 23. A non-positive n keeps the default of no cap. Nil-safe.
+//
+// A split is not perfectly lossless: the same question's probability can move a
+// little depending on which other questions share its request (measured on Drex
+// Max: usually under 0.01, once 0.08), and the split is deterministic (sorted
+// keys) so repeated calls at least agree with each other. Any result gathered
+// through a split should be reported as such.
+func (c *Client) WithMaxQuestions(n int) *Client {
+	if c == nil || n <= 0 {
+		return c
+	}
+	c.maxQuestions = n
 	return c
 }
 
@@ -200,6 +224,76 @@ type errorBody struct {
 // live: 8 questions in one call, 419ms; 3 sources / 3 pairwise questions,
 // 652ms) rather than one call per question.
 func (c *Client) AskChoice(ctx context.Context, state interface{}, questions map[string]ChoiceQuestion) (*Response, error) {
+	if c.maxQuestions <= 0 || len(questions) <= c.maxQuestions {
+		return c.askChunk(ctx, state, questions)
+	}
+	chunks := splitQuestions(questions, c.maxQuestions)
+
+	// One failed chunk fails the whole call, matching an unsplit call's
+	// all-or-nothing behavior (Oracle treats any error as "off for this turn"),
+	// and cancels its siblings rather than paying for answers nobody will use.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	resps := make([]*Response, len(chunks))
+	errs := make([]error, len(chunks))
+	var wg sync.WaitGroup
+	for i, chunk := range chunks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resps[i], errs[i] = c.askChunk(ctx, state, chunk)
+			if errs[i] != nil {
+				cancel()
+			}
+		}()
+	}
+	wg.Wait()
+
+	merged := &Response{Answers: make(map[string]ChoiceAnswer, len(questions))}
+	for i, resp := range resps {
+		if errs[i] != nil {
+			return nil, errs[i]
+		}
+		for k, a := range resp.Answers {
+			merged.Answers[k] = a
+		}
+		merged.Usage.InputTokens += resp.Usage.InputTokens
+		merged.Usage.OutputTokens += resp.Usage.OutputTokens
+		merged.Usage.CostUSD += resp.Usage.CostUSD
+		if merged.Model == "" {
+			merged.Model = resp.Model
+		}
+	}
+	return merged, nil
+}
+
+// splitQuestions cuts questions into the fewest chunks of at most max, as even
+// as possible (23 at max 16 is 12+11, not 16+7, so neither request is much
+// slower than the other and the call waits on the slower one). Keys are sorted
+// first so the same question set always splits the same way; map order would
+// otherwise change which questions share a request from call to call.
+func splitQuestions(questions map[string]ChoiceQuestion, max int) []map[string]ChoiceQuestion {
+	keys := make([]string, 0, len(questions))
+	for k := range questions {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	n := (len(keys) + max - 1) / max
+	per := (len(keys) + n - 1) / n
+	chunks := make([]map[string]ChoiceQuestion, 0, n)
+	for start := 0; start < len(keys); start += per {
+		end := min(start+per, len(keys))
+		chunk := make(map[string]ChoiceQuestion, end-start)
+		for _, k := range keys[start:end] {
+			chunk[k] = questions[k]
+		}
+		chunks = append(chunks, chunk)
+	}
+	return chunks
+}
+
+// askChunk is one real request.
+func (c *Client) askChunk(ctx context.Context, state interface{}, questions map[string]ChoiceQuestion) (*Response, error) {
 	wire := make(map[string]questionWire, len(questions))
 	for k, q := range questions {
 		wire[k] = questionWire{Type: "choice", Instructions: q.Instructions, Criteria: q.Criteria}
