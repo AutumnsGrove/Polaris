@@ -21,7 +21,7 @@ func TestStats_APICapsReportRealUsageAgainstEnforcedCaps(t *testing.T) {
 	if _, err := h.db.IncrementAPIUsage("brave"); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.db.LogJevCost(1.25); err != nil {
+	if err := h.db.LogDecisionsCost(1.25); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +67,7 @@ func TestStats_APICapsReportRealUsageAgainstEnforcedCaps(t *testing.T) {
 		{"brave", "calls", 1, brave.MonthlyCap},
 		{"parallel", "calls", 0, tools.ParallelMonthlyCap},
 		{"tavily", "calls", 3, tools.TavilyMonthlyCap},
-		{"jev", "usd", 1.25, jevMonthlyCapUSD},
+		{"jev", "usd", 1.25, decisionsMonthlyCapUSD},
 	}
 	if len(byProvider) != len(cases) {
 		t.Errorf("got %d services, want %d: %+v", len(byProvider), len(cases), caps.Services)

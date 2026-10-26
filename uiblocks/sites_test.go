@@ -101,7 +101,7 @@ func TestSites_ViewCampsAreTheirOwnClaims(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
-	// The whole camp line is the claim, so Jev sees who said it.
+	// The whole camp line is the claim, so the decision model sees who said it.
 	if want := "Camp A: It is X — Because why"; s[0].Text != want {
 		t.Errorf("claim text = %q, want %q", s[0].Text, want)
 	}

@@ -10,23 +10,23 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/tools"
 	"polaris/uiblocks"
 )
 
-// jevPerTurnCapUSD/jevMonthlyCapUSD mirror tools/compare_sources.go's own
+// decisionsPerTurnCapUSD/decisionsMonthlyCapUSD mirror tools/compare_sources.go's own
 // (unexported, package-private) constants of the same value — kept as a
 // separate copy here rather than exported from tools, since the two
 // features track entirely independent running totals (compare_sources
-// checks mid-turn via ctx.JevSpentThisTurn while a tool call is still live;
+// checks mid-turn via ctx.DecisionsSpentThisTurn while a tool call is still live;
 // this checks post-turn, in a detached goroutine, against the exact same
 // tools.Context — the two calls' spend still lands in the same running
 // total either way, so a turn that both compares sources and verifies
 // citations shares one $0.01 budget across both, not two separate ones).
 const (
-	jevPerTurnCapUSD = 0.01
-	jevMonthlyCapUSD = 5.00
+	decisionsPerTurnCapUSD = 0.01
+	decisionsMonthlyCapUSD = 5.00
 )
 
 // verificationConfidenceThreshold gates the one visible mark this feature
@@ -39,13 +39,13 @@ const (
 const verificationConfidenceThreshold = 0.85
 
 // verificationCharsPerToken is a conservative chars-per-token estimate for
-// budgeting evidence size before ever calling Jev — the live-measured
+// budgeting evidence size before ever calling the decision model — the live-measured
 // pass/fail boundary used repetitive filler text (~7 chars/token), denser
 // than real English (~4 chars/token); rounding down to 3.5 leaves headroom
 // rather than reusing that filler-text measurement directly.
 const verificationCharsPerToken = 3.5
 
-// verificationTokenBudget targets ~24-26k tokens, not Jev's full 32k
+// verificationTokenBudget targets ~24-26k tokens, not the pinned Jev model's full 32k
 // context window, to leave headroom for the fan-out questions' own
 // instructions/criteria overhead (measured live: ~1.3k tokens added by 8
 // questions' worth of instructions on top of the source text).
@@ -63,7 +63,7 @@ const (
 // maxChunksPerSource bounds how many chunk calls one source can generate —
 // a long page (a full Wikipedia article, a long doc-site page) could
 // otherwise split into dozens of chunks; only the ones most lexically
-// relevant to the pending claims are actually sent to Jev, since most
+// relevant to the pending claims are actually sent to the decision model, since most
 // chunks of a long page legitimately have nothing to do with any specific
 // claim. Deliberately adjustable, not a tightly-reasoned figure.
 const maxChunksPerSource = 5
@@ -90,13 +90,13 @@ type claim struct {
 var citationLinkRe = regexp.MustCompile(`\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
 
 // claimContextSentences is how many sentences before the one carrying the
-// citation link also get included in the claim text sent to Jev — see
+// citation link also get included in the claim text sent to the decision model — see
 // widenedClaimStart. 2, not the bare enclosing sentence alone: a real
 // answer often builds up a claim across several sentences before the
 // citation chip actually appears (e.g. "X happened. It was caused by Y.
 // [source](url)."), and a claim missing that lead-up loses the antecedent
 // for any pronoun/back-reference in its own sentence — confirmed live-
-// relevant, not a theoretical concern. Jev's real per-call cost is small
+// relevant, not a theoretical concern. The decision model's real per-call cost is small
 // enough ($0.00004-0.0002/call measured live) that this costs effectively
 // nothing against the token budget even on a chatty multi-sentence answer.
 const claimContextSentences = 2
@@ -145,7 +145,7 @@ func extractClaims(answer string, citations []tools.Citation) []claim {
 // widenedClaimStart scans backward from sentStart (the start of the
 // sentence that actually carries the citation link) across up to
 // extraSentences more sentence boundaries, stopping early at a paragraph
-// break or the start of the text — so the claim sent to Jev includes
+// break or the start of the text — so the claim sent to the decision model includes
 // however much lead-up actually precedes the cited sentence, without
 // reaching into an unrelated prior paragraph.
 func widenedClaimStart(text string, sentStart int, extraSentences int) int {
@@ -258,7 +258,7 @@ func isSentenceEnd(text string, i int) bool {
 // (via filterSupportedMarks) for the real badge/persistence path, and
 // hands the unfiltered set to AskRequest.WaitVerification's debug/
 // stress-testing response instead (see ask.go) so a test caller can see
-// exactly what Jev said — confidence, choice, even a claim that errored or
+// exactly what the decision model said — confidence, choice, even a claim that errored or
 // had no evidence to check against — not just the filtered subset a real
 // chat turn shows as a badge.
 type ClaimVerification struct {
@@ -269,7 +269,7 @@ type ClaimVerification struct {
 	// checked — no stored evidence for its URL (web_search-only citation,
 	// or an empty/scanned-PDF extraction), every chunk call failed, or a
 	// budget cap was hit before its source's turn came up. Reason
-	// explains which when that happens; empty when a real Jev answer
+	// explains which when that happens; empty when a real decision-model answer
 	// came back.
 	Choice     string  `json:"choice"`
 	Confidence float64 `json:"confidence"`
@@ -283,7 +283,7 @@ type ClaimVerification struct {
 	Locator string `json:"locator,omitempty"`
 }
 
-// maxUIClaimsPerTurn caps how many block links one answer may spend Jev calls
+// maxUIClaimsPerTurn caps how many block links one answer may spend decisions calls
 // on, so a block-heavy answer (a facts card with ten sourced rows, several
 // blocks) cannot use the whole $0.01 per-turn budget before the prose gets its
 // turn. Prose claims are not capped by this; blocks are checked after them.
@@ -318,15 +318,15 @@ func claimsForVerification(answer string, citations []tools.Citation) []claim {
 
 // runVerification checks each of answer's own inline citations against the
 // text actually fetched for them this turn (agentCtx.EvidenceForURL), using
-// Jev — see docs/plans/source-verification-badge.md. Returns every claim's
+// the decisions client — see docs/plans/source-verification-badge.md. Returns every claim's
 // full result, unfiltered; see filterSupportedMarks for the real badge's
 // "supported, at/above threshold only" view. Nil whenever there's nothing
-// to check at all: no Jev client configured, no answer, or no tracked
+// to check at all: no decisions client configured, no answer, or no tracked
 // citations (as opposed to a claim that was extracted but couldn't be
 // checked, which still gets its own ClaimVerification with an empty Choice
 // and a Reason, not a silent omission).
 func runVerification(agentCtx *tools.Context, answer string, citations []tools.Citation) []ClaimVerification {
-	if agentCtx == nil || agentCtx.Jev == nil || answer == "" || len(citations) == 0 {
+	if agentCtx == nil || agentCtx.Decisions == nil || answer == "" || len(citations) == 0 {
 		return nil
 	}
 	claims := claimsForVerification(answer, citations)
@@ -383,7 +383,7 @@ func runVerification(agentCtx *tools.Context, answer string, citations []tools.C
 // filterSupportedMarks reduces runVerification's full per-claim results
 // down to the real badge's "supported, at/above threshold only" view — see
 // the plan doc's UI section. Only ever returns "supported" marks — never a
-// "contradicted" warning, even though Jev itself distinguishes them —
+// "contradicted" warning, even though the decision model itself distinguishes them —
 // because a false "your source disagrees" is editorially worse than a
 // missed badge; a contradicted-mark v2 needs real usage data first, not a
 // launch-day guess.
@@ -397,14 +397,14 @@ func filterSupportedMarks(results []ClaimVerification) []VerificationMark {
 	return marks
 }
 
-// verifySource runs one source's pending claims through Jev — a single
+// verifySource runs one source's pending claims through the decision model — a single
 // call if the evidence fits the token budget, otherwise one call per
 // selected chunk, all of that source's claims as parallel Choice questions
 // either way (never one call per claim) — and reduces each claim's result
 // across however many chunk calls it took. See the plan doc's "Chunking
 // design" and "Reduce per-claim across chunk results" sections.
 func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim) []ClaimVerification {
-	questions := make(map[string]jev.ChoiceQuestion, len(claims))
+	questions := make(map[string]decisions.ChoiceQuestion, len(claims))
 	overheadChars := 0
 	criteria := map[string]string{
 		"supported":           "The source confirms this claim",
@@ -413,9 +413,9 @@ func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim)
 		"not_addressed":       "The source does not address this at all",
 	}
 	// A quote is a stronger promise than a claim, so its source is checked for
-	// the passage itself. An exact match is settled right here with no Jev call
+	// the passage itself. An exact match is settled right here with no decisions call
 	// (a verbatim match cannot be hallucinated); only a miss falls through to
-	// Jev, for the near-verbatim cases (decision 18).
+	// the decision model, for the near-verbatim cases (decision 18).
 	results := make([]ClaimVerification, len(claims))
 	exact := make([]bool, len(claims))
 	normEvidence := ""
@@ -445,7 +445,7 @@ func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim)
 			crit = quoteCriteria
 			instructions = fmt.Sprintf("Does the source contain this passage, word for word or very nearly (only punctuation, whitespace or capitalization differ)? A paraphrase or a summary does NOT count: %s", c.text)
 		}
-		questions[key] = jev.ChoiceQuestion{Instructions: instructions, Criteria: crit}
+		questions[key] = decisions.ChoiceQuestion{Instructions: instructions, Criteria: crit}
 		overheadChars += len(instructions)
 		for _, v := range crit {
 			overheadChars += len(v)
@@ -462,17 +462,17 @@ func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim)
 		chunks = selectRelevantChunks(evidence, claims, maxChunksPerSource)
 	}
 
-	perClaim := make(map[string][]jev.ChoiceAnswer)
+	perClaim := make(map[string][]decisions.ChoiceAnswer)
 	for _, chunk := range chunks {
-		if agentCtx.JevSpentThisTurn() >= jevPerTurnCapUSD {
-			log.Warn("verification: per-turn Jev budget already used, stopping", "url", url)
+		if agentCtx.DecisionsSpentThisTurn() >= decisionsPerTurnCapUSD {
+			log.Warn("verification: per-turn decisions budget already used, stopping", "url", url)
 			break
 		}
-		if agentCtx.JevCostThisMonth != nil {
-			if used, err := agentCtx.JevCostThisMonth(); err != nil {
-				log.Warn("verification: checking jev monthly cost failed, proceeding anyway", "err", err)
-			} else if used >= jevMonthlyCapUSD {
-				log.Warn("verification: monthly Jev budget reached, stopping", "url", url)
+		if agentCtx.DecisionsCostThisMonth != nil {
+			if used, err := agentCtx.DecisionsCostThisMonth(); err != nil {
+				log.Warn("verification: checking decisions monthly cost failed, proceeding anyway", "err", err)
+			} else if used >= decisionsMonthlyCapUSD {
+				log.Warn("verification: monthly decisions budget reached, stopping", "url", url)
 				break
 			}
 		}
@@ -483,18 +483,18 @@ func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim)
 		// goroutine tree), which is already true by the time this runs.
 		// generateSuggestions makes the exact same choice for the exact
 		// same reason.
-		resp, err := agentCtx.Jev.AskChoice(context.Background(), chunk, questions)
+		resp, err := agentCtx.Decisions.AskChoice(context.Background(), chunk, questions)
 		if err != nil {
-			log.Warn("verification: jev call failed", "url", url, "err", err)
+			log.Warn("verification: decisions call failed", "url", url, "err", err)
 			continue
 		}
-		agentCtx.AddJevCost(resp.Usage.CostUSD)
-		if agentCtx.LogJevCost != nil {
+		agentCtx.AddDecisionsCost(resp.Usage.CostUSD)
+		if agentCtx.LogDecisionsCost != nil {
 			// Logged immediately, before reduction below — an audit trail
 			// even if a later chunk call in this same source fails
 			// partway through.
-			if err := agentCtx.LogJevCost(resp.Usage.CostUSD); err != nil {
-				log.Warn("verification: logging jev cost failed", "err", err)
+			if err := agentCtx.LogDecisionsCost(resp.Usage.CostUSD); err != nil {
+				log.Warn("verification: logging decisions cost failed", "err", err)
 			}
 		}
 		for key, ans := range resp.Answers {
@@ -509,7 +509,7 @@ func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim)
 		key := fmt.Sprintf("c%d", i)
 		answers := perClaim[key]
 		if len(answers) == 0 {
-			results[i].Reason = "no successful jev call (budget cap hit or every call failed)"
+			results[i].Reason = "no successful decisions call (budget cap hit or every call failed)"
 			continue
 		}
 
@@ -560,7 +560,7 @@ var quoteCriteria = map[string]string{
 
 // minQuoteChars is the least normalized text an exact quote match may rest on.
 // A three-word quote is a substring of half the internet, so "found" would
-// prove nothing; below this the exact path steps aside and Jev decides.
+// prove nothing; below this the exact path steps aside and the decision model decides.
 const minQuoteChars = 12
 
 // normalizeForQuote folds text to what survives re-typesetting: lowercase,

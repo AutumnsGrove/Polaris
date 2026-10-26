@@ -9,7 +9,7 @@
 // production, including how the ui question behaves among its ~20 siblings.
 // It records the raw ui probabilities once, then scores them offline at both
 // dial thresholds (Normal = the check's threshold, Low = threshold + offset),
-// so retuning a threshold needs no new Jev spend.
+// so retuning a threshold needs no new decisions spend.
 //
 // Usage (from the repo root, where prompts.yaml lives):
 //
@@ -33,7 +33,7 @@ import (
 
 	"polaris/config"
 	"polaris/gateway"
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/models"
 )
 
@@ -47,7 +47,7 @@ type scored struct {
 	Winner string             `json:"winner"`
 	Probs  map[string]float64 `json:"probs"`
 	Cost   float64            `json:"cost_usd"`
-	OK     bool               `json:"ok"` // false: Jev timed out / errored / dropped the answer
+	OK     bool               `json:"ok"` // false: the decision model timed out / errored / dropped the answer
 }
 
 func load(path string) []item {
@@ -76,7 +76,7 @@ func main() {
 	outPath := flag.String("out", "ui_spike_results.jsonl", "raw per-message results")
 	cfgPath := flag.String("config", "config.yaml", "config.yaml (API key only; thresholds come from the shipped defaults)")
 	conc := flag.Int("conc", 4, "concurrent Oracle calls")
-	retries := flag.Int("retries", 2, "re-asks when Jev times out (it does ~14% of the time)")
+	retries := flag.Int("retries", 2, "re-asks when the decision model times out (Jev did ~14% of the time)")
 	flag.Parse()
 
 	items := load(*corpusPath)
@@ -88,7 +88,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("loading config: %v", err)
 	}
-	client := jev.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey)
+	client := decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey)
 	if client == nil {
 		log.Fatal("no OpenRouter API key configured")
 	}
@@ -143,7 +143,7 @@ func main() {
 	}
 	out.Close()
 
-	fmt.Printf("%d messages, total Jev cost $%.4f, %d with no ui answer even after retries\n", len(results), cost, failed)
+	fmt.Printf("%d messages, total decisions cost $%.4f, %d with no ui answer even after retries\n", len(results), cost, failed)
 	fmt.Printf("bars: Normal %.2f, Low %.2f (shipped defaults)\n\n", normalBar, lowBar)
 
 	for _, dial := range []struct {

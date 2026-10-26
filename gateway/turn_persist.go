@@ -77,7 +77,7 @@ func (t *turnRun) persistAnswer() bool {
 	}
 
 	// oracleResult.Checks is only non-empty when Oracle actually got a
-	// live Jev answer this turn (RunOracle returns early, before
+	// live decision-model answer this turn (RunOracle returns early, before
 	// appending anything, on every off/unconfigured/error/timeout path)
 	// — persisting only then keeps oracle_result "" for every ordinary
 	// Oracle-off turn, matching its schema comment, rather than storing
@@ -98,7 +98,7 @@ func (t *turnRun) persistAnswer() bool {
 	// Oracle timed out or errored (no checks to persist), but the turn still
 	// carried a focus mode whose provenance the next turn's sticky/retract
 	// logic reads back — losing it here would make an Oracle-set mode look
-	// like a plain default after one Jev hiccup.
+	// like a plain default after one decisions-API hiccup.
 	if !t.oracleResult.hasContent() && t.oracleFocusModeSource != "" {
 		if err := t.s.db.SetMessageFocusModeSource(t.assistantMsgID, t.oracleFocusModeSource); err != nil {
 			log.Warn("failed to record focus mode source", "err", err)
@@ -214,7 +214,7 @@ func (t *turnRun) finishTurn() {
 		Citations:          t.result.Citations,
 		Cards:              t.result.Cards,
 		Chart:              t.result.Chart,
-		// Oracle's Jev spend is already on this message/thread in the DB
+		// Oracle's decisions spend is already on this message/thread in the DB
 		// (AddTurnCost above), so the live total must carry it too or the
 		// thread's running cost only catches up on reload.
 		CostUSD:               totalCost + t.oracleResult.CostUSD,

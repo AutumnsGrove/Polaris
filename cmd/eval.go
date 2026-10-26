@@ -12,7 +12,7 @@ import (
 
 	"polaris/config"
 	"polaris/eval"
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/llm"
 	"polaris/models"
 )
@@ -28,18 +28,18 @@ var (
 
 var evalCmd = &cobra.Command{
 	Use:   "eval",
-	Short: "Run the cheap prompt/Jev eval harness (docs/plans/hill-climbing-objectives.md) against committed fixture cases",
-	Long: "Runs a sample of eval/cases/**/*.yaml through their own single-prompt or single-Jev-call\n" +
+	Short: "Run the cheap prompt/decision-model eval harness (docs/plans/hill-climbing-objectives.md) against committed fixture cases",
+	Long: "Runs a sample of eval/cases/**/*.yaml through their own single-prompt or single-decisions-call\n" +
 		"pipeline (see eval/run.go) and reports pass/fail — the cheap, repeatable inner loop\n" +
 		"docs/plans/hill-climbing-objectives.md calls for, sitting alongside `polaris benchmark`\n" +
 		"rather than replacing it: benchmark runs a full paid agent turn per question; eval runs one\n" +
-		"prompt or one Jev call per case, for the checks that don't need a whole turn to score.\n\n" +
+		"prompt or one decisions call per case, for the checks that don't need a whole turn to score.\n\n" +
 		"Five categories, all against synthetic committed fixtures: format (title/suggestions\n" +
-		"generation, checked by plain code), citation_support (Jev graded, the exact Choice shape\n" +
-		"gateway/verification.go's verifySource uses live), factual (one plain QA call, Jev-graded\n" +
+		"generation, checked by plain code), citation_support (decision-model graded, the exact Choice shape\n" +
+		"gateway/verification.go's verifySource uses live), factual (one plain QA call, decision-model-graded\n" +
 		"correct/incorrect/not_attempted), agent_loop (tool-selection against the real tool catalog,\n" +
 		"plus compaction-retention checks), and injection (a planted instruction in a synthetic\n" +
-		"tool result, Jev-graded on whether the model complied or ignored it). --category filters to\n" +
+		"tool result, decision-model-graded on whether the model complied or ignored it). --category filters to\n" +
 		"just one; omit it to run everything.",
 	RunE: runEval,
 }
@@ -50,7 +50,7 @@ func init() {
 	evalCmd.Flags().StringVar(&evalCategory, "category", "", "run only this category (format, citation_support, factual, agent_loop, injection, memory); omit to run every case")
 	evalCmd.Flags().IntVar(&evalN, "n", 0, "number of cases to sample (0 = run every matching case)")
 	evalCmd.Flags().Int64Var(&evalSeed, "seed", 0, "sampling seed — omit for a fresh random subset every run, pass an explicit value to reproduce one")
-	evalCmd.Flags().StringVarP(&evalModel, "model", "m", "", "model id for title/suggestions cases (defaults to default_model) — citation_support cases always use Jev regardless of this flag")
+	evalCmd.Flags().StringVarP(&evalModel, "model", "m", "", "model id for title/suggestions cases (defaults to default_model) — citation_support cases always use the decisions client's model regardless of this flag")
 	evalCmd.Flags().StringVar(&evalOut, "out", "eval-results.jsonl", "path to write per-case JSONL results")
 	rootCmd.AddCommand(evalCmd)
 }
@@ -96,7 +96,7 @@ func runEval(cmd *cobra.Command, args []string) error {
 	llmClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: &falseVal})
 
-	jevClient := jev.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey)
+	decisionsClient := decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey)
 
 	outFile, err := os.Create(evalOut)
 	if err != nil {
@@ -111,7 +111,7 @@ func runEval(cmd *cobra.Command, args []string) error {
 	var totalCost float64
 	for i, c := range cases {
 		fmt.Printf("[%d/%d] %s (%s/%s) ", i+1, len(cases), c.ID, c.Category, c.Kind)
-		result := eval.RunCase(context.Background(), c, llmClient, jevClient)
+		result := eval.RunCase(context.Background(), c, llmClient, decisionsClient)
 		total++
 		totalCost += result.CostUSD
 		if result.ErrMessage != "" {

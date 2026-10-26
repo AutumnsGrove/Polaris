@@ -1015,13 +1015,13 @@ oracle:
 
     {items}
 
-  # Jev's shared framing for every check, prepended to each check's own
+  # The decision model's shared framing for every check, prepended to each check's own
   # instructions. {state} is the message(s) being classified.
   question_preamble: >-
     You are reading a message someone sent to a research assistant that searches the web and cites
     sources. Answer about the latest message; an earlier message, if present, is only context.
 
-  # The has_url detector's injection. Not a Jev question — gateway/oracle.go
+  # The has_url detector's injection. Not a decision-model question — gateway/oracle.go
   # finds pasted links with a regex — so it has no options or threshold.
   link_nudge: >-
     The message contains a link. Read it with web_read (or youtube_transcript for a YouTube

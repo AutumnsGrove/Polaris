@@ -39,7 +39,7 @@ const (
 	// settingOracleEnabled stores "true" to turn Oracle mode on (docs/
 	// plans/oracle-mode.md, issue #122); any other value (including
 	// unset) means off — opposite default polarity from
-	// settingMemoryEnabled, since Oracle spends real Jev budget and picks
+	// settingMemoryEnabled, since Oracle spends real decisions-API budget and picks
 	// focus modes on the operator's behalf, so it should be an explicit
 	// opt-in rather than an opt-out.
 	settingOracleEnabled = "oracle_enabled"

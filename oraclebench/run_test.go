@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"polaris/gateway"
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/prompts"
 )
 
@@ -30,11 +30,11 @@ type stubAsker struct {
 	peak     atomic.Int64
 
 	mu        sync.Mutex
-	questions map[string]jev.ChoiceQuestion
+	questions map[string]decisions.ChoiceQuestion
 	states    []string
 }
 
-func (s *stubAsker) AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error) {
+func (s *stubAsker) AskChoice(ctx context.Context, state interface{}, questions map[string]decisions.ChoiceQuestion) (*decisions.Response, error) {
 	s.calls.Add(1)
 	n := s.inflight.Add(1)
 	defer s.inflight.Add(-1)
@@ -59,7 +59,7 @@ func (s *stubAsker) AskChoice(ctx context.Context, state interface{}, questions 
 	if s.err != nil {
 		return nil, s.err
 	}
-	answers := map[string]jev.ChoiceAnswer{}
+	answers := map[string]decisions.ChoiceAnswer{}
 	for key, q := range questions {
 		opts := make([]string, 0, len(q.Criteria))
 		for o := range q.Criteria {
@@ -70,9 +70,9 @@ func (s *stubAsker) AskChoice(ctx context.Context, state interface{}, questions 
 		if s.pick != nil {
 			choice, p = s.pick(key, opts)
 		}
-		answers[key] = jev.ChoiceAnswer{Choice: choice, Probabilities: map[string]float64{choice: p}}
+		answers[key] = decisions.ChoiceAnswer{Choice: choice, Probabilities: map[string]float64{choice: p}}
 	}
-	return &jev.Response{Answers: answers, Usage: jev.Usage{CostUSD: 0.0002}, Model: s.model}, nil
+	return &decisions.Response{Answers: answers, Usage: decisions.Usage{CostUSD: 0.0002}, Model: s.model}, nil
 }
 
 func pickMedical(key string, opts []string) (string, float64) {
@@ -199,7 +199,7 @@ func TestRun_CollectsEveryCallThroughTheRealOraclePath(t *testing.T) {
 	if f := findOutcome(s.Result, "chip_field"); f == nil || !f.Fired || f.Winner != "Cooking" {
 		t.Errorf("chip_field outcome = %+v, want Cooking offered", f)
 	}
-	// The follow-up case sent Jev the previous message the way production does.
+	// The follow-up case sent the decision model the previous message the way production does.
 	var sawPrevious bool
 	for _, st := range asker.states {
 		sawPrevious = sawPrevious || strings.HasPrefix(st, "Previous message: weather in tokyo\n\nLatest message: what about next week")
@@ -210,7 +210,7 @@ func TestRun_CollectsEveryCallThroughTheRealOraclePath(t *testing.T) {
 }
 
 func TestRun_ModelThatRejectsChoiceQuestionsIsNotApplicableNotZero(t *testing.T) {
-	respan := &stubAsker{err: errors.New(`jev error (status 400): Respan only accepts noul questions whose instructions and criteria are plain strings`)}
+	respan := &stubAsker{err: errors.New(`decisions error (status 400): Respan only accepts noul questions whose instructions and criteria are plain strings`)}
 	ok := &stubAsker{pick: pickMedical}
 	var events int
 	got, err := Run(context.Background(), RunConfig{
@@ -232,7 +232,7 @@ func TestRun_ModelThatRejectsChoiceQuestionsIsNotApplicableNotZero(t *testing.T)
 }
 
 func TestRun_RefusalsAndTimeoutsAreRecordedNotRetried(t *testing.T) {
-	refuse := &stubAsker{err: errors.New(`jev error (status 502): OpenAI refused to answer question "focus"`)}
+	refuse := &stubAsker{err: errors.New(`decisions error (status 502): OpenAI refused to answer question "focus"`)}
 	slow := &stubAsker{delay: time.Second, pick: pickMedical}
 	got, err := Run(context.Background(), RunConfig{
 		Cases: twoCases()[:1], Models: []Model{{ID: "luna", Asker: refuse}, {ID: "slow", Asker: slow}},

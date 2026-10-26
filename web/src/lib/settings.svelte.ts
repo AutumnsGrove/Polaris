@@ -46,14 +46,14 @@ export interface UsageStats {
 	};
 	// verification_cost_usd is a breakout, not a fourth bucket — how much
 	// of cost_by_source.polaris/.pulsar above (already counted once) was
-	// specifically Jev verification spend (compare_sources and friends).
+	// specifically decisions-API verification spend (compare_sources and friends).
 	// Never add this into total_cost_usd/period_cost_usd or cost_by_source
 	// a second time — see store.Stats.VerificationCostUSD's doc comment.
 	verification_cost_usd: { period_cost_usd: number; total_cost_usd: number };
-	// Same kind of breakout for Oracle mode's own Jev pre-read spend — see
+	// Same kind of breakout for Oracle mode's own decisions pre-read spend — see
 	// store.Stats.OracleCostUSD. Never add into the totals above either.
 	oracle_cost_usd: { period_cost_usd: number; total_cost_usd: number };
-	// Jev API call counts (not questions asked) — see store.Stats.JevCalls.
+	// Decisions API call counts (not questions asked) — see store.Stats.DecisionCalls.
 	// Optional so an older backend without it just hides the rows.
 	// `verification` also holds every compare_sources call from before the
 	// ledger split, which can't be told apart retroactively.
@@ -158,7 +158,7 @@ export class SettingsState {
 	memoryEnabled = $state(true);
 
 	// Master on/off for Oracle mode (docs/plans/oracle-mode.md) — off by
-	// default, unlike memoryEnabled above: Oracle spends real Jev budget
+	// default, unlike memoryEnabled above: Oracle spends real decisions-API budget
 	// and picks focus modes/injects guidance on every turn, so it's opt-in
 	// rather than opt-out (see gateway/settings.go's OracleEnabledFromStore
 	// doc comment on why the default polarity is deliberately opposite

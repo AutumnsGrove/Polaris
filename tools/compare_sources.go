@@ -1,6 +1,6 @@
 // compare_sources checks whether two or more of a turn's own cited sources
-// actually agree on a specific fact, using Jev (TypeSafe AI's "System One"
-// model, see the jev package) rather than the model's own read of them.
+// actually agree on a specific fact, using a decision model (see the decisions
+// package) rather than the model's own read of them.
 // Backend-only — no UI, no WS event, no store column: the model decides
 // whether and how to mention the result in its own prose, the same way it
 // already decides how to describe anything else it found. See
@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"strings"
 
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/llm"
 )
 
@@ -43,7 +43,7 @@ var compareSourcesDef = llm.ToolDef{
 
 func init() { Register("compare_sources", handleCompareSources) }
 
-// jevPerTurnCapUSD bounds one turn's total Jev spend across every
+// decisionsPerTurnCapUSD bounds one turn's total decisions spend across every
 // compare_sources call it makes — a backstop against a pathological turn
 // (many clusters, each re-comparing large sources) spending disproportionately
 // before the monthly cap below ever notices. Roughly 100-400x the
@@ -51,15 +51,15 @@ func init() { Register("compare_sources", handleCompareSources) }
 // see docs/plans/source-verification-compare-tool.md's cost-tracking
 // section. Shared in spirit with the future verification-badge feature's own
 // per-turn cap, though each tracks its own running total independently
-// (JevSpentThisTurn is per-Context, not global).
-const jevPerTurnCapUSD = 0.01
+// (DecisionsSpentThisTurn is per-Context, not global).
+const decisionsPerTurnCapUSD = 0.01
 
-// jevMonthlyCapUSD is a real ceiling on total monthly Jev spend across every
+// decisionsMonthlyCapUSD is a real ceiling on total monthly decisions spend across every
 // compare_sources call, checked via store.Store's jev_usage table — same
 // "fail closed like Brave/Parallel being nil" shape as every other capped
 // provider. A generous multiple of the per-turn cap, not a tightly-reasoned
 // figure — deliberately adjustable without needing to touch call sites.
-const jevMonthlyCapUSD = 5.00
+const decisionsMonthlyCapUSD = 5.00
 
 func handleCompareSources(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
@@ -87,26 +87,26 @@ func handleCompareSources(argsJSON string, ctx *Context, callID string) string {
 	if strings.TrimSpace(args.Question) == "" {
 		return respond("error: question is required")
 	}
-	if ctx.Jev == nil {
+	if ctx.Decisions == nil {
 		return respond("comparison unavailable — verification isn't configured for this deployment")
 	}
-	if ctx.JevSpentThisTurn() >= jevPerTurnCapUSD {
+	if ctx.DecisionsSpentThisTurn() >= decisionsPerTurnCapUSD {
 		return respond("comparison unavailable — this turn's verification budget has already been used")
 	}
-	if ctx.JevCostThisMonth != nil {
-		if used, err := ctx.JevCostThisMonth(); err != nil {
-			log.Warn("compare_sources: checking jev monthly cost failed, proceeding anyway", "err", err)
-		} else if used >= jevMonthlyCapUSD {
+	if ctx.DecisionsCostThisMonth != nil {
+		if used, err := ctx.DecisionsCostThisMonth(); err != nil {
+			log.Warn("compare_sources: checking decisions monthly cost failed, proceeding anyway", "err", err)
+		} else if used >= decisionsMonthlyCapUSD {
 			return respond("comparison unavailable — monthly verification budget has been reached")
 		}
 	}
 
 	// Assign short, stable labels (A, B, C, ...) so the summary reads
-	// naturally and Jev's pairwise question keys stay short — dedupe by URL
+	// naturally and the pairwise question keys stay short — dedupe by URL
 	// along the way, since a model could plausibly repeat one.
 	labelForURL := map[string]string{}
 	var labels []string
-	var states []jev.SourceState
+	var states []decisions.SourceState
 	var missing []string
 	for _, url := range args.URLs {
 		if _, seen := labelForURL[url]; seen {
@@ -120,7 +120,7 @@ func handleCompareSources(argsJSON string, ctx *Context, callID string) string {
 		label := sourceLabel(len(labels))
 		labelForURL[url] = label
 		labels = append(labels, label)
-		states = append(states, jev.SourceState{Source: label, Text: text})
+		states = append(states, decisions.SourceState{Source: label, Text: text})
 	}
 	if len(missing) > 0 {
 		return respond(fmt.Sprintf("error: no stored text for %s — call web_read on it first, then compare_sources again", strings.Join(missing, ", ")))
@@ -131,12 +131,12 @@ func handleCompareSources(argsJSON string, ctx *Context, callID string) string {
 
 	type pair struct{ a, b string }
 	var pairs []pair
-	questions := map[string]jev.ChoiceQuestion{}
+	questions := map[string]decisions.ChoiceQuestion{}
 	for i := 0; i < len(labels); i++ {
 		for j := i + 1; j < len(labels); j++ {
 			a, b := labels[i], labels[j]
 			pairs = append(pairs, pair{a, b})
-			questions[a+"_vs_"+b] = jev.ChoiceQuestion{
+			questions[a+"_vs_"+b] = decisions.ChoiceQuestion{
 				Instructions: fmt.Sprintf("Do sources %s and %s agree on: %s?", a, b, args.Question),
 				Criteria: map[string]string{
 					"agree":                "The two sources say the same thing, even if worded differently or with different precision.",
@@ -147,22 +147,22 @@ func handleCompareSources(argsJSON string, ctx *Context, callID string) string {
 		}
 	}
 
-	resp, err := ctx.Jev.AskChoice(ctx.Ctx, states, questions)
+	resp, err := ctx.Decisions.AskChoice(ctx.Ctx, states, questions)
 	if err != nil {
-		log.Warn("compare_sources: jev call failed", "question", args.Question, "err", err)
+		log.Warn("compare_sources: decisions call failed", "question", args.Question, "err", err)
 		return respond("error: comparison failed — " + err.Error())
 	}
 
 	cost := resp.Usage.CostUSD
 	ctx.AddCost(cost)
-	ctx.AddJevCost(cost)
-	logCost := ctx.LogCompareJevCost
+	ctx.AddDecisionsCost(cost)
+	logCost := ctx.LogCompareDecisionsCost
 	if logCost == nil {
-		logCost = ctx.LogJevCost
+		logCost = ctx.LogDecisionsCost
 	}
 	if logCost != nil {
 		if err := logCost(cost); err != nil {
-			log.Warn("compare_sources: logging jev cost failed", "err", err)
+			log.Warn("compare_sources: logging decisions cost failed", "err", err)
 		}
 	}
 

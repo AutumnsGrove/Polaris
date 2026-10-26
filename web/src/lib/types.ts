@@ -397,7 +397,7 @@ export type ServerEvent =
 	// over this message's own inline citations finishes — see
 	// gateway/protocol.go's "verification" doc comment and
 	// docs/plans/source-verification-badge.md. May never arrive at all
-	// (Jev not configured, every source's budget cap already hit, nothing
+	// (decisions client not configured, every source's budget cap already hit, nothing
 	// found supported) — treat that as a normal, silent outcome. Targets a
 	// specific message, not just "whatever's pending" like 'suggestions'
 	// does, since the user may have already sent another message by the

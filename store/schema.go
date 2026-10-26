@@ -239,7 +239,7 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- post-hoc-UPDATE shape as suggestions/cards/chart above — the
 	-- verification pass runs in a detached goroutine after "done" ships,
 	-- so it's never known at AddMessage time. '[]' for user messages and
-	-- for any assistant message with no citations, an unconfigured Jev
+	-- for any assistant message with no citations, an unconfigured decisions
 	-- client, or nothing found supported at/above the confidence
 	-- threshold.
 	verification TEXT NOT NULL DEFAULT '[]',
@@ -313,7 +313,7 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- total cost_usd above, split by what spent it (docs/plans/
 	-- oracle-mode.md's "three-tier cost") — the main answer (plus
 	-- follow-up suggestions and title regen, both part of producing it),
-	-- the per-claim "found in source" pass, and Oracle's own Jev call.
+	-- the per-claim "found in source" pass, and Oracle's own decisions call.
 	-- cost_usd stays their sum, read by every existing cost display; these
 	-- three are additive detail, not a replacement.
 	cost_answer_usd REAL NOT NULL DEFAULT 0,

@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"polaris/config"
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/models"
 )
 
@@ -47,15 +47,15 @@ type spikeResult struct {
 	Message    string                      `json:"message"`
 	LatencyMs  int64                       `json:"latency_ms"`
 	CostUSD    float64                     `json:"cost_usd"`
-	Answers    map[string]jev.ChoiceAnswer `json:"answers"`
+	Answers    map[string]decisions.ChoiceAnswer `json:"answers"`
 	ErrMessage string                      `json:"err_message,omitempty"`
 }
 
 // questionPreamble mirrors the draft prompts.yaml's oracle.question_preamble.
 const questionPreamble = "You are reading a message someone sent to a research assistant that searches the web and cites sources. Answer about the latest message; an earlier message, if present, is only context."
 
-func checks() map[string]jev.ChoiceQuestion {
-	return map[string]jev.ChoiceQuestion{
+func checks() map[string]decisions.ChoiceQuestion {
+	return map[string]decisions.ChoiceQuestion{
 		"focus": {
 			Instructions: questionPreamble + " Which answering style best fits this message? Pick \"off\" unless one style is clearly a better fit than a normal, balanced answer.",
 			Criteria: map[string]string{
@@ -117,7 +117,7 @@ const clarifyInstructions = "Is this message ambiguous enough that the answer wo
 func main() {
 	inPath := flag.String("in", "", "path to input JSON array of spike prompts (required)")
 	outPath := flag.String("out", "oracle_spike_results.jsonl", "path to write JSONL results")
-	cfgPath := flag.String("config", "config.yaml", "path to config.yaml (used only for the OpenRouter/Jev API key)")
+	cfgPath := flag.String("config", "config.yaml", "path to config.yaml (used only for the OpenRouter API key)")
 	flag.Parse()
 
 	if *inPath == "" {
@@ -137,9 +137,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("loading config: %v", err)
 	}
-	jevClient := jev.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey)
-	if jevClient == nil {
-		log.Fatal("no OpenRouter API key configured — jev.NewClient returned nil")
+	decisionsClient := decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey)
+	if decisionsClient == nil {
+		log.Fatal("no OpenRouter API key configured — decisions.NewClient returned nil")
 	}
 
 	outFile, err := os.Create(*outPath)
@@ -155,7 +155,7 @@ func main() {
 	for i, p := range prompts {
 		questions := checks()
 		if p.IsFirstInThread {
-			questions["clarify"] = jev.ChoiceQuestion{
+			questions["clarify"] = decisions.ChoiceQuestion{
 				Instructions: questionPreamble + " " + clarifyInstructions,
 				Criteria: map[string]string{
 					"no":  "Clear enough to answer well, or any ambiguity has an obvious default.",
@@ -172,7 +172,7 @@ func main() {
 		}
 
 		start := time.Now()
-		resp, err := jevClient.AskChoice(context.Background(), state, questions)
+		resp, err := decisionsClient.AskChoice(context.Background(), state, questions)
 		latency := time.Since(start).Milliseconds()
 
 		result := spikeResult{ID: p.ID, Message: p.Message, LatencyMs: latency}

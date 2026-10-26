@@ -42,7 +42,7 @@ type APICapItem struct {
 
 // buildAPICaps reads each service's month-to-date usage from the same
 // ledgers the enforcing code checks (api_usage for call-counted services,
-// jev_usage for Jev's dollar cap), so this can't disagree with what will
+// jev_usage for the decisions client's dollar cap), so this can't disagree with what will
 // actually be allowed. now is a parameter so tests can pin the month.
 func buildAPICaps(db *store.Store, now time.Time) (APICaps, error) {
 	now = now.UTC()
@@ -67,11 +67,11 @@ func buildAPICaps(db *store.Store, now time.Time) (APICaps, error) {
 		caps.Services = append(caps.Services, newAPICapItem(c.provider, "calls", float64(used), float64(c.cap)))
 	}
 
-	jevSpend, err := db.JevCostThisMonth()
+	decisionsSpend, err := db.DecisionsCostThisMonth()
 	if err != nil {
 		return APICaps{}, err
 	}
-	caps.Services = append(caps.Services, newAPICapItem("jev", "usd", jevSpend, jevMonthlyCapUSD))
+	caps.Services = append(caps.Services, newAPICapItem("jev", "usd", decisionsSpend, decisionsMonthlyCapUSD))
 	return caps, nil
 }
 

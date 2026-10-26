@@ -80,7 +80,7 @@ calls or Atlas's plain-text Quick Answer. Oracle's `ui` check follows the same g
 "Found in source" ticks inside a block use a different rule from prose: a block link is named by where it
 sits (`<fence>.<block>.<item>.<field>#<n>`), not by "the nth time this URL is cited". The server lists them
 (`uiblocks/sites.go`, `Sites`), verifies each against its own sentence (`gateway/verification.go`; a
-`quote` is exact-match first, Jev only on a miss) and sends marks carrying a `locator`; the components
+`quote` is exact-match first, the decision model only on a miss) and sends marks carrying a `locator`; the components
 pass the same address down as a `loc` prop and `renderInlineCitations` ticks the matching link. Adding a
 sourced field means touching both `collect()` and the component, and
 `TestSites_FieldNamesMatchTheComponents` fails if they disagree.

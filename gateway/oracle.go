@@ -10,20 +10,20 @@ import (
 	"time"
 
 	"polaris/config"
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/prompts"
 	"polaris/store"
 )
 
-// oracleTimeout bounds RunOracle's own Jev call independently of
-// jev.Client's 20s default. The live spike (docs/plans/oracle-mode.md's
+// oracleTimeout bounds RunOracle's own decisions call independently of
+// decisions.Client's 20s default. The live spike (docs/plans/oracle-mode.md's
 // "Live spike results") measured real p95 10.2s and a 14% timeout/520
 // rate against that 20s ceiling — nowhere near the vendor's claimed
 // 70-500ms — and Oracle sits in front of the turn's first token, so it
 // needs a much tighter budget than "eventually give up."
 const oracleTimeout = 2500 * time.Millisecond
 
-// oracleMaxMessageRunes caps each message handed to Jev. Classification only
+// oracleMaxMessageRunes caps each message handed to the decision model. Classification only
 // needs the gist (the opening of a message carries its intent), and the
 // request body is billed per input token and sent to a third party — a pasted
 // document must not inflate cost/latency or leak wholesale to a classifier
@@ -50,12 +50,12 @@ const oracleSafariChip = "safari"
 // list, exactly the kind of leak ghost mode exists to prevent.
 var oracleGhostChips = map[string]bool{oracleSafariChip: true}
 
-// jevAskChoicer is the one jev.Client method RunOracle needs — a seam so
-// tests can inject a stub instead of a live *jev.Client, same spirit as
-// llm/llmtest.MockClient elsewhere in this codebase. *jev.Client satisfies
+// decisionsAskChoicer is the one decisions.Client method RunOracle needs — a seam so
+// tests can inject a stub instead of a live *decisions.Client, same spirit as
+// llm/llmtest.MockClient elsewhere in this codebase. *decisions.Client satisfies
 // this without any change on its side.
-type jevAskChoicer interface {
-	AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error)
+type decisionsAskChoicer interface {
+	AskChoice(ctx context.Context, state interface{}, questions map[string]decisions.ChoiceQuestion) (*decisions.Response, error)
 }
 
 // OracleInput is everything about this turn RunOracle can't determine on
@@ -86,10 +86,10 @@ type OracleInput struct {
 	// -> description, built from the store's field list at request
 	// time (prompts.yaml's field chip ships with no static options). A
 	// nil map (no fields, or the thread is already in one) skips the
-	// chip check entirely rather than asking Jev to choose among nothing.
+	// chip check entirely rather than asking the decision model to choose among nothing.
 	FieldOptions map[string]string
 	// FieldIDs maps each option name in FieldOptions back to its field's
-	// id. Jev answers with a name (its Criteria keys), but moving a thread
+	// id. The decision model answers with a name (its Criteria keys), but moving a thread
 	// needs the id, and names aren't unique — see OracleFieldOptions. A
 	// chip whose winner has no entry here is dropped rather than offered
 	// with nothing to move to.
@@ -132,7 +132,7 @@ type OracleInput struct {
 
 // hasContent reports whether there is anything about Oracle's side of this turn
 // worth persisting or sending: a live classification (Checks is only non-empty
-// when Jev actually answered) or a carried-over Deep Research note.
+// when the decision model actually answered) or a carried-over Deep Research note.
 func (r OracleResult) hasContent() bool {
 	return len(r.Checks) > 0 || r.DeepResearchCarried
 }
@@ -220,7 +220,7 @@ type OracleResult struct {
 	// already active, no field id) has Fired false, so the raw answer stays
 	// scorable apart from the rules that gated it.
 	ChipOutcomes []CheckOutcome `json:"-"`
-	// ResolvedModel is the model build that answered (jev.Response.Model).
+	// ResolvedModel is the model build that answered (decisions.Response.Model).
 	ResolvedModel string `json:"-"`
 }
 
@@ -232,20 +232,20 @@ const uiCheckKey = "ui"
 // the engine special-cases it (see OracleInput.OffersDeepResearch).
 const deepResearchCheckKey = "deep_research"
 
-// RunOracle fires every enabled check (plus chips) as one Jev AskChoice
+// RunOracle fires every enabled check (plus chips) as one decisions AskChoice
 // call and applies each answer's threshold/sticky/focus rules — see
-// docs/plans/oracle-mode.md. Jev unconfigured, erroring, or timing out
+// docs/plans/oracle-mode.md. An unconfigured, erroring, or timing out
 // returns a zero-value OracleResult: Oracle must never be a way for a turn
 // to fail, so there is deliberately no error return — gateway/turn.go
 // treats an empty result as "proceed exactly as Oracle-off". The failure
 // itself is logged here.
-func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) OracleResult {
+func RunOracle(ctx context.Context, client decisionsAskChoicer, in OracleInput) OracleResult {
 	if client == nil {
 		return OracleResult{}
 	}
 	result, err := runOracle(ctx, client, in, oracleTimeout)
 	if err != nil {
-		log.Warn("oracle: jev call failed, proceeding as Oracle-off", "err", err)
+		log.Warn("oracle: decisions call failed, proceeding as Oracle-off", "err", err)
 		return OracleResult{}
 	}
 	return result
@@ -258,7 +258,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 // its own timeout. The bench has to tell "the model errored or refused" from
 // "the model said nothing fired", and it measures accuracy at a generous
 // timeout rather than the 2.5s production budget (latency is scored apart).
-func RunOracleRaw(ctx context.Context, client jevAskChoicer, in OracleInput, timeout time.Duration) (OracleResult, error) {
+func RunOracleRaw(ctx context.Context, client decisionsAskChoicer, in OracleInput, timeout time.Duration) (OracleResult, error) {
 	if client == nil {
 		return OracleResult{}, errors.New("oracle: no decision-model client")
 	}
@@ -268,7 +268,7 @@ func RunOracleRaw(ctx context.Context, client jevAskChoicer, in OracleInput, tim
 // runOracle is the shared body of RunOracle and RunOracleRaw. A nil error with
 // a zero result means "no questions to ask"; a call failure comes back as the
 // error and a zero result.
-func runOracle(ctx context.Context, client jevAskChoicer, in OracleInput, timeout time.Duration) (OracleResult, error) {
+func runOracle(ctx context.Context, client decisionsAskChoicer, in OracleInput, timeout time.Duration) (OracleResult, error) {
 	p := prompts.Get()
 	rules := in.Rules
 	if rules.Checks == nil && rules.Chips == nil {
@@ -285,8 +285,8 @@ func runOracle(ctx context.Context, client jevAskChoicer, in OracleInput, timeou
 			rules.Checks = raised
 		}
 	}
-	questions := make(map[string]jev.ChoiceQuestion, len(p.Oracle.Checks)+len(p.Oracle.Chips))
-	// offered is the option set actually sent per question, kept so Jev's
+	questions := make(map[string]decisions.ChoiceQuestion, len(p.Oracle.Checks)+len(p.Oracle.Chips))
+	// offered is the option set actually sent per question, kept so the decision model's
 	// answers can be validated against it below — a response is external
 	// input, and its Choice ends up persisted (threads.focus_mode) and
 	// substituted into prompt text, so it must be one we offered.
@@ -316,7 +316,7 @@ func runOracle(ctx context.Context, client jevAskChoicer, in OracleInput, timeou
 		if sliceContains(rule.SkipForFocus, in.ActiveFocusMode) {
 			continue
 		}
-		questions[key] = jev.ChoiceQuestion{
+		questions[key] = decisions.ChoiceQuestion{
 			Instructions: p.Oracle.QuestionPreamble + " " + check.Instructions,
 			Criteria:     check.Options,
 		}
@@ -338,7 +338,7 @@ func runOracle(ctx context.Context, client jevAskChoicer, in OracleInput, timeou
 			}
 			options["none"] = "Doesn't clearly belong to any field."
 		}
-		questions["chip_"+key] = jev.ChoiceQuestion{
+		questions["chip_"+key] = decisions.ChoiceQuestion{
 			Instructions: p.Oracle.QuestionPreamble + " " + chip.Instructions,
 			Criteria:     options,
 		}
@@ -507,8 +507,8 @@ func runOracle(ctx context.Context, client jevAskChoicer, in OracleInput, timeou
 		}
 	}
 
-	// has_url is a detector, not a Jev question: whether a message holds a
-	// link is a regex's job, and spending Jev's tight latency budget on it
+	// has_url is a detector, not a decision-model question: whether a message holds a
+	// link is a regex's job, and spending the decision model's tight latency budget on it
 	// would be waste. It's still recorded as a check outcome so it gets a
 	// star in the constellation and a card in the turn-info sheet. Skipped
 	// under Safari for the same reason clarify is — Safari runs its own
@@ -521,7 +521,7 @@ func runOracle(ctx context.Context, client jevAskChoicer, in OracleInput, timeou
 
 	// Checks was appended focus-first then in sorted-key order — re-sort
 	// by key alone so the "why" sheet's listing is fully deterministic
-	// regardless of Jev's answer-map iteration order.
+	// regardless of the answer-map's iteration order.
 	sort.Slice(result.Checks, func(i, j int) bool { return result.Checks[i].Key < result.Checks[j].Key })
 
 	return result, nil
@@ -543,7 +543,7 @@ func skippedByOwnFocus(key string, rule config.OracleCheckRules, effectiveFocus 
 // that cleared its bar. "no"/"none" are the quiet options every check names
 // its default with, so winning one is not "firing" for suppression purposes
 // even at 100% — an emotional check answering "no" must not silence format.
-func checkFired(rule config.OracleCheckRules, ans jev.ChoiceAnswer) bool {
+func checkFired(rule config.OracleCheckRules, ans decisions.ChoiceAnswer) bool {
 	if ans.Choice == "no" || ans.Choice == "none" {
 		return false
 	}
@@ -551,14 +551,14 @@ func checkFired(rule config.OracleCheckRules, ans jev.ChoiceAnswer) bool {
 }
 
 // resolveFocus applies the focus check's sticky/never-with-high-stakes/
-// option-threshold/switch-threshold rules to its raw Jev answer, and
+// option-threshold/switch-threshold rules to its raw decision-model answer, and
 // decides when Oracle should *retract* a mode it set earlier.
 //
 // Returns (picked, fired):
 //   - ("", false)   nothing changes (keep whatever mode the turn already has)
 //   - (mode, true)  Oracle picked that mode
 //   - ("off", true) Oracle cleared the mode it had set — see below
-func resolveFocus(check config.OracleCheckRules, ans jev.ChoiceAnswer, priorOracleFocus, highStakesOption string) (picked string, fired bool) {
+func resolveFocus(check config.OracleCheckRules, ans decisions.ChoiceAnswer, priorOracleFocus, highStakesOption string) (picked string, fired bool) {
 	if ans.Choice == "" {
 		return "", false
 	}
@@ -646,7 +646,7 @@ func resolveInjections(check prompts.OracleCheck, option, focusMode string) []st
 	return out
 }
 
-// oracleMaxFields caps how many Fields are offered to Jev as chip options.
+// oracleMaxFields caps how many Fields are offered to the decision model as chip options.
 // Each becomes a criteria entry billed per input token and sent to a third
 // party, and past a couple dozen the classifier is choosing among near-
 // duplicates anyway. Fields come newest-touched first, so the cap keeps the
@@ -659,15 +659,15 @@ const oracleMaxFields = 25
 const oracleMaxFieldDescRunes = 500
 
 // OracleFieldOptions turns the store's Fields into the field chip's option
-// set (name -> description, what Jev sees) plus the name -> id map RunOracle
+// set (name -> description, what the decision model sees) plus the name -> id map RunOracle
 // needs to hand the frontend something it can actually move a thread into.
 //
-// Jev answers with a criteria key, and Field names aren't unique, so a
+// The decision model answers with a criteria key, and Field names aren't unique, so a
 // second Field reusing a name is left out rather than made ambiguous (the
 // newer-touched one wins). A Field literally named "none" is left out too:
 // it would overwrite the reserved "doesn't belong to any field" option. An
 // empty description gets a name-based stand-in, since a criteria entry with
-// no text gives Jev nothing to match against.
+// no text gives the decision model nothing to match against.
 func OracleFieldOptions(fields []store.Field) (options, ids map[string]string) {
 	options = make(map[string]string, len(fields))
 	ids = make(map[string]string, len(fields))
@@ -701,16 +701,16 @@ func optionKeys(options map[string]string) []string {
 	return keys
 }
 
-// validAnswers drops any answer Jev returned for a question we didn't ask, or
+// validAnswers drops any answer the decision model returned for a question we didn't ask, or
 // whose Choice isn't one of the options we offered for it (logged, since a
-// well-behaved Jev never does this). Without it a bogus "focus" winner would
+// a well-behaved decision model never does this). Without it a bogus "focus" winner would
 // be written to threads.focus_mode and echoed into the ## Oracle section via
 // {option}, and a bogus field chip winner would render as a chip label.
-func validAnswers(answers map[string]jev.ChoiceAnswer, offered map[string][]string) map[string]jev.ChoiceAnswer {
-	out := make(map[string]jev.ChoiceAnswer, len(answers))
+func validAnswers(answers map[string]decisions.ChoiceAnswer, offered map[string][]string) map[string]decisions.ChoiceAnswer {
+	out := make(map[string]decisions.ChoiceAnswer, len(answers))
 	for key, ans := range answers {
 		if !sliceContains(offered[key], ans.Choice) {
-			log.Warn("oracle: dropping jev answer outside the offered options", "question", key, "choice", truncateRunes(ans.Choice, 60))
+			log.Warn("oracle: dropping decisions answer outside the offered options", "question", key, "choice", truncateRunes(ans.Choice, 60))
 			continue
 		}
 		out[key] = ans

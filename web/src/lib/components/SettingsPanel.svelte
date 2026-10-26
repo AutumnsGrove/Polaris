@@ -308,7 +308,7 @@
 							>
 						</div>
 					{/if}
-					<!-- Call counts sit with the Jev cost lines they explain: a few
+					<!-- Call counts sit with the decisions cost lines they explain: a few
 					     hundredths of a cent each, so the dollar figure alone can't say
 					     whether it was 30 calls or 3,000. These count API calls, not
 					     questions asked. -->

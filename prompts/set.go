@@ -201,7 +201,7 @@ type Set struct {
 	} `yaml:"weaver"`
 
 	// Oracle backs Oracle mode (docs/plans/oracle-mode.md, issue #122) —
-	// gateway/oracle.go fires every enabled Checks entry as one Jev
+	// gateway/oracle.go fires every enabled Checks entry as one decisions
 	// AskChoice call, applies each answer's threshold/focus rules, and
 	// folds whatever fired into Section via {items}.
 	Oracle struct {
@@ -210,11 +210,11 @@ type Set struct {
 		// paragraph — see gateway/oracle.go.
 		Section string `yaml:"section"`
 		// QuestionPreamble is prepended to every check's own Instructions
-		// before it's sent to Jev; {state} isn't substituted here (that's
-		// Jev's `state` request field, built separately) — this is purely
+		// before it's sent to the decision model; {state} isn't substituted here (that's
+		// the request's `state` field, built separately) — this is purely
 		// the shared framing text.
 		QuestionPreamble string `yaml:"question_preamble"`
-		// LinkNudge is the has_url detector's injection — not a Jev
+		// LinkNudge is the has_url detector's injection — not a decision-model
 		// question (a regex in gateway/oracle.go finds pasted links), so
 		// it has no Options/threshold, just the text folded into Section.
 		LinkNudge string                 `yaml:"link_nudge"`

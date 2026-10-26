@@ -1,4 +1,4 @@
-package jev
+package decisions
 
 import (
 	"context"
@@ -88,8 +88,8 @@ func TestAskChoiceDefaultsToSystemOneAndDefaultModel(t *testing.T) {
 	if cap.path != "/systemone" {
 		t.Errorf("path = %q, want /systemone", cap.path)
 	}
-	if cap.body.Model != Model {
-		t.Errorf("model = %q, want %q", cap.body.Model, Model)
+	if cap.body.Model != DefaultModel {
+		t.Errorf("model = %q, want %q", cap.body.Model, DefaultModel)
 	}
 	if cap.auth != "Bearer test-key" {
 		t.Errorf("auth = %q, want Bearer test-key", cap.auth)

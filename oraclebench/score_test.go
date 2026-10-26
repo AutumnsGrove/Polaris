@@ -407,9 +407,9 @@ func TestClassifyError(t *testing.T) {
 	}{
 		{nil, ErrNone},
 		{context.DeadlineExceeded, ErrTimeout},
-		{errors.New("calling jev: Post: context deadline exceeded"), ErrTimeout},
-		{errors.New(`jev error (status 502): OpenAI refused to answer question "focus"`), ErrRefusal},
-		{errors.New("jev error (status 429): rate limited"), ErrOther},
+		{errors.New("calling decisions API: Post: context deadline exceeded"), ErrTimeout},
+		{errors.New(`decisions error (status 502): OpenAI refused to answer question "focus"`), ErrRefusal},
+		{errors.New("decisions error (status 429): rate limited"), ErrOther},
 	}
 	for _, tc := range tests {
 		if got := ClassifyError(tc.err); got != tc.want {

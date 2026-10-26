@@ -207,9 +207,9 @@ func TestQuoteInEvidence(t *testing.T) {
 	}
 }
 
-// An exact quote match settles without any Jev call: verifySource must return
+// An exact quote match settles without any decisions call: verifySource must return
 // before it ever touches agentCtx (nil here), so a verbatim quote costs nothing.
-func TestVerifySource_ExactQuoteNeedsNoJev(t *testing.T) {
+func TestVerifySource_ExactQuoteNeedsNoDecisions(t *testing.T) {
 	evidence := "Chapter one. The only way out is through, said the poet, and left."
 	got := verifySource(nil, "https://q.example/f", evidence, []claim{
 		{url: "https://q.example/f", text: "The only way out is through.", locator: "0.0.0.src#0", quote: true},
@@ -243,7 +243,7 @@ func TestRunVerificationNilSafe(t *testing.T) {
 	}
 	ctx := &tools.Context{}
 	if got := runVerification(ctx, "answer", []tools.Citation{{URL: "https://a.example"}}); got != nil {
-		t.Errorf("runVerification(nil Jev) = %v, want nil", got)
+		t.Errorf("runVerification(nil decisions client) = %v, want nil", got)
 	}
 }
 

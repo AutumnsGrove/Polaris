@@ -11,14 +11,14 @@ import (
 // starts. It leaves every t.oracle* field describing what happened.
 func (t *turnRun) runOracleStage() {
 	// Oracle mode (docs/plans/oracle-mode.md, issue #122) — an opt-in
-	// pre-read of this message via Jev, run before agent.Run so its focus-
+	// pre-read of this message via the decisions client, run before agent.Run so its focus-
 	// mode pick and injected guidance can shape the turn itself. Left off
 	// for a ghost thread, same "no extra background intelligence" reasoning
 	// as memory/stars/search_chats above. oracleResult/oracleFocusModeSource
 	// are captured in this outer scope for persisting once assistantMsgID
 	// exists, after agent.Run returns below.
-	// oracleAttempted records that Oracle actually got to run (Jev
-	// configured, setting on, within budget) — the gate for the early
+	// oracleAttempted records that Oracle actually got to run (decisions
+	// client configured, setting on, within budget) — the gate for the early
 	// "oracle" event below, which must not fire for a turn Oracle never
 	// touched. oracleResultForEvent is shared with the "done" event further
 	// down so its checks-empty-means-nil rule lives in exactly one place.
@@ -31,11 +31,11 @@ func (t *turnRun) runOracleStage() {
 	// and the field-options read below is skipped for a ghost turn so no
 	// store read leaks in.
 	oracleInGhost := t.ghost && OracleGhostEnabledFromStore(t.s.db)
-	if (!t.ghost || oracleInGhost) && !t.msg.NoOracle && OracleEnabledFromStore(t.s.db) && t.s.jev != nil {
+	if (!t.ghost || oracleInGhost) && !t.msg.NoOracle && OracleEnabledFromStore(t.s.db) && t.s.decisions != nil {
 		withinOracleBudget := true
-		if used, err := t.s.db.JevCostThisMonth(); err != nil {
-			log.Warn("oracle: checking jev monthly cost failed, proceeding anyway", "err", err)
-		} else if used >= jevMonthlyCapUSD {
+		if used, err := t.s.db.DecisionsCostThisMonth(); err != nil {
+			log.Warn("oracle: checking decisions monthly cost failed, proceeding anyway", "err", err)
+		} else if used >= decisionsMonthlyCapUSD {
 			withinOracleBudget = false
 		}
 		if withinOracleBudget {
@@ -70,7 +70,7 @@ func (t *turnRun) runOracleStage() {
 			_, hasWorker := t.cfg.ResearchWorkerModel()
 			offersDeepResearch := t.agentCtx.RequestLocation != nil && !t.agentCtx.DeepResearch && !t.msg.NoResearch && !t.msg.VoiceMode && hasWorker
 			t.oracleAttempted = true
-			t.oracleResult = RunOracle(t.ctx, t.s.jev, OracleInput{
+			t.oracleResult = RunOracle(t.ctx, t.s.decisions, OracleInput{
 				CurrentMessage:       t.msg.Content,
 				PrevUserMessage:      t.prevUserMessage,
 				IsFirstMessage:       isFirstMsg,
@@ -89,14 +89,14 @@ func (t *turnRun) runOracleStage() {
 				Rules:   t.cfg.Oracle,
 			})
 			t.oracleResult.DeepResearchCarried = t.deepResearchCarried
-			// Recorded on the shared Jev ledger the monthly cap sums (issue
+			// Recorded on the shared decisions ledger the monthly cap sums (issue
 			// #125) — only when the call actually completed and billed, the
 			// same convention verification.go follows. CostUSD stays zero on
 			// a timeout/error, so nothing is logged for a call that never
 			// returned.
 			if t.oracleResult.CostUSD > 0 {
-				if err := t.s.db.LogOracleJevCost(t.oracleResult.CostUSD); err != nil {
-					log.Warn("oracle: logging jev cost failed", "err", err)
+				if err := t.s.db.LogOracleDecisionsCost(t.oracleResult.CostUSD); err != nil {
+					log.Warn("oracle: logging decisions cost failed", "err", err)
 				}
 			}
 			// FocusCleared is Oracle retracting a mode it set earlier (see

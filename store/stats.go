@@ -47,7 +47,7 @@ type Stats struct {
 
 	// VerificationCostUSD is how much of the above (already counted once,
 	// inside CostBySource.Polaris/.Pulsar via ctx.AddCost -> messages.
-	// cost_usd) was specifically Jev verification spend — a transparency
+	// cost_usd) was specifically decisions-API verification spend — a transparency
 	// breakout, not a fourth additive bucket. Deliberately NOT summed into
 	// TotalCostUSD/PeriodCostUSD or CostBySource a second time; see
 	// jev_usage's schema comment (store.go) and
@@ -56,20 +56,20 @@ type Stats struct {
 	// filtering is exact (trailing N days), unlike a calendar-month-only
 	// aggregate would allow.
 	VerificationCostUSD SourceCost `json:"verification_cost_usd"`
-	// OracleCostUSD is the same kind of breakout for Oracle mode's own Jev
+	// OracleCostUSD is the same kind of breakout for Oracle mode's own decisions
 	// pre-read spend (jev_usage rows with source = 'oracle') — already
 	// inside CostBySource.Polaris via messages.cost_usd, never added a
 	// second time. Split from VerificationCostUSD so neither reads as the
 	// other's spend (issue #125).
 	OracleCostUSD SourceCost `json:"oracle_cost_usd"`
-	// JevCalls counts real Jev API calls (rows in jev_usage), not questions
+	// DecisionCalls counts real decisions API calls (rows in jev_usage), not questions
 	// asked or turns — one Oracle turn is one call. Verification is
 	// source = '' (per-claim badges, plus every pre-split compare_sources
 	// row, which can't be told apart retroactively); Compare is source =
-	// 'compare', only rows written since LogCompareJevCost existed (issue
+	// 'compare', only rows written since LogCompareDecisionsCost existed (issue
 	// #151). A call that errored before billing writes no row, so these
 	// undercount failures.
-	JevCalls JevCallCounts `json:"jev_calls"`
+	DecisionCalls DecisionCallCounts `json:"jev_calls"`
 
 	ThreadCount int `json:"thread_count"`
 	TurnCount   int `json:"turn_count"`
@@ -148,8 +148,8 @@ type CallCount struct {
 	Total  int `json:"total"`
 }
 
-// JevCallCounts is Stats.JevCalls — see its doc comment.
-type JevCallCounts struct {
+// DecisionCallCounts is Stats.DecisionCalls — see its doc comment.
+type DecisionCallCounts struct {
 	Oracle       CallCount `json:"oracle"`
 	Verification CallCount `json:"verification"`
 	Compare      CallCount `json:"compare"`
@@ -442,9 +442,9 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		dst    *CallCount
 		source string
 	}{
-		{&stats.JevCalls.Oracle, "oracle"},
-		{&stats.JevCalls.Verification, ""},
-		{&stats.JevCalls.Compare, "compare"},
+		{&stats.DecisionCalls.Oracle, "oracle"},
+		{&stats.DecisionCalls.Verification, ""},
+		{&stats.DecisionCalls.Compare, "compare"},
 	} {
 		if err := s.db.QueryRow(
 			`SELECT COUNT(*) FROM jev_usage WHERE source = ?`, b.source,

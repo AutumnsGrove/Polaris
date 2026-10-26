@@ -9,22 +9,22 @@ import (
 	"testing"
 	"time"
 
-	"polaris/jev"
+	"polaris/decisions"
 )
 
-// blockingJevClient never answers until its context ends — the shape of a
+// blockingDecisionsClient never answers until its context ends — the shape of a
 // decision model that hangs, used to prove RunOracleRaw's timeout is the one
 // the caller passed rather than the 2.5s production constant.
-type blockingJevClient struct{}
+type blockingDecisionsClient struct{}
 
-func (blockingJevClient) AskChoice(ctx context.Context, _ interface{}, _ map[string]jev.ChoiceQuestion) (*jev.Response, error) {
+func (blockingDecisionsClient) AskChoice(ctx context.Context, _ interface{}, _ map[string]decisions.ChoiceQuestion) (*decisions.Response, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
 
 func TestRunOracleRaw_ReportsTheFailureRunOracleSwallows(t *testing.T) {
 	boom := errors.New("openai refused to answer question \"focus\"")
-	stub := stubJevClient{err: boom}
+	stub := stubDecisionsClient{err: boom}
 	in := OracleInput{CurrentMessage: "test"}
 
 	if _, err := RunOracleRaw(context.Background(), stub, in, time.Second); !errors.Is(err, boom) {
@@ -44,7 +44,7 @@ func TestRunOracleRaw_NilClientIsAnError(t *testing.T) {
 
 func TestRunOracleRaw_UsesTheCallersTimeout(t *testing.T) {
 	start := time.Now()
-	_, err := RunOracleRaw(context.Background(), blockingJevClient{}, OracleInput{CurrentMessage: "test"}, 30*time.Millisecond)
+	_, err := RunOracleRaw(context.Background(), blockingDecisionsClient{}, OracleInput{CurrentMessage: "test"}, 30*time.Millisecond)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
 	}
@@ -56,7 +56,7 @@ func TestRunOracleRaw_UsesTheCallersTimeout(t *testing.T) {
 // The reason RunOracleRaw exists as a thin sibling instead of a copy: given the
 // same answers it must reach the same verdict RunOracle does.
 func TestRunOracleRaw_MatchesRunOracleOnTheSameAnswers(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("researcher", 0.9),
 		"high_stakes": answer("medical", 0.95),
 		"research":    answer("yes", 0.9),
@@ -81,7 +81,7 @@ func TestRunOracleRaw_MatchesRunOracleOnTheSameAnswers(t *testing.T) {
 }
 
 func TestRunOracle_ChipOutcomesKeepEveryRawChipAnswer(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("off", 0.9),
 		"chip_pulsar": answer("yes", 0.9),  // offered
 		"chip_daily":  answer("no", 0.9),   // quiet
@@ -115,7 +115,7 @@ func TestRunOracle_ChipOutcomesKeepEveryRawChipAnswer(t *testing.T) {
 // otherwise "chip must not be offered in a routine thread" couldn't tell a
 // model that behaved from one the server gate rescued.
 func TestRunOracle_ChipOutcomesSurviveWithholding(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("off", 0.9),
 		"chip_pulsar": answer("yes", 0.95),
 	}}}
@@ -129,9 +129,9 @@ func TestRunOracle_ChipOutcomesSurviveWithholding(t *testing.T) {
 }
 
 func TestRunOracle_BenchOnlyFieldsStayOutOfThePersistedJSON(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{
+	stub := stubDecisionsClient{resp: &decisions.Response{
 		Model: "typesafe/jev-1.14-20261014",
-		Answers: map[string]jev.ChoiceAnswer{
+		Answers: map[string]decisions.ChoiceAnswer{
 			"focus":       answer("off", 0.9),
 			"chip_pulsar": answer("yes", 0.9),
 		},

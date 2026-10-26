@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"polaris/jev"
+	"polaris/decisions"
 )
 
 func TestParseModelList(t *testing.T) {
@@ -20,9 +20,9 @@ func TestParseModelList(t *testing.T) {
 }
 
 func TestEligibleDecisionModels(t *testing.T) {
-	var catalog []jev.DecisionModel
+	var catalog []decisions.DecisionModel
 	for id, ctx := range map[string]int{"b/small": 4000, "a/big": 262000, "c/respan": 0, "d/edge": 8000} {
-		catalog = append(catalog, jev.DecisionModel{ID: id, ContextLength: ctx})
+		catalog = append(catalog, decisions.DecisionModel{ID: id, ContextLength: ctx})
 	}
 	got := EligibleDecisionModels(catalog)
 	// Too small to hold the ~4.8k-token question set is dropped; a reported 0

@@ -48,7 +48,7 @@ var Tracks = []string{
 }
 
 // ChipPrefix is how chips are keyed in expect/quiet, matching the question
-// names RunOracle sends Jev ("chip_pulsar", ...).
+// names RunOracle sends the decision model ("chip_pulsar", ...).
 const ChipPrefix = "chip_"
 
 // DeepResearchKey is the check whose "yes" is an action rather than injected

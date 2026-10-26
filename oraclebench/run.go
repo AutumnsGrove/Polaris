@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"polaris/gateway"
-	"polaris/jev"
+	"polaris/decisions"
 )
 
-// Asker is the one decision-model call the runner makes. *jev.Client satisfies
+// Asker is the one decision-model call the runner makes. *decisions.Client satisfies
 // it; tests pass stubs. It is the same shape gateway.RunOracleRaw accepts,
 // which is the point: the bench drives the real Oracle code path.
 type Asker interface {
-	AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error)
+	AskChoice(ctx context.Context, state interface{}, questions map[string]decisions.ChoiceQuestion) (*decisions.Response, error)
 }
 
 // Model is one candidate: its catalog id and a client already pointed at it.

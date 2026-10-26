@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"polaris/config"
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/llm"
 	"polaris/models"
 	"polaris/oraclebench"
@@ -102,7 +102,7 @@ func runOracleBench(cmd *cobra.Command, args []string) error {
 
 	modelIDs := oraclebench.ParseModelList(obModels)
 	if obAllDecision {
-		catalog, err := jev.ListDecisionModels(ctx, cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey)
+		catalog, err := decisions.ListDecisionModels(ctx, cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey)
 		if err != nil {
 			return fmt.Errorf("reading the live decision-model catalog: %w", err)
 		}
@@ -115,7 +115,7 @@ func runOracleBench(cmd *cobra.Command, args []string) error {
 	for _, id := range modelIDs {
 		// The client's own timeout sits above the per-call one so the bench's
 		// deadline, not the HTTP client's, is what ends a slow call.
-		client := jev.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey).WithDecisionsAPI().WithModel(id).WithMaxQuestions(oraclebench.MaxQuestionsFor(id)).WithTimeout(obTimeout + 5*time.Second)
+		client := decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey).WithDecisionsAPI().WithModel(id).WithMaxQuestions(oraclebench.MaxQuestionsFor(id)).WithTimeout(obTimeout + 5*time.Second)
 		roster = append(roster, oraclebench.Model{ID: id, Asker: client})
 	}
 

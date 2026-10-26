@@ -8,7 +8,7 @@ import (
 
 	"polaris/brave"
 	"polaris/embed"
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/llm"
 	"polaris/parallel"
 	"polaris/places"
@@ -78,26 +78,26 @@ type Context struct {
 	TavilyUsageThisMonth func() (int, error)
 	IncrementTavilyUsage func() error
 
-	// Jev backs compare_sources (tools/compare_sources.go) — nil if
-	// OpenRouter itself isn't configured (jev.NewClient's nil-means-
+	// Decisions backs compare_sources (tools/compare_sources.go) — nil if
+	// OpenRouter itself isn't configured (decisions.NewClient's nil-means-
 	// unconfigured convention, same as Brave/Parallel/Tavily above), since
-	// Jev is reached through OpenRouter's beta endpoint using the exact
+	// Decisions is reached through OpenRouter's beta endpoint using the exact
 	// same api_key that already authenticates the main chat model, not a
-	// separate secret. JevCostThisMonth/LogJevCost back the monthly dollar
+	// separate secret. DecisionsCostThisMonth/LogDecisionsCost back the monthly dollar
 	// cap (store.Store's jev_usage table) — dollar-based, not call-count-
-	// based like Brave/Parallel/Tavily's api_usage, since Jev bills by
+	// based like Brave/Parallel/Tavily's api_usage, since Decisions bills by
 	// token and one heavily-chunked comparison could cost more than a
-	// typical call. LogJevCost is also how Stats.VerificationCostUSD's
-	// breakout gets its data — call it once per real Jev call, after
-	// AddCost/AddJevCost below, same "record only what actually went
+	// typical call. LogDecisionsCost is also how Stats.VerificationCostUSD's
+	// breakout gets its data — call it once per real Decisions call, after
+	// AddCost/AddDecisionsCost below, same "record only what actually went
 	// through" convention as IncrementBraveUsage.
-	Jev              *jev.Client
-	JevCostThisMonth func() (float64, error)
-	LogJevCost       func(usd float64) error
-	// LogCompareJevCost is LogJevCost for compare_sources specifically, so
+	Decisions              *decisions.Client
+	DecisionsCostThisMonth func() (float64, error)
+	LogDecisionsCost       func(usd float64) error
+	// LogCompareDecisionsCost is LogDecisionsCost for compare_sources specifically, so
 	// the ledger can tell its calls from verification badges (issue #151).
-	// compare_sources falls back to LogJevCost when this is nil.
-	LogCompareJevCost func(usd float64) error
+	// compare_sources falls back to LogDecisionsCost when this is nil.
+	LogCompareDecisionsCost func(usd float64) error
 
 	// PinnedProvider, when non-empty, forces web_search to a single
 	// provider on every call instead of the normal SearXNG-first,
@@ -637,13 +637,13 @@ type Context struct {
 	pageStatsMu sync.Mutex
 	pageStats   map[string]PageStats
 
-	// jevCostMu/jevCostUSD track this turn's own running Jev spend,
+	// decisionsCostMu/decisionsCostUSD track this turn's own running decisions spend,
 	// separately from ExtraCostUSD (which mixes in every other tool's
-	// extra LLM spend too) — see AddJevCost/JevSpentThisTurn. This is what
+	// extra LLM spend too) — see AddDecisionsCost/DecisionsSpentThisTurn. This is what
 	// compare_sources checks against the $0.01/turn cap before firing
-	// another call, not ExtraCostUSD, which isn't Jev-specific.
-	jevCostMu  sync.Mutex
-	jevCostUSD float64
+	// another call, not ExtraCostUSD, which isn't decisions-specific.
+	decisionsCostMu  sync.Mutex
+	decisionsCostUSD float64
 
 	// Chart holds this turn's chart, if any tool produced one (see
 	// ChartSpec) — today, only weather.go's deterministic "range" chart
@@ -753,21 +753,21 @@ func (c *Context) AddCost(usd float64) {
 	c.ExtraCostUSD += usd
 }
 
-// AddJevCost records real Jev spend against this turn's own running total
-// and returns the new total — see jevCostUSD's doc comment for why this is
+// AddDecisionsCost records real decisions spend against this turn's own running total
+// and returns the new total — see decisionsCostUSD's doc comment for why this is
 // separate from AddCost/ExtraCostUSD. Safe to call concurrently.
-func (c *Context) AddJevCost(usd float64) float64 {
-	c.jevCostMu.Lock()
-	defer c.jevCostMu.Unlock()
-	c.jevCostUSD += usd
-	return c.jevCostUSD
+func (c *Context) AddDecisionsCost(usd float64) float64 {
+	c.decisionsCostMu.Lock()
+	defer c.decisionsCostMu.Unlock()
+	c.decisionsCostUSD += usd
+	return c.decisionsCostUSD
 }
 
-// JevSpentThisTurn returns this turn's running Jev spend so far — checked
+// DecisionsSpentThisTurn returns this turn's running decisions spend so far — checked
 // against the per-turn cap before firing another call. Safe to call
 // concurrently.
-func (c *Context) JevSpentThisTurn() float64 {
-	c.jevCostMu.Lock()
-	defer c.jevCostMu.Unlock()
-	return c.jevCostUSD
+func (c *Context) DecisionsSpentThisTurn() float64 {
+	c.decisionsCostMu.Lock()
+	defer c.decisionsCostMu.Unlock()
+	return c.decisionsCostUSD
 }

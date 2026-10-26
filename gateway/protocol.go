@@ -292,7 +292,7 @@ type ClientMessage struct {
 //	                  same marks. Only carries entries that actually cleared the confidence
 //	                  threshold — a claim/source pair that wasn't checked, wasn't supported, or
 //	                  fell below threshold is simply absent, not sent as an explicit "no" (mirrors
-//	                  "suggestions": may never arrive at all if Jev isn't configured, every source's
+//	                  "suggestions": may never arrive at all if the decisions client isn't configured, every source's
 //	                  budget cap was already hit, or nothing was found supported — the frontend
 //	                  should treat that as a normal, silent outcome, not an error).
 //	"error"         — message: something failed

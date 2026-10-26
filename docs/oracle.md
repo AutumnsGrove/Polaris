@@ -11,7 +11,7 @@ what it checks today.
 
 ## How it works
 
-1. When you send a message, Polaris asks a small classifier (Jev, through your existing OpenRouter
+1. When you send a message, Polaris asks a small decision model (Jev by default, through your existing OpenRouter
    key) a set of multiple-choice questions about it. All of them go out in **one** request, so adding
    a check costs a few tokens, not another round trip. Typical latency is a few hundred milliseconds.
 2. Each answer comes back with a probability. A check **fires** only if its winning option clears that
@@ -25,7 +25,7 @@ what it checks today.
 
 Guarantees worth knowing:
 
-- **It never blocks a turn.** If Jev is unconfigured, errors, or takes longer than 2.5 seconds, the turn
+- **It never blocks a turn.** If the decision model is unconfigured, errors, or takes longer than 2.5 seconds, the turn
   runs exactly as if Oracle were off.
 - **Manual always wins.** A focus mode you pick for a message is never overridden; Oracle still reports
   what it would have picked.
@@ -348,7 +348,7 @@ suggesting.
 | `pulsar` (80%+) | The answer is something that changes and would be worth re-checking on a schedule. | Set up a Pulsar routine (opens `/pulsar` seeded with the question). |
 | `daily` (80%+) | The topic is worth a daily glance. | Add it to Pulsar Daily (opens `/daily` seeded with the topic). |
 | `safari` (85%+) | A broad subject to study in depth — a field, era, system or concept — not a decision, plan, debate or one-reply question. | Sends the next message itself, asking for an interactive Safari-style walk-through, with Safari picked as the focus. Hidden when the turn is already in Safari. |
-| `field` (75%+) | The message clearly belongs to one of your Fields, and this thread isn't in one yet. | Files the thread under that Field, with a confirmation toast. Jev is shown each Field's name and description (up to 25 of the most recently used). |
+| `field` (75%+) | The message clearly belongs to one of your Fields, and this thread isn't in one yet. | Files the thread under that Field, with a confirmation toast. The decision model is shown each Field's name and description (up to 25 of the most recently used). |
 
 In a ghost conversation (with **Also in ghost conversations** on), only `safari` is offered — `pulsar`, `daily`, and `field` all create or move something permanent, which contradicts a thread that vanishes when it ends.
 

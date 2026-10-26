@@ -2,7 +2,7 @@ package config
 
 // oracle.go holds Oracle mode's tuning: the numbers and lists that decide
 // *when* a check fires or a focus mode is allowed to change (docs/plans/
-// oracle-mode.md). What Jev is asked and what gets injected into the
+// oracle-mode.md). What the decision model is asked and what gets injected into the
 // system prompt stays in prompts.yaml — that's wording, this is policy.
 // The split exists so prompts.yaml holds only text a person would edit as
 // prose, and so a threshold can be retuned from config.yaml (hot-reloaded

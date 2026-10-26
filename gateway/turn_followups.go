@@ -167,9 +167,9 @@ func (t *turnRun) spawnVerification() {
 					log.Error("panic during verification", "thread", t.threadID, "panic", r)
 				}
 			}()
-			before := t.agentCtx.JevSpentThisTurn()
+			before := t.agentCtx.DecisionsSpentThisTurn()
 			results := runVerification(t.agentCtx, t.result.Answer, t.result.Citations)
-			if delta := t.agentCtx.JevSpentThisTurn() - before; delta > 0 {
+			if delta := t.agentCtx.DecisionsSpentThisTurn() - before; delta > 0 {
 				if err := t.s.db.AddTurnCost(t.storageThreadID, t.assistantMsgID, "verification", delta); err != nil {
 					log.Warn("failed to record verification cost", "err", err)
 				}

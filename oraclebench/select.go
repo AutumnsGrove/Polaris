@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"polaris/jev"
+	"polaris/decisions"
 )
 
 // modelAliases are short names for the models the plan compares most, so
@@ -43,7 +43,7 @@ func ParseModelList(csv string) []string {
 }
 
 // questionCaps lists models that reject a request over a fixed question count,
-// so the bench splits Oracle's call for them (jev.Client.WithMaxQuestions).
+// so the bench splits Oracle's call for them (decisions.Client.WithMaxQuestions).
 // Nace's Drex 2.0 and Max both 422 over 16 (measured 2026-10-25; 16 passes, 17
 // fails). Drex 1.5 has no cap (accepted 23), so it deliberately isn't listed:
 // it runs as one request like everything else. A capped model's score reflects
@@ -64,7 +64,7 @@ func MaxQuestionsFor(id string) int { return questionCaps[id] }
 const minContext = 8000
 
 // EligibleDecisionModels turns the live catalog into the ids worth running.
-func EligibleDecisionModels(catalog []jev.DecisionModel) []string {
+func EligibleDecisionModels(catalog []decisions.DecisionModel) []string {
 	var out []string
 	for _, m := range catalog {
 		if m.ContextLength > 0 && m.ContextLength < minContext {

@@ -518,7 +518,7 @@ func metricsSVG(es []Entry, pinned string) string {
 
 // labeler places point labels without overlap: each label tries six spots around
 // its point and takes the first that is clear of the labels already placed.
-// Near-identical models (the two Jev versions) would otherwise print on top of
+// Near-identical models (the two Jev versions, 1.13 and 1.14) would otherwise print on top of
 // each other.
 type labeler struct {
 	placed []struct{ x0, x1, y0, y1 float64 }

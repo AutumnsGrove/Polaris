@@ -1,24 +1,25 @@
-// Package jev is a small client for TypeSafe AI's Jev "System One" model,
-// reached through OpenRouter's beta endpoint (POST {base}/systemone) rather
-// than the normal /chat/completions path — see
-// docs/plans/source-verification.md. Jev never generates text: you send a
-// `state` (source text, or a structured array of {source, text} for a
-// multi-source comparison) plus a set of typed questions, evaluated in
-// parallel and in isolation against that same state, and get back typed
-// answers with calibrated probabilities. Request/response shapes here are
-// confirmed against the real API (see the plan doc's "Live spike results"),
-// not just read from docs — in particular, a Choice question's request
-// shape is `instructions` + `criteria` (criteria's keys ARE the option set);
-// an earlier informal `question`/`options` shape 400s.
+// Package decisions is a small client for OpenRouter's decision models: models
+// that never generate text, reached through a dedicated endpoint rather than
+// the normal /chat/completions path. You send a `state` (source text, or a
+// structured array of {source, text} for a multi-source comparison) plus a set
+// of typed questions, evaluated in parallel and in isolation against that same
+// state, and get back typed answers with calibrated probabilities. Request/
+// response shapes here are confirmed against the real API (see
+// docs/plans/source-verification.md's "Live spike results"), not just read from
+// docs — in particular, a Choice question's request shape is `instructions` +
+// `criteria` (criteria's keys ARE the option set); an earlier informal
+// `question`/`options` shape 400s.
 //
-// The same request/response shape serves every decision model on OpenRouter
-// through the Decisions API (POST {host}/api/alpha/decisions), confirmed live
-// 2026-10 against Jev 1.13/1.14, Inception, Microsoft, Cloudflare, Perplexity,
-// OpenAI and Liquid — 22/22 answers each, identical fields. WithDecisionsAPI
-// switches a client to that surface and WithModel selects any catalog id,
-// which is how the Oracle model benchmark (docs/plans/oracle-benchmark.md)
+// Polaris runs TypeSafe AI's Jev here (see DefaultModel), but nothing in this
+// package is Jev-specific: the same request/response shape serves every decision
+// model in OpenRouter's catalog, confirmed live 2026-10 against Jev 1.13/1.14,
+// Inception, Microsoft, Cloudflare, Perplexity, OpenAI and Liquid — 22/22
+// answers each, identical fields. Jev was first reached through a Jev-only beta
+// endpoint (POST {base}/systemone); the Decisions API (POST
+// {host}/api/alpha/decisions) is the superset. WithModel selects any catalog
+// id, which is how the Oracle model benchmark (docs/plans/oracle-benchmark.md)
 // compares candidates; ListDecisionModels reads the live roster.
-package jev
+package decisions
 
 import (
 	"bytes"
@@ -34,7 +35,8 @@ import (
 	"time"
 )
 
-// Model is the default OpenRouter model id, pinned to Jev 1.14 (2026-10-15).
+// DefaultModel is the default OpenRouter decision-model id, pinned to Jev 1.14
+// (2026-10-15) — the one place "Jev" legitimately names the model in code.
 // Production used to send the "jev-latest" alias, which silently moves to
 // whatever Typesafe releases next; Oracle fires on every turn and nobody watches
 // its answers, so an unannounced model swap would be invisible. The Oracle
@@ -50,7 +52,7 @@ import (
 // surface; "typesafe/jev-latest" and bare "jev" both 400 "does not exist" there.
 // The Decisions API takes the same vendor-prefixed catalog ids — see WithModel.
 // To move to a new release, re-run `polaris oracle-bench` first.
-const Model = "typesafe/jev-1.14"
+const DefaultModel = "typesafe/jev-1.14"
 
 // Client is nil-safe like brave.Client/parallel.Client/tavily.Client — see
 // NewClient. Its setters are nil-safe too, so a chain started on an
@@ -77,7 +79,7 @@ func NewClient(baseURL, apiKey string) *Client {
 	if apiKey == "" {
 		return nil
 	}
-	return &Client{baseURL: baseURL, apiKey: apiKey, http: &http.Client{Timeout: 20 * time.Second}, model: Model}
+	return &Client{baseURL: baseURL, apiKey: apiKey, http: &http.Client{Timeout: 20 * time.Second}, model: DefaultModel}
 }
 
 // WithModel overrides the model id this client sends. Nil-safe: a chain off an
@@ -314,38 +316,38 @@ func (c *Client) askChunk(ctx context.Context, state interface{}, questions map[
 	}
 	body, err := json.Marshal(requestBody{Model: c.model, State: state, Questions: wire})
 	if err != nil {
-		return nil, fmt.Errorf("encoding jev request: %w", err)
+		return nil, fmt.Errorf("encoding decisions request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint(), bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("creating jev request: %w", err)
+		return nil, fmt.Errorf("creating decisions request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling jev: %w", err)
+		return nil, fmt.Errorf("calling decisions API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading jev response: %w", err)
+		return nil, fmt.Errorf("reading decisions response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		var e errorBody
 		if json.Unmarshal(respBody, &e) == nil && e.Error.Message != "" {
-			return nil, fmt.Errorf("jev error (status %d): %s", resp.StatusCode, e.Error.Message)
+			return nil, fmt.Errorf("decisions error (status %d): %s", resp.StatusCode, e.Error.Message)
 		}
-		return nil, fmt.Errorf("jev error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("decisions error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
 	var out Response
 	if err := json.Unmarshal(respBody, &out); err != nil {
-		return nil, fmt.Errorf("parsing jev response: %w", err)
+		return nil, fmt.Errorf("parsing decisions response: %w", err)
 	}
 	return &out, nil
 }

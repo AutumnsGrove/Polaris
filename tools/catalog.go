@@ -142,11 +142,11 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		return ctx.LastFMAPIKey != ""
 	case "tmdb_api_key":
 		return ctx.TMDBAPIKey != ""
-	case "jev":
-		// compare_sources needs a real Jev client, which itself needs
-		// OpenRouter configured (see jev.NewClient's nil-means-
+	case "decisions":
+		// compare_sources needs a real decisions client, which itself needs
+		// OpenRouter configured (see decisions.NewClient's nil-means-
 		// unconfigured convention) — no separate API key of its own.
-		return ctx.Jev != nil
+		return ctx.Decisions != nil
 	case "interactive_chat":
 		// Reuses the exact "is there a live client on the other end of
 		// this turn" signal RequestLocation already encodes — nil on
@@ -358,7 +358,7 @@ var catalogDefaults = map[string]catalogEntry{
 	"link_stars": {Name: "link_stars", Requires: "weaver_run",
 		Description:    "connect two related-but-distinct stars.",
 		APIDescription: "Record that two distinct stars relate to each other, with a specific reason why."},
-	"compare_sources": {Name: "compare_sources", Requires: "jev", Category: "research",
+	"compare_sources": {Name: "compare_sources", Requires: "decisions", Category: "research",
 		Description:    "check whether two or more of your own cited sources actually agree on a specific fact.",
 		APIDescription: "Check whether two or more sources you've already read this turn (via web_read) actually agree on a specific fact, using a calibrated comparison rather than your own read of them. Use this when you notice sources might conflict on something specific — not as a routine double-check of everything."},
 	"save_to_field": {Name: "save_to_field", Requires: "field_workspace", ExportPrivacy: "personal",

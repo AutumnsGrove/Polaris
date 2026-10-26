@@ -27,7 +27,7 @@ import (
 type Site struct {
 	Locator string
 	URL     string
-	// Text is the claim for Jev: the item's own sentence with link markup
+	// Text is the claim for the decision model: the item's own sentence with link markup
 	// reduced to the link text.
 	Text string
 	// Quote marks a `quote` block's source: a stronger promise than "supports
