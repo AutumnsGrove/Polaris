@@ -72,7 +72,8 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 
 - `runBespoke` is today's body, unchanged, so the branch is never a half-migrated loop.
 - `novaLoopEnabled` reads `cfg.NovaLoop` (new, default false) and `POLARIS_NOVA_LOOP=1` for a dev
-  override.
+  override. It applies to all seven callers at once; the first end-to-end test drives
+  `gateway/turn_agent.go` only.
 - `runWithNova` still returns Polaris's `*agent.Result`; Nova's `agent.Result` is mapped into it,
   so `gateway/` never learns which loop ran.
 - The flag is read once per call, never mid-turn. Both paths share the same test helper.
@@ -113,9 +114,9 @@ Three request differences are expected and must be recorded, not accidentally in
 Deep Research multipliers. Nova has no default cap by design (D110), so forgetting this changes
 behaviour.
 
-Retry: Nova retries a retryable provider error up to 3 times by default; Polaris retries 429s twice
-(three attempts, 2s/4s). Set `RetryPolicy` to match, or record the difference as accepted — a
-decision, not an accident.
+Retry: the adapter sets `RetryPolicy{Max: 2, Base: 2 * time.Second}` to match Polaris exactly —
+three total attempts at 2s and 4s. Nova's defaults (3 retries, 1s base) are deliberately wider and
+are not used here; widening them is a later, deliberate change.
 
 ### 5.2 Messages and history
 
@@ -342,8 +343,9 @@ its card; the transcript round-trips through `llm.ChatMessage.ImageURLs`; the re
 image message is the same array shape as today (text first, then `image_url`).
 
 **Notes.** Polaris's `PendingImageMessages` flush in the `TurnEnd` hook, after the tool results and
-before the nudges. The adapter registers Polaris's configured models with `InputModalities` (N7,
-open question 3); an unknown model is text-only in Nova, which would silently strip an image.
+before the nudges. The adapter registers Polaris's configured models with `InputModalities` at
+startup (settled decision 3); an unknown model is text-only in Nova, which would silently strip an
+image.
 
 ### N8 — Researcher fan-out
 
@@ -442,24 +444,26 @@ Hold at every commit on the branch:
 - Porting tools to `tool.Result`, `Context.Complete`, or `Context.Decide`. One tool may move per
   later commit; none has to for parity.
 - Nova's permission policy, sessions, and TUI.
-- A tagged Nova release. The branch uses `replace`; a tag is a flip-time decision.
+- A tagged Nova release before the flip. The branch uses `replace` through N9 and pins a tag (or a
+  pseudo-version) at the flip.
 
-## 12. Open questions
+## 12. Decisions
 
-1. **Flag scope.** One env flag for all seven `agent.Run` call sites, or only interactive turns
-   (`gateway/turn_agent.go`) first, with the scheduled/research paths left on the old loop until
-   parity is proven? *Leaning: one flag, but the first end-to-end test uses
-   `gateway/turn_agent.go` only.*
-2. **Retry parity.** Match Polaris's 2 retries/2s base exactly, or accept Nova's defaults and record
-   the difference? *Leaning: match, then widen later on purpose.*
-3. **Model catalog.** Register Polaris's configured models with `InputModalities` and costs, or set
-   `agent.Config.InputModalities` from `modelCfg.Multimodal` for the one model? *Leaning: register
-   the configured models once at startup; it also gives Nova the cost fallback.*
-4. **Nova pin.** `replace` to the working tree through the whole branch, or pin a pseudo-version
-   after each Nova commit? *Leaning: `replace` until N10, then a tag or a pseudo-version.*
-5. **`Context.Complete` migration.** Do `view_image`'s describe and `web_read`'s filter pass move to
-   `Context.Complete` in this workstream, or stay on their own clients? *Leaning: stay, so the port
-   is behaviour-neutral; move later with their own tests.*
+Settled 2026-10-26, before N0:
+
+1. **Flag scope — one flag, all seven paths.** `cfg.NovaLoop` (and `POLARIS_NOVA_LOOP`) switches
+every `agent.Run` caller together. The first end-to-end test still drives only
+`gateway/turn_agent.go`, so a failure there is found before the scheduled/research paths run.
+2. **Retry parity — match Polaris exactly.** `RetryPolicy{Max: 2, Base: 2 * time.Second}`: three
+total attempts, 2s then 4s. Widening is a later, deliberate change.
+3. **Model catalog — register at startup.** Every configured model is registered with
+`InputModalities` from `modelCfg.Multimodal` once at boot, which also gives Nova the cost fallback.
+An unknown id stays text-only, the safe default.
+4. **Nova pin — `replace` until the flip.** The branch works against the local Nova tree through
+N9; a tag or pseudo-version is pinned when the flag flips (N10).
+5. **`Context.Complete` — not in this port.** Tools keep their own clients and `ctx.AddCost`, so the
+port stays behaviour-neutral. Moving a tool to `Context.Complete`/`AddUsage` is a later, one-tool
+commit with its own tests.
 
 ## 13. References
 
