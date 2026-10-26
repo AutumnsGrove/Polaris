@@ -621,5 +621,10 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   far behind Jev on accuracy.
 - `cloudflare/clef-omni` was run 2026-10-26: 66.3, 379ms, $0.802 per 1,000 turns (the most expensive
   model tested); no question cap, no errors.
+- 2026-10-26 catalog review: all 30 catalog entries are accounted for. `perplexity/pplx-decider-flash-v1.2`
+  failed every call to upstream 429s on 2026-10-19 but works now and was re-run: 76.2, 386ms, no errors.
+  `perplexity/pplx-decider-v1.1-27b` (our top scorer, 91.4) now returns 404 and is retired. Paid
+  `inception/mercury-decide` is the same build as the free tier (already 89.0), so it is not worth re-running.
+  `upstage/solar-decide` answered a 1-question probe in 2.1s (it took 13 to 21s on the full payload); not re-tested.
 - Deliberately not run: `~perplexity/pplx-decider-latest`, an alias for a Perplexity model already benchmarked
   by its versioned id (an alias moving would make a result uninterpretable).

@@ -664,11 +664,11 @@
   },
   "perplexity/pplx-decider-flash-v1.2": {
     "calls": 885,
-    "answered": 0,
-    "under_2_5s": 0,
-    "under_5s": 0,
+    "answered": 885,
+    "under_2_5s": 881,
+    "under_5s": 881,
     "refused": 0,
-    "failed": 885,
+    "failed": 0,
     "calls_by_track": {
       "chips": 48,
       "claim_check": 24,
