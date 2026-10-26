@@ -17,6 +17,8 @@ var (
 	obrCalls  string
 	obrOut    string
 	obrPinned string
+
+	obrAllowConcurrency bool
 )
 
 // The report is generated, never hand-drawn, so adding a model means re-running
@@ -35,6 +37,7 @@ var oracleBenchReportCmd = &cobra.Command{
 func init() {
 	f := oracleBenchReportCmd.Flags()
 	f.StringSliceVar(&obrRun, "run", nil, "saved leaderboard JSON(s) to report on, comma-separated or repeated; several runs are merged (required)")
+	f.BoolVar(&obrAllowConcurrency, "allow-concurrency-mismatch", false, "merge runs that differ only in concurrency; those models' rows are marked in results.md because their latency was measured under a different load")
 	f.StringVar(&obrCalls, "calls", "", "raw calls JSONL (glob) used to tally the share of calls under the production timeout")
 	f.StringVar(&obrOut, "out", "docs/benchmarks/oracle-decision-models", "directory the SVGs, results.md and call-stats.json are written to")
 	f.StringVar(&obrPinned, "pinned", "typesafe/jev-1.14", "model currently pinned in production, highlighted in the charts")
@@ -57,7 +60,7 @@ func runOracleBenchReport(cmd *cobra.Command, args []string) error {
 		}
 		boards = append(boards, b)
 	}
-	board, err := oraclebench.MergeLeaderboards(boards)
+	board, err := oraclebench.MergeLeaderboards(boards, obrAllowConcurrency)
 	if err != nil {
 		return err
 	}
@@ -120,9 +123,23 @@ func resultsTable(b oraclebench.Leaderboard, shares map[string]oraclebench.CallS
 		if s.Calls > 0 {
 			per1k = s.CostUSD / float64(s.Calls) * 1000
 		}
-		fmt.Fprintf(&sb, "| %s | `%s` | **%.1f** (%.1f-%.1f) | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %s | %s | %s | $%.3f |\n",
-			n, e.Model, s.Headline, s.HeadlineLo, s.HeadlineHi, 100*s.Verdict, 100*s.Trigger, 100*s.Focus,
+		name := "`" + e.Model + "`"
+		if _, ok := b.RanAtConcurrency[e.Model]; ok {
+			name += " †"
+		}
+		fmt.Fprintf(&sb, "| %s | %s | **%.1f** (%.1f-%.1f) | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %s | %s | %s | $%.3f |\n",
+			n, name, s.Headline, s.HeadlineLo, s.HeadlineHi, 100*s.Verdict, 100*s.Trigger, 100*s.Focus,
 			100*s.DangerousFPRate, 100*s.ErrorRate, dur(s.LatencyP50), dur(s.LatencyP95), under, per1k)
+	}
+	var marked []string
+	for _, e := range entries {
+		if c, ok := b.RanAtConcurrency[e.Model]; ok {
+			marked = append(marked, fmt.Sprintf("`%s` (%d)", e.Model, c))
+		}
+	}
+	if len(marked) > 0 {
+		fmt.Fprintf(&sb, "\n† ran at a different concurrency than the rest (%d): %s. Their latency and under-2.5s share were measured under a different load; accuracy is unaffected.\n",
+			b.Concurrency, strings.Join(marked, ", "))
 	}
 	for _, e := range entries {
 		for _, reason := range e.Score.Disqualified {

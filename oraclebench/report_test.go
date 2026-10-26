@@ -68,9 +68,12 @@ func TestMergeLeaderboards(t *testing.T) {
 		{Model: "m/a", Score: ModelScore{Headline: 90}}, {Model: "m/b", Score: ModelScore{Headline: 80}}}}
 	b := Leaderboard{RunAt: "t2", Cases: 295, Repeats: 3, Concurrency: 2, WeightsHash: "w", Entries: []Entry{
 		{Model: "m/c", Score: ModelScore{Headline: 85}}, {Model: "m/b", Score: ModelScore{Headline: 82}}}}
-	got, err := MergeLeaderboards([]Leaderboard{a, b})
+	got, err := MergeLeaderboards([]Leaderboard{a, b}, false)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(got.RanAtConcurrency) != 0 {
+		t.Errorf("same-concurrency runs should record no concurrency notes, got %v", got.RanAtConcurrency)
 	}
 	if len(got.Entries) != 3 || got.Entries[0].Model != "m/a" || got.Entries[1].Model != "m/c" {
 		t.Errorf("merged and re-ranked wrong: %+v", got.Entries)
@@ -83,7 +86,43 @@ func TestMergeLeaderboards(t *testing.T) {
 	}
 	// Runs scored under different weights are not comparable, so merging refuses.
 	b.WeightsHash = "other"
-	if _, err := MergeLeaderboards([]Leaderboard{a, b}); err == nil {
+	if _, err := MergeLeaderboards([]Leaderboard{a, b}, false); err == nil {
 		t.Error("merging runs with different weights should fail")
+	}
+	// ...and the opt-in only covers concurrency, never weights, cases or repeats.
+	if _, err := MergeLeaderboards([]Leaderboard{a, b}, true); err == nil {
+		t.Error("allowConcurrencyMismatch must not let different weights through")
+	}
+}
+
+func TestMergeLeaderboardsConcurrencyMismatchIsOptInAndMarked(t *testing.T) {
+	a := Leaderboard{RunAt: "t1", Cases: 295, Repeats: 3, Concurrency: 2, WeightsHash: "w", Entries: []Entry{
+		{Model: "m/a", Score: ModelScore{Headline: 90}}}}
+	low := Leaderboard{RunAt: "t2", Cases: 295, Repeats: 3, Concurrency: 1, WeightsHash: "w", Entries: []Entry{
+		{Model: "m/slow", Score: ModelScore{Headline: 88}}}}
+
+	if _, err := MergeLeaderboards([]Leaderboard{a, low}, false); err == nil {
+		t.Fatal("a concurrency mismatch must be refused unless explicitly allowed")
+	}
+	got, err := MergeLeaderboards([]Leaderboard{a, low}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, ok := got.RanAtConcurrency["m/slow"]; !ok || c != 1 {
+		t.Errorf("RanAtConcurrency = %v, want m/slow at 1", got.RanAtConcurrency)
+	}
+	if _, marked := got.RanAtConcurrency["m/a"]; marked {
+		t.Error("the baseline run's models must not be marked")
+	}
+
+	// A model re-run later at the baseline concurrency sheds its old note.
+	rerun := Leaderboard{RunAt: "t3", Cases: 295, Repeats: 3, Concurrency: 2, WeightsHash: "w", Entries: []Entry{
+		{Model: "m/slow", Score: ModelScore{Headline: 87}}}}
+	got, err = MergeLeaderboards([]Leaderboard{a, low, rerun}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, marked := got.RanAtConcurrency["m/slow"]; marked {
+		t.Errorf("m/slow was re-run at concurrency 2 but is still marked: %v", got.RanAtConcurrency)
 	}
 }

@@ -27,6 +27,12 @@ type Leaderboard struct {
 	Budget      time.Duration `json:"latency_budget"`
 	WeightsHash string        `json:"weights_hash"`
 	Entries     []Entry       `json:"entries"`
+	// RanAtConcurrency maps a model to the concurrency it actually ran at, only
+	// for models merged in (MergeLeaderboards with allowConcurrencyMismatch)
+	// from a run whose concurrency differs from Concurrency above. Accuracy is
+	// unaffected, but latency and the under-2.5s share are, so the report marks
+	// these rows instead of letting them read as like-for-like.
+	RanAtConcurrency map[string]int `json:"ran_at_concurrency,omitempty"`
 }
 
 // tieGap is the headline gap under which two models are not meaningfully

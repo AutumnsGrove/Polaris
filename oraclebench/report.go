@@ -91,19 +91,36 @@ func TallyCalls(paths []string) (map[string]CallStats, error) {
 // runs must have scored the same cases the same way (cases, repeats, concurrency
 // and weights), otherwise their numbers would not be comparable and merging
 // would quietly mislead. A model present in several runs takes the latest.
-func MergeLeaderboards(boards []Leaderboard) (Leaderboard, error) {
+//
+// allowConcurrencyMismatch relaxes only the concurrency check: accuracy doesn't
+// depend on load, only latency does, and a model whose provider needs fewer
+// calls in flight (Drex's split makes each call two requests) has a real reason
+// to run lower. Such models are recorded in RanAtConcurrency so the report can
+// flag their latency; cases, repeats and weights must still match.
+func MergeLeaderboards(boards []Leaderboard, allowConcurrencyMismatch bool) (Leaderboard, error) {
 	if len(boards) == 0 {
 		return Leaderboard{}, errors.New("no leaderboards to merge")
 	}
 	out := boards[0]
 	out.Entries = nil
+	out.RanAtConcurrency = nil
 	idx := map[string]int{}
 	for i, b := range boards {
-		if b.Cases != out.Cases || b.Repeats != out.Repeats || b.Concurrency != out.Concurrency || b.WeightsHash != out.WeightsHash {
+		concurrencyDiffers := b.Concurrency != out.Concurrency
+		if b.Cases != out.Cases || b.Repeats != out.Repeats || b.WeightsHash != out.WeightsHash || (concurrencyDiffers && !allowConcurrencyMismatch) {
 			return Leaderboard{}, fmt.Errorf("run %d (%s) used different settings (cases %d/%d, repeats %d/%d, concurrency %d/%d, weights %s/%s); its numbers are not comparable",
 				i+1, b.RunAt, b.Cases, out.Cases, b.Repeats, out.Repeats, b.Concurrency, out.Concurrency, b.WeightsHash, out.WeightsHash)
 		}
 		for _, e := range b.Entries {
+			// A later run of the same model replaces the earlier one, and with it
+			// the earlier run's concurrency note.
+			delete(out.RanAtConcurrency, e.Model)
+			if concurrencyDiffers {
+				if out.RanAtConcurrency == nil {
+					out.RanAtConcurrency = map[string]int{}
+				}
+				out.RanAtConcurrency[e.Model] = b.Concurrency
+			}
 			if j, ok := idx[e.Model]; ok {
 				out.Entries[j] = e
 				continue
