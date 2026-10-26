@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"polaris/config"
-	"polaris/eval"
 	"polaris/decisions"
+	"polaris/eval"
 	"polaris/llm"
 	"polaris/models"
 )

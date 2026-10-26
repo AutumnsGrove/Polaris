@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"polaris/gateway"
 	"polaris/decisions"
+	"polaris/gateway"
 	"polaris/prompts"
 )
 

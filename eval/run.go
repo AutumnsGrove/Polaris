@@ -17,14 +17,14 @@ import (
 
 // Result is one case's outcome.
 type Result struct {
-	Case       Case    `json:"case"`
-	Pass       bool    `json:"pass"`
-	Reason     string  `json:"reason,omitempty"`
-	RawOutput  string  `json:"raw_output,omitempty"`
-	CostUSD    float64 `json:"cost_usd"`
-	DecisionChoice  string  `json:"decision_choice,omitempty"`
-	DecisionConf    float64 `json:"decision_confidence,omitempty"`
-	ErrMessage string  `json:"error,omitempty"`
+	Case           Case    `json:"case"`
+	Pass           bool    `json:"pass"`
+	Reason         string  `json:"reason,omitempty"`
+	RawOutput      string  `json:"raw_output,omitempty"`
+	CostUSD        float64 `json:"cost_usd"`
+	DecisionChoice string  `json:"decision_choice,omitempty"`
+	DecisionConf   float64 `json:"decision_confidence,omitempty"`
+	ErrMessage     string  `json:"error,omitempty"`
 }
 
 // citationSupportCriteria mirrors gateway/verification.go's verifySource

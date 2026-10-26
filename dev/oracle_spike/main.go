@@ -43,12 +43,12 @@ type spikePrompt struct {
 }
 
 type spikeResult struct {
-	ID         int64                       `json:"id"`
-	Message    string                      `json:"message"`
-	LatencyMs  int64                       `json:"latency_ms"`
-	CostUSD    float64                     `json:"cost_usd"`
+	ID         int64                             `json:"id"`
+	Message    string                            `json:"message"`
+	LatencyMs  int64                             `json:"latency_ms"`
+	CostUSD    float64                           `json:"cost_usd"`
 	Answers    map[string]decisions.ChoiceAnswer `json:"answers"`
-	ErrMessage string                      `json:"err_message,omitempty"`
+	ErrMessage string                            `json:"err_message,omitempty"`
 }
 
 // questionPreamble mirrors the draft prompts.yaml's oracle.question_preamble.

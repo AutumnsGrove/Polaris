@@ -7,8 +7,8 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"polaris/brave"
-	"polaris/embed"
 	"polaris/decisions"
+	"polaris/embed"
 	"polaris/llm"
 	"polaris/parallel"
 	"polaris/places"

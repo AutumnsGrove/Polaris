@@ -22,8 +22,8 @@ import (
 
 	"polaris/brave"
 	"polaris/config"
-	"polaris/embed"
 	"polaris/decisions"
+	"polaris/embed"
 	"polaris/logger"
 	"polaris/models"
 	"polaris/parallel"
@@ -61,7 +61,7 @@ type Server struct {
 	tavily     *tavily.Client           // nil if not configured
 	brave      *brave.Client            // nil if not configured
 	parallel   *parallel.Client         // nil if not configured
-	decisions        *decisions.Client              // nil if openrouter.api_key isn't set — disables compare_sources only
+	decisions  *decisions.Client        // nil if openrouter.api_key isn't set — disables compare_sources only
 	embed      *embed.Client            // nil if ollama.base_url isn't set — disables agent's query-similarity signal only
 	stt        *voice.STTClient
 	tts        *voice.TTSClient
@@ -182,7 +182,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		tavily:            tavily.NewClient(cfg.Tavily.APIKey),
 		brave:             brave.NewClient(cfg.Brave.APIKey),
 		parallel:          parallel.NewClient(cfg.Parallel.APIKey),
-		decisions:               decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
+		decisions:         decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
 		embed:             embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
 		stt:               voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		tts:               voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),

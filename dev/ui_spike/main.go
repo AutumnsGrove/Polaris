@@ -32,8 +32,8 @@ import (
 	"sync"
 
 	"polaris/config"
-	"polaris/gateway"
 	"polaris/decisions"
+	"polaris/gateway"
 	"polaris/models"
 )
 

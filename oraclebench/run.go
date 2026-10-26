@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"polaris/gateway"
 	"polaris/decisions"
+	"polaris/gateway"
 )
 
 // Asker is the one decision-model call the runner makes. *decisions.Client satisfies
