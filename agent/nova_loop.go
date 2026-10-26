@@ -135,6 +135,7 @@ func runWithNova(reqCtx context.Context, ctx *tools.Context, history []llm.ChatM
 		PromptCache:     &promptCache,
 		Retry:           novaagent.RetryPolicy{Max: novaRetry.Max, Base: novaRetry.Base, Jitter: -1},
 		HookTimeout:     novaHookTimeout,
+		RequestTimeout:  novaRequestTimeout,
 		WrapUp:          &novaagent.WrapUp{Instruction: wrapUpInstruction, Fallback: wrapUpFallback},
 		TextFilter:      newPseudoCallFilter,
 		Emit:            st.onEvent,
@@ -161,20 +162,17 @@ func runWithNova(reqCtx context.Context, ctx *tools.Context, history []llm.ChatM
 // parallel_tool_calls true are sent explicitly, not left to the provider's
 // default: the bespoke client documents that as deliberate, and the parity
 // goldens caught Nova omitting both. They are only valid alongside tools, so
-// the wrap-up request — which Nova builds with none — must not carry them;
-// at this hook that is exactly the case where req.Tools is still empty.
+// the wrap-up request — which Nova builds with none — must not carry them; at
+// this hook that is exactly the case where req.Tools is still empty (Nova also
+// omits parallel_tool_calls from a request with no tools).
 func shapeToolRequest(req *provider.Request, defs []provider.ToolDef) {
 	if len(req.Tools) == 0 {
 		return
 	}
 	req.Tools = defs
 	req.ToolChoice = "auto"
-	opts := make(map[string]any, len(req.ProviderOptions)+1)
-	for k, v := range req.ProviderOptions {
-		opts[k] = v
-	}
-	opts["parallel_tool_calls"] = true
-	req.ProviderOptions = opts
+	yes := true
+	req.ParallelToolCalls = &yes
 }
 
 // build maps Nova's result back into Polaris's, whatever way the run ended.
@@ -211,7 +209,7 @@ func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err 
 		out.Answer = s.liveText.String()
 		out.ContextTokens = s.lastPromptTokens + s.lastCompletionTokens
 	default:
-		out.Answer = finalAnswer(newMsgs)
+		out.Answer = res.Final
 		if w := s.wrapMsg; w != nil {
 			switch {
 			case len(w.ToolCalls) == 0 && strings.TrimSpace(w.Content) == "":
@@ -270,12 +268,11 @@ func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err 
 }
 
 // dropUnsendable removes the assistant messages Nova records that the bespoke
-// loop never kept: an empty one (the empty-answer retry — a provider can reject
-// an assistant message with neither content nor tool_calls, and Nova's encoder
-// omits empty content entirely) and a pseudo-tool-call attempt, whose result
-// the loop replays as a user message instead. Applied to the wire request and
-// to the persisted transcript, so the next turn replays exactly what the
-// bespoke loop would have stored.
+// loop never kept: an empty one (the empty-answer retry; Nova no longer sends it
+// either, but the persisted transcript must not keep it) and a pseudo-tool-call
+// attempt, whose result the loop replays as a user message instead. Applied to
+// the wire request and to the persisted transcript, so the next turn replays
+// exactly what the bespoke loop would have stored.
 func dropUnsendable(msgs []message.Message) []message.Message {
 	out := make([]message.Message, 0, len(msgs))
 	for _, m := range msgs {
@@ -286,17 +283,6 @@ func dropUnsendable(msgs []message.Message) []message.Message {
 		out = append(out, m)
 	}
 	return out
-}
-
-// finalAnswer is the content of the transcript's closing plain assistant
-// message. Computed from the transcript rather than taken from Nova's
-// Result.Answer, which is "the last non-empty assistant text" and so can be a
-// stale pre-tool-call remark when the real final message was empty.
-func finalAnswer(msgs []message.Message) string {
-	if n := len(msgs); n > 0 && msgs[n-1].Role == message.RoleAssistant && len(msgs[n-1].ToolCalls) == 0 {
-		return msgs[n-1].Content
-	}
-	return ""
 }
 
 // onEvent maps Nova's events onto Polaris's live event vocabulary (plan §5.4).

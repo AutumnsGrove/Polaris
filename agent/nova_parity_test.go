@@ -178,29 +178,6 @@ func normalizeBody(m map[string]any) map[string]any {
 		if k == "stream_options" {
 			continue // Nova asks for usage in the stream; Polaris reads it unprompted.
 		}
-		if k == "messages" {
-			// Nova's encoder omits an empty `content` on an assistant message
-			// that only carries tool_calls (valid per the chat-completions spec);
-			// llm.Client sends `"content":""`. Normalized away here, and called
-			// out in docs/plans/nova-loop.md as the one accepted per-message wire
-			// difference: it re-keys the provider prefix cache once per thread.
-			var msgs []any
-			for _, mv := range v.([]any) {
-				mm := mv.(map[string]any)
-				if mm["role"] == "assistant" && mm["tool_calls"] != nil && mm["content"] == "" {
-					cp := map[string]any{}
-					for ck, cv := range mm {
-						if ck != "content" {
-							cp[ck] = cv
-						}
-					}
-					mm = cp
-				}
-				msgs = append(msgs, mm)
-			}
-			out[k] = msgs
-			continue
-		}
 		out[k] = v
 	}
 	return out

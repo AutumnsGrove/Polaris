@@ -1,14 +1,10 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/AutumnsGrove/nova/message"
@@ -19,8 +15,7 @@ import (
 )
 
 // novaRequestTimeout bounds a single provider call, matching llm.Client's
-// requestTimeout. Nova's HTTP client has no per-call deadline of its own, so
-// without this a hung provider would hang the whole turn.
+// requestTimeout (passed as agent.Config.RequestTimeout).
 const novaRequestTimeout = 3 * time.Minute
 
 // novaRetry matches llm.Client exactly — three total attempts, 2s then 4s
@@ -75,68 +70,30 @@ func novaProviderFor(client llm.ChatClient) (*polarisProvider, novaModel) {
 	if len(opts) > 0 {
 		m.Options = opts
 	}
-	errBody := &errBodyTransport{base: http.DefaultTransport}
 	inner := openrouter.New(openrouter.Config{
-		APIKey:     s.APIKey,
-		BaseURL:    s.BaseURL,
-		Referer:    "https://github.com/AutumnsGrove/Polaris",
-		Title:      "Polaris",
-		HTTPClient: &http.Client{Transport: errBody},
+		APIKey:  s.APIKey,
+		BaseURL: s.BaseURL,
+		Referer: "https://github.com/AutumnsGrove/Polaris",
+		Title:   "Polaris",
+		// llm.Client always sent "content":"" on a tool-call-only assistant
+		// message; keeping it means replayed history re-encodes to the same
+		// bytes and the provider's prompt cache survives the switch.
+		EmptyToolCallContent: true,
 	})
-	return &polarisProvider{inner: inner, errBody: errBody}, m
+	return &polarisProvider{inner: inner}, m
 }
 
-// errBodyTransport remembers the body of the last non-2xx response. Nova's
-// provider.Error keeps only the parsed code and message, but two user-facing
-// behaviours key on the raw body: llm.APIError's "LLM API returned N: <body>"
-// text and the 429 message's "providers tried: ..." list parsed out of
-// OpenRouter's error JSON. One transport per run (the provider is built per
-// run), so there is no cross-run bleed; a run's calls are sequential.
-type errBodyTransport struct {
-	base   http.RoundTripper
-	mu     sync.Mutex
-	status int
-	body   string
-}
-
-func (t *errBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.base.RoundTrip(req)
-	if err != nil || resp.StatusCode < 400 {
-		return resp, err
-	}
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	resp.Body.Close()
-	t.mu.Lock()
-	t.status, t.body = resp.StatusCode, string(b)
-	t.mu.Unlock()
-	resp.Body = io.NopCloser(bytes.NewReader(b))
-	return resp, nil
-}
-
-// bodyFor returns the raw body of the last error response if it had this status.
-func (t *errBodyTransport) bodyFor(status int) (string, bool) {
-	if t == nil {
-		return "", false
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.body, t.status == status && t.body != ""
-}
-
-// polarisProvider layers the three llm.Client behaviours Nova's provider does
-// not have onto any inner provider: a per-call deadline, the reasoning-leak
-// re-filing, and (via translateRunError, applied by the caller) Polaris's
-// user-facing error types.
+// polarisProvider layers what llm.Client did that Nova's provider does not onto
+// any inner provider: the OpenRouter metadata header and the reasoning-leak
+// re-filing. (The per-call deadline is agent.Config.RequestTimeout, and
+// Polaris's user-facing error type is translateRunError, applied by the caller.)
 type polarisProvider struct {
-	inner   provider.Provider
-	errBody *errBodyTransport // nil for the ChatClient bridge, which returns *llm.APIError itself
+	inner provider.Provider
 }
 
 func (p *polarisProvider) Name() string { return p.inner.Name() }
 
 func (p *polarisProvider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
-	ctx, cancel := context.WithTimeout(ctx, novaRequestTimeout)
-	defer cancel()
 	if req.ExtraHeaders == nil {
 		req.ExtraHeaders = map[string]string{}
 	}
@@ -189,9 +146,9 @@ func (p *polarisProvider) translateRunError(err error) error {
 	}
 	var pe *provider.Error
 	if errors.As(err, &pe) && pe.Status != 0 {
-		body := pe.Message
-		if raw, ok := p.errBody.bodyFor(pe.Status); ok {
-			body = raw
+		body := pe.Body
+		if body == "" {
+			body = pe.Message
 		}
 		return &llm.APIError{StatusCode: pe.Status, Body: body}
 	}
