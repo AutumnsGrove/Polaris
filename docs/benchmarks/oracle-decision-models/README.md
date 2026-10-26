@@ -45,8 +45,10 @@ repeat it.
   (68 to 75% right, against 90 to 98% for the leaders). **Scaledown Classify 1 (75.4) and Upstage Solar
   Decide Flash (57.3) trail further.** Solar Flash is also the closest to a disqualifying 5% of
   dangerous false nudges (4%).
-- **Two models couldn't be fully scored:** Nace's Drex 2.0 and Drex Max reject Oracle's 23-question call outright, and
-  Upstage's regular Solar Decide takes 13 to 21 seconds per call. See
+- **Nace's three Drex models are not scored yet.** Drex 2.0 and Max cap a request at 16 questions, so the
+  bench now splits Oracle's 23 into two requests for them; Drex 1.5 has no cap. All three ran a 4-case smoke test
+  without errors, and the full run is still to do. Upstage's regular Solar Decide couldn't be scored: it takes
+  13 to 21 seconds per call. See
   [Models that couldn't be scored](#models-that-couldnt-be-scored).
 - **Paid Mercury Decide and Perplexity Decider Flash v1.2 could not be benchmarked.** Upstream HTTP 429s
   hit 96% of Mercury's calls and all of Flash's, so both are disqualified for this run. That says nothing
@@ -224,14 +226,30 @@ Judged on the operator's stated priorities (speed first, then accuracy):
 
 ### Models that couldn't be scored
 
-- **`nace-ai/drex-v2.0`** fails every call with `HTTP 422: too many questions (23); limit is 16`. It caps a
-  single call at 16 questions and Oracle asks 23, so it cannot run Oracle's question set as designed.
-  Splitting the questions across several calls would change how Oracle works (more calls, more latency), so
-  it was not attempted. `drex-v1.5` was not tried and probably has the same cap.
-- **`nace-ai/drex-max`** (Drex 2.0's successor, 2026-10-23, DeepInfra at $0.06/M prompt tokens, about 290ms
-  p50 in OpenRouter's own stats) has the same cap: a 12-case smoke test failed every call with
-  `HTTP 422: questions must be an object of 1..16 questions`. The 422 comes from the server's request
-  validation, so it says nothing about the model's accuracy. Not run in full, for the same reason as 2.0.
+- **Nace's Drex family: runnable, full run pending.** Sent as one 23-question request:
+  - **`nace-ai/drex-v2.0`** fails every call with `HTTP 422: too many questions (23); limit is 16`.
+  - **`nace-ai/drex-max`** (Drex 2.0's successor, 2026-10-23, DeepInfra at $0.06/M prompt tokens, about 290ms
+    p50 in OpenRouter's own stats) fails the same way: `HTTP 422: questions must be an object of 1..16 questions`.
+  - **`nace-ai/drex-v1.5`** has **no cap**: it accepted 23 questions in one request (an earlier version of this
+    page guessed it would be capped, and had not tried it). It needs no workaround.
+
+  The 422 comes from the server's request validation, so it says nothing about accuracy. A probe on
+  2026-10-25 put the limit at exactly 16 (16 passes, 17 fails) for 2.0 and Max. The bench now handles
+  that: `jev.Client.WithMaxQuestions` splits a call over the cap into two balanced requests (12 and 11
+  questions, sorted by key so the split is identical every time), sends them concurrently, merges the
+  answers and sums the cost, and fails the whole call if either request fails, as an unsplit call would.
+  `oraclebench.MaxQuestionsFor` lists the capped models (2.0 and Max). A 4-case smoke test of all three ran
+  with 0% errors (p50 439ms for 1.5, 789ms for Max, 1.0s for 2.0), but 4 cases say nothing about accuracy.
+
+  When these are scored, read the split models with three caveats:
+  - **The split is not perfectly lossless.** In the probe, a question's probability moved when its
+    neighbours changed: usually under 0.01, but `emotional` moved 0.08 on Max (0.350 to 0.271) between an
+    8-question and a 16-question request. Repeated identical calls agreed exactly, so the 3 repeats will not
+    average anything out.
+  - **Latency is the slower of two requests**, so tail latency is worse than a single call's.
+  - **Use `--concurrency 1`** for these runs, because each call puts two requests in flight.
+
+  Production would need the same cap (`WithMaxQuestions(16)` on Oracle's client) if a split Drex ever won.
 - **`respan/span-01`, `span-01-lite` and `span-01-lite:free`** reject every Choice question with
   `HTTP 400: Respan only accepts noul questions whose instructions and criteria are plain strings`
   (re-verified live 2026-10-25). Span-01 is a behavior scorer that takes only free-text `noul` questions, and

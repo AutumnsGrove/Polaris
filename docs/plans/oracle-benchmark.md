@@ -608,8 +608,11 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   family, and was run 2026-10-25: 86.4, a tie with Jev 1.14 on score, but p50 2.3s and only 85.9% of calls
   under 2.5s, so not a candidate. `span-01`, `span-01-lite` and `span-01-lite:free` remain N/A (`noul`-only,
   re-verified live 2026-10-25).
-- Could not be scored: `nace-ai/drex-v2.0` and its successor `nace-ai/drex-max` (smoke-tested 2026-10-23)
-  both reject calls over 16 questions (Oracle asks 23), and
-  `upstage/solar-decide` takes 13 to 21s per call (probed, not run in full).
-- Not yet run: `cloudflare/clef-omni`, `nace-ai/drex-v1.5`, `togethercomputer/tev1-4b-experimental`,
+- Drex (spiked 2026-10-25, **full run pending**): `nace-ai/drex-v2.0` and `drex-max` reject calls over 16
+  questions (Oracle asks 23), so the bench splits their call into two via `jev.Client.WithMaxQuestions` /
+  `oraclebench.MaxQuestionsFor`; `drex-v1.5` has no cap and runs as a single request. All three smoke-tested
+  clean. Probed co-batching effects mean a split is not perfectly lossless (see the README), so report these
+  as "scored under a two-request split" and run them at `--concurrency 1`.
+- Could not be scored: `upstage/solar-decide` takes 13 to 21s per call (probed, not run in full).
+- Not yet run: `cloudflare/clef-omni`, `togethercomputer/tev1-4b-experimental`,
   `jaredpalmer/kev-4b`, `~perplexity/pplx-decider-latest`.
