@@ -205,7 +205,7 @@ func TestGetStats_DecisionCallCounts(t *testing.T) {
 		}
 	}
 	// An old row, outside the 30-day window: counts all-time only.
-	if _, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd, created_at) VALUES (0.001, datetime('now', '-90 days'))`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO decisions_usage (cost_usd, created_at) VALUES (0.001, datetime('now', '-90 days'))`); err != nil {
 		t.Fatalf("insert old row: %v", err)
 	}
 

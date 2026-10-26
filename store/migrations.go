@@ -209,8 +209,12 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN applied_model TEXT NOT NULL DEFAULT ''`,
 	// completion_tokens — see the schema comment above.
 	`ALTER TABLE messages ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
-	// jev_usage.source — see the schema comment above (issue #125).
-	`ALTER TABLE jev_usage ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
+	// decisions_usage.source — see the schema comment above (issue #125).
+	// The table was jev_usage when this was written; it targets the new name
+	// because Open renames the table (renameJevUsageToDecisionsUsage) before
+	// any migration runs, so a database old enough to still need this one would
+	// otherwise fail with "no such table: jev_usage". Same index, same effect.
+	`ALTER TABLE decisions_usage ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
 	// threads.field_id — see the schema comment above (issue #119).
 	// Appended at the end per this file's own established rule (positional
 	// user_version tracking, never insert mid-list). NULL default is also

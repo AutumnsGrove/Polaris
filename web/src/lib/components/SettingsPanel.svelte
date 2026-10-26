@@ -312,8 +312,8 @@
 					     hundredths of a cent each, so the dollar figure alone can't say
 					     whether it was 30 calls or 3,000. These count API calls, not
 					     questions asked. -->
-					{#if usage.jev_calls}
-						{#each [{ label: 'Badge calls', c: usage.jev_calls.verification }, { label: 'compare_sources calls', c: usage.jev_calls.compare }, { label: 'Oracle calls', c: usage.jev_calls.oracle }] as row (row.label)}
+					{#if usage.decision_calls}
+						{#each [{ label: 'Badge calls', c: usage.decision_calls.verification }, { label: 'compare_sources calls', c: usage.decision_calls.compare }, { label: 'Oracle calls', c: usage.decision_calls.oracle }] as row (row.label)}
 							{#if row.c.total > 0}
 								<div class="usage-stat-row sub">
 									<span class="label">{row.label}</span>

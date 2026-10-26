@@ -55,7 +55,7 @@ func init() { Register("compare_sources", handleCompareSources) }
 const decisionsPerTurnCapUSD = 0.01
 
 // decisionsMonthlyCapUSD is a real ceiling on total monthly decisions spend across every
-// compare_sources call, checked via store.Store's jev_usage table — same
+// compare_sources call, checked via store.Store's decisions_usage table — same
 // "fail closed like Brave/Parallel being nil" shape as every other capped
 // provider. A generous multiple of the per-turn cap, not a tightly-reasoned
 // figure — deliberately adjustable without needing to touch call sites.

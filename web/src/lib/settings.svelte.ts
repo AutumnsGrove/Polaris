@@ -57,7 +57,7 @@ export interface UsageStats {
 	// Optional so an older backend without it just hides the rows.
 	// `verification` also holds every compare_sources call from before the
 	// ledger split, which can't be told apart retroactively.
-	jev_calls?: {
+	decision_calls?: {
 		oracle: { period: number; total: number };
 		verification: { period: number; total: number };
 		compare: { period: number; total: number };

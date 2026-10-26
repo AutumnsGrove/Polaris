@@ -67,7 +67,7 @@ func TestStats_APICapsReportRealUsageAgainstEnforcedCaps(t *testing.T) {
 		{"brave", "calls", 1, brave.MonthlyCap},
 		{"parallel", "calls", 0, tools.ParallelMonthlyCap},
 		{"tavily", "calls", 3, tools.TavilyMonthlyCap},
-		{"jev", "usd", 1.25, decisionsMonthlyCapUSD},
+		{"decisions", "usd", 1.25, decisionsMonthlyCapUSD},
 	}
 	if len(byProvider) != len(cases) {
 		t.Errorf("got %d services, want %d: %+v", len(byProvider), len(cases), caps.Services)

@@ -105,12 +105,12 @@ func (s *Store) RecordGhostCost(costUSD float64) error {
 }
 
 // LogDecisionsCost appends one row for a real decisions API call's cost — see
-// jev_usage's schema comment. Called after every call that actually went
+// decisions_usage's schema comment. Called after every call that actually went
 // through (never for a call that errored before billing), same convention
 // as IncrementBraveUsage/IncrementParallelUsage only recording completed
 // calls.
 func (s *Store) LogDecisionsCost(costUSD float64) error {
-	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd) VALUES (?)`, costUSD)
+	_, err := s.db.Exec(`INSERT INTO decisions_usage (cost_usd) VALUES (?)`, costUSD)
 	return err
 }
 
@@ -119,7 +119,7 @@ func (s *Store) LogDecisionsCost(costUSD float64) error {
 // "Cost and budgets" section requires), tagged so Stats can show it apart
 // from verification spend (issue #125).
 func (s *Store) LogOracleDecisionsCost(costUSD float64) error {
-	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd, source) VALUES (?, 'oracle')`, costUSD)
+	_, err := s.db.Exec(`INSERT INTO decisions_usage (cost_usd, source) VALUES (?, 'oracle')`, costUSD)
 	return err
 }
 
@@ -129,7 +129,7 @@ func (s *Store) LogOracleDecisionsCost(costUSD float64) error {
 // source = ”. Rows written before this value existed stay lumped under ”
 // and read as badges (issue #151).
 func (s *Store) LogCompareDecisionsCost(costUSD float64) error {
-	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd, source) VALUES (?, 'compare')`, costUSD)
+	_, err := s.db.Exec(`INSERT INTO decisions_usage (cost_usd, source) VALUES (?, 'compare')`, costUSD)
 	return err
 }
 
@@ -149,7 +149,7 @@ func (s *Store) RecordAuxCost(kind string, costUSD float64) error {
 func (s *Store) DecisionsCostThisMonth() (float64, error) {
 	var total float64
 	err := s.db.QueryRow(
-		`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`,
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM decisions_usage WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`,
 	).Scan(&total)
 	return total, err
 }

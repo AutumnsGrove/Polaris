@@ -426,18 +426,21 @@ CREATE TABLE IF NOT EXISTS ghost_usage (
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- jev_usage is a per-call ledger of real Jev (TypeSafe AI) spend — one row
+-- decisions_usage is a per-call ledger of real decision-model spend (Jev by
+-- default, via OpenRouter's Decisions API) — one row
 -- per API call, cost_usd read directly off that call's own response (never
 -- estimated), same shape as ghost_usage above (a per-row ledger with
 -- created_at, not a monthly aggregate) so it can back both a monthly cap
 -- check (SUM WHERE created_at falls in the current calendar month, see
--- JevCostThisMonth) and Stats.VerificationCostUSD's trailing-N-day breakout
+-- DecisionsCostThisMonth) and Stats.VerificationCostUSD's trailing-N-day breakout
 -- (SUM WHERE created_at >= since, matching every other period-filtered stat
 -- in stats.go). That breakout is a transparency slice into money already
 -- counted once via tools.Context.AddCost -> messages.cost_usd — GetStats
 -- must never add this into TotalCostUSD/PeriodCostUSD a second time. See
 -- docs/plans/source-verification-compare-tool.md's cost-tracking section.
-CREATE TABLE IF NOT EXISTS jev_usage (
+-- This table was called jev_usage until issue #184; Open carries an existing
+-- ledger over (renameJevUsageToDecisionsUsage in store.go) BEFORE this runs.
+CREATE TABLE IF NOT EXISTS decisions_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	cost_usd REAL NOT NULL,
 	-- source: "" for verification-badge spend (and every row from before
@@ -445,7 +448,7 @@ CREATE TABLE IF NOT EXISTS jev_usage (
 	-- be split out retroactively), "oracle" for Oracle mode's pre-read
 	-- (issue #125), "compare" for compare_sources calls made since issue
 	-- #151 — lets Stats break them out separately while the monthly cap
-	-- (JevCostThisMonth) still sums every row.
+	-- (DecisionsCostThisMonth) still sums every row.
 	source TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -56,6 +56,9 @@ func Open(path string) (*Store, error) {
 	if err := renameProjectsToFields(db); err != nil {
 		return nil, err
 	}
+	if err := renameJevUsageToDecisionsUsage(db); err != nil {
+		return nil, err
+	}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
@@ -115,6 +118,77 @@ func renameProjectsToFields(db *sql.DB) error {
 		); err != nil {
 			return fmt.Errorf("renaming save_to_project in disabled_tools: %w", err)
 		}
+	}
+	return nil
+}
+
+// renameJevUsageToDecisionsUsage carries the decisions spend ledger over from
+// its old name, jev_usage, to decisions_usage (issue #184: the client was never
+// Jev-specific). This table is the monthly dollar-cap ledger, so a botched
+// rename that lost its rows would silently reset DecisionsCostThisMonth to 0 and
+// disable the cap — hence the transaction, and hence a state-checked step
+// rather than an entry in `migrations`: for the same reason as
+// renameProjectsToFields above, `schema` runs first and its CREATE TABLE IF NOT
+// EXISTS decisions_usage would otherwise create a second, empty ledger beside
+// the real one. (A migration would also re-create an empty jev_usage on every
+// start, since schema no longer mentions it.)
+//
+// Three starting states, all idempotent:
+//   - neither table: a brand-new database, nothing to do (schema creates it)
+//   - only jev_usage: the normal upgrade, a plain rename
+//   - both: a rollback to an older image followed by upgrading again. The old
+//     image's schema re-created an empty jev_usage and logged spend into it
+//     while it ran, so those rows are folded into decisions_usage rather than
+//     dropped — the cap must still count them.
+//
+// Rolling back is survivable but not free (measured against a copy of the real
+// potato database, 2026-10): an image from before this rename opens the
+// migrated database without error, but its schema creates a fresh empty
+// jev_usage, so ITS monthly decisions cap reads $0 for as long as it runs —
+// the cap is effectively off while rolled back. Spend it logs lands in that
+// ghost table and is recovered by the "both tables" case above on the next
+// upgrade. `user_version` is deliberately untouched by all of this.
+func renameJevUsageToDecisionsUsage(db *sql.DB) error {
+	exists := func(name string) (bool, error) {
+		var n int
+		err := db.QueryRow(
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, name,
+		).Scan(&n)
+		return n > 0, err
+	}
+	legacy, err := exists("jev_usage")
+	if err != nil {
+		return fmt.Errorf("checking for legacy jev_usage table: %w", err)
+	}
+	if !legacy {
+		return nil
+	}
+	current, err := exists("decisions_usage")
+	if err != nil {
+		return fmt.Errorf("checking for decisions_usage table: %w", err)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("starting jev_usage rename: %w", err)
+	}
+	defer tx.Rollback()
+	if !current {
+		if _, err := tx.Exec(`ALTER TABLE jev_usage RENAME TO decisions_usage`); err != nil {
+			return fmt.Errorf("renaming jev_usage to decisions_usage: %w", err)
+		}
+	} else {
+		if _, err := tx.Exec(
+			`INSERT INTO decisions_usage (cost_usd, source, created_at) SELECT cost_usd, source, created_at FROM jev_usage`,
+		); err != nil {
+			return fmt.Errorf("folding jev_usage into decisions_usage: %w", err)
+		}
+		if _, err := tx.Exec(`DROP TABLE jev_usage`); err != nil {
+			return fmt.Errorf("dropping jev_usage after folding: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing jev_usage rename: %w", err)
 	}
 	return nil
 }

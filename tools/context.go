@@ -84,7 +84,7 @@ type Context struct {
 	// Decisions is reached through OpenRouter's Decisions API using the exact
 	// same api_key that already authenticates the main chat model, not a
 	// separate secret. DecisionsCostThisMonth/LogDecisionsCost back the monthly dollar
-	// cap (store.Store's jev_usage table) — dollar-based, not call-count-
+	// cap (store.Store's decisions_usage table) — dollar-based, not call-count-
 	// based like Brave/Parallel/Tavily's api_usage, since Decisions bills by
 	// token and one heavily-chunked comparison could cost more than a
 	// typical call. LogDecisionsCost is also how Stats.VerificationCostUSD's
