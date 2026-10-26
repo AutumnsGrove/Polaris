@@ -74,47 +74,74 @@ var Registry = []config.ModelConfig{
 		// model_overrides must keep resolving — same ID-stability approach
 		// as the MiMo v2.6 and Mercury 3 bumps.
 		//
-		// Per a live GET /api/v1/models/deepseek/deepseek-v4.1-flash-1017/
-		// endpoints survey: genuinely multimodal per
-		// architecture.input_modalities (["text","image"]), 1M-token
-		// context on every route below, pinged with an identical
-		// ~3.2k-token prefix twice per provider, each pinned with
-		// allow_fallbacks:false. All three answered, all three hit their
-		// prompt cache on the second call (~99% of tokens cached), all
-		// three billed exactly their listed rates, and all three were at
-		// 100% 1-day uptime when surveyed:
+		// Provider order re-surveyed 2026-10-27 against a live GET
+		// /api/v1/models/deepseek/deepseek-v4.1-flash-1017/endpoints
+		// (34 endpoints now) plus a streaming spike test: 3 trials per
+		// provider, ~3.2k-token prefix, reasoning effort medium,
+		// allow_fallbacks:false, measuring first delta, first *content*
+		// delta, and total turn wall clock.
 		//
-		//   DeepInfra fp8   $0.098 / $0.294 per M, $0.00294/M cache reads
-		//   Cloudflare      $0.10  / $0.60  per M, $0.003/M   cache reads
-		//   DeepSeek        $0.15  / $0.60  per M, $0.003/M   cache reads
+		// Why this got reordered at all: the previous primary
+		// (deepinfra/fp8) was the cheapest route on paper and the
+		// slowest in practice — 4.4s to first answer *text* and ~6.5s
+		// for a full turn, with the 30-minute aggregate showing 62 tps
+		// versus Together's 235. Its fallback (cloudflare) was 2.9s /
+		// 3.8s, so a failover didn't rescue a slow turn, it just picked
+		// a different kind of slow. Cost was never the reason to keep
+		// it there: the whole spread across every route below is about
+		// $0.30 per 1,000 turns, which is noise for a single-operator
+		// tool next to seconds of added latency on every single turn.
 		//
-		// Order is DeepInfra, then Cloudflare, then DeepSeek's own route
-		// (trimmed from the previous five-deep chain). Cache reads dominate
-		// an agent thread's cost, and DeepInfra and Cloudflare sit within
-		// 2% of each other on them, so input/completion price decides the
-		// top two — DeepInfra wins both. Cloudflare is the mid-rung on
-		// rate rather than on reputation: flat $0.10/$0.60 with no
-		// time-of-day surcharge, so it stays under the official route's
-		// cost even at DeepSeek's off-peak price.
+		//   tag              1st tok / 1st content / total   agg tps   in / out per M   cache/M
+		//   together            339ms  /   777ms   / 1.09s     235     $0.30  / $1.20   $0.006
+		//   wafer/mxfp4         364ms  /  1307ms   / 2.05s     189     $0.13  / $0.50   $0.008
+		//   baseten             305ms  /  1004ms   / 1.73s     200     $0.30  / $1.20   $0.007
+		//   deepinfra/fp8       815ms  /  4422ms   / 6.55s      62     $0.098 / $0.294  $0.0029
 		//
-		// The official route is last, not excluded: it doubles to
-		// $0.30/$1.20/$0.006 on weekdays 01:00-04:00 and 06:00-10:00 UTC
-		// (~21% of the week) via pricing.overrides, and its
-		// supports_tool_choice only covers none/auto — required and
-		// function are false there, so a forced-tool call (Comet's trends
-		// extraction is the one caller) would fail on it. It's still the
-		// wide-context / highest-throughput route, which is why it's kept
-		// rather than dropped. DeepInfra also lists deepinfra/fp8/flex
-		// ($0.0784/$0.2352) and deepinfra/fp8/priority ($0.147/$0.441);
-		// this entry takes the plain fp8 tier, same as before. DeepInfra's
-		// endpoints carry a `discount` (51%); if that's promotional,
-		// re-survey when it lapses. Don't copy this order onto other
-		// models without re-running the survey — pricing shape differs per
-		// model.
+		// Together takes the hot path: fastest on every measured axis and
+		// by far the most exercised route on this model (565k requests in
+		// the 30 minutes surveyed, an order of magnitude past the next
+		// entry), full tool_choice, 100% uptime at 30m and 1d. Its prompt
+		// cache was the one thing worth proving rather than assuming,
+		// since a miss would erode the entire cost argument for moving
+		// off DeepInfra: an identical repeat call billed 98.2% of its
+		// 2,477-token prompt as cache reads, same rate DeepInfra hit.
+		//
+		// wafer/mxfp4 is second rather than first only because it's a
+		// 4-bit quantization and endpoint metadata can't certify output
+		// quality — it matches Together's speed and is cheaper on both
+		// token rates, so promoting it is a benchmark's job, not a
+		// latency table's. baseten third: comparable speed, dearer rate,
+		// and the thinnest traffic history of the four (15k requests).
+		// deepinfra/fp8 last but kept: still the cheapest per turn of
+		// anything here, still a conservative full-fp8 route, just no
+		// longer on the hot path. Its endpoints carry a `discount`
+		// (51%); if that's promotional, its list price ($0.20/$0.60)
+		// makes it strictly worse than wafer. Also lists
+		// deepinfra/fp8/flex ($0.0784/$0.2352) and deepinfra/fp8/priority
+		// ($0.147/$0.441) — this entry takes the plain fp8 tier.
+		//
+		// Dropped in the same pass: `cloudflare` (dominated — same prompt
+		// price as deepinfra, 3x its completion price, slower on every
+		// measurement; it was only ever the mid-rung because the official
+		// route's surge pricing was the thing to beat) and `deepseek`'s
+		// own route. The official endpoint was the *only* entry on this
+		// model whose supports_tool_choice lacks required/function, so a
+		// forced-tool call (Comet's trends extraction is the one caller)
+		// would have failed if it were ever actually reached; removing it
+		// retires that hazard. It was also the slowest of all 34
+		// endpoints at 48 tps, and its off-peak half-price tier only
+		// applies to ~79% of the week. Every remaining entry supports
+		// none/auto/required/function and all 1M-token context, so the
+		// wide-context escape hatch the official route used to cover is
+		// still covered.
+		//
+		// Don't copy this order onto other models without re-running the
+		// survey — pricing shape and provider lineup differ per model.
 		ID:          "deepseek",
 		Name:        "DeepSeek V4.1 Flash",
 		Model:       "deepseek/deepseek-v4.1-flash-1017",
-		Provider:    []string{"deepinfra/fp8", "cloudflare", "deepseek"},
+		Provider:    []string{"together", "wafer/mxfp4", "baseten", "deepinfra/fp8"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{
@@ -122,8 +149,12 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
-		// Primary route's (DeepInfra fp8) list rate; see the comment above.
-		Pricing: &config.PricingConfig{PromptPerM: 0.098, CompletionPerM: 0.294},
+		// Primary route's (Together) list rate; see the comment above. This
+		// is what the picker shows, so the default now reads as 3x its old
+		// price — that's the honest number for the route we actually use,
+		// not a regression: deepinfra/fp8 is still the cheapest fallback
+		// and the per-turn difference is ~$0.30 per 1,000 turns.
+		Pricing: &config.PricingConfig{PromptPerM: 0.30, CompletionPerM: 1.20},
 	},
 	{
 		// Claude Haiku 5.5 (2026-10-08). Per GET /api/v1/models/anthropic/
