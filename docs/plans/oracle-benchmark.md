@@ -608,11 +608,13 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   family, and was run 2026-10-25: 86.4, a tie with Jev 1.14 on score, but p50 2.3s and only 85.9% of calls
   under 2.5s, so not a candidate. `span-01`, `span-01-lite` and `span-01-lite:free` remain N/A (`noul`-only,
   re-verified live 2026-10-25).
-- Drex (spiked 2026-10-25, **full run pending**): `nace-ai/drex-v2.0` and `drex-max` reject calls over 16
+- Drex, run 2026-10-26 at `--concurrency 1`: `nace-ai/drex-v2.0` and `drex-max` reject calls over 16
   questions (Oracle asks 23), so the bench splits their call into two via `jev.Client.WithMaxQuestions` /
-  `oraclebench.MaxQuestionsFor`; `drex-v1.5` has no cap and runs as a single request. All three smoke-tested
-  clean. Probed co-batching effects mean a split is not perfectly lossless (see the README), so report these
-  as "scored under a two-request split" and run them at `--concurrency 1`.
+  `oraclebench.MaxQuestionsFor`; `drex-v1.5` has no cap and runs as a single request. Results: **Max 91.3**
+  (482ms p50, 99.4% under 2.5s, tied for the top score, $0.317/1k turns), 1.5 at 80.5, 2.0 disqualified (22%
+  errors, upstream `429 Model busy`). A split is not perfectly lossless (README), so report these as "scored
+  under a two-request split". `report --allow-concurrency-mismatch` merges the concurrency-1 run and marks it.
+  Fixed along the way: the splitter reported a cancelled sibling's `context canceled` instead of the real error.
 - Could not be scored: `upstage/solar-decide` takes 13 to 21s per call (probed, not run in full).
 - Not yet run: `cloudflare/clef-omni`, `togethercomputer/tev1-4b-experimental`,
   `jaredpalmer/kev-4b`, `~perplexity/pplx-decider-latest`.
