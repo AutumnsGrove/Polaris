@@ -79,25 +79,26 @@
 //	  {"content":"Generic reply for every other concurrent block this turn fires."}
 //	]}'
 //
-// # Jev (Oracle mode, source verification)
+// # Decisions API (Oracle mode, source verification)
 //
-// jev.Client hits a completely different endpoint (POST {base}/systemone,
-// not /chat/completions, and a plain JSON response, not SSE) with a
-// different request/response shape — see jev/jev.go's package doc
-// comment. This server answers it too, with its own queue/control
+// decisions.Client hits a completely different endpoint (POST
+// {host}/api/alpha/decisions — the host only, the base_url's path is
+// dropped — not /chat/completions, and a plain JSON response, not SSE) with
+// a different request/response shape — see decisions/decisions.go's package
+// doc comment. This server answers it too, with its own queue/control
 // surface, so a browser/Playwright session can exercise Oracle mode or
 // verification against this same fake process instead of needing a real
-// Jev-capable OpenRouter key on hand. GET /_control/jev/calls returns raw
+// OpenRouter key on hand. GET /_control/decisions/calls returns raw
 // request bodies (each one's "questions" map's keys/criteria are the
 // interesting part to assert on — e.g. that a skip_for_focus check really
-// didn't get asked). POST /_control/jev/queue schedules answers for
+// didn't get asked). POST /_control/decisions/queue schedules answers for
 // specific question keys by name — any question in the request NOT
 // covered by the queued entry answers itself, picking whichever of its
 // own criteria is named "off"/"no"/"none" (falling back to the
 // alphabetically-first option), at 100% confidence, so an unscripted
 // question never blocks the response or looks like it fired:
 //
-//	curl -sX POST http://127.0.0.1:18901/_control/jev/queue -d '{"responses":[
+//	curl -sX POST http://127.0.0.1:18901/_control/decisions/queue -d '{"responses":[
 //	  {"answers":{
 //	    "high_stakes":{"choice":"medical","probabilities":{"medical":0.91,"none":0.06}},
 //	    "focus":{"choice":"researcher","probabilities":{"researcher":0.82,"academic":0.11,"off":0.05}}
@@ -107,7 +108,7 @@
 // Same Match/FIFO precedence as the chat queue above, and the same
 // "queue empty -> everything answers quiet/off" fallback as
 // defaultReply's reasoning — a script that only cares about the chat
-// completion side doesn't have to also stub every Jev call it triggers.
+// completion side doesn't have to also stub every decisions call it triggers.
 package main
 
 import (
@@ -173,7 +174,7 @@ type queuedResponse struct {
 const defaultReply = "This is the fake OpenRouter server's default reply — queue a scripted response via POST /_control/queue for anything more specific."
 
 // decisionsAnswerScript is one scripted question's answer — see
-// jev.ChoiceAnswer. Probabilities defaults to {Choice: 1.0} when omitted,
+// decisions.ChoiceAnswer. Probabilities defaults to {Choice: 1.0} when omitted,
 // the common case for a script that only cares which option won, not the
 // exact odds.
 type decisionsAnswerScript struct {
@@ -181,21 +182,21 @@ type decisionsAnswerScript struct {
 	Probabilities map[string]float64 `json:"probabilities,omitempty"`
 }
 
-// queuedDecisionsResponse is one scripted /systemone call — Answers is keyed by
+// queuedDecisionsResponse is one scripted /api/alpha/decisions call — Answers is keyed by
 // question key (e.g. "focus", "high_stakes", "chip_pulsar"), same shape
 // gateway/oracle.go's RunOracle asks for. Any question in the real
 // request NOT covered here answers itself via a quiet default — see
-// jevQuietAnswer.
+// decisionsQuietAnswer.
 type queuedDecisionsResponse struct {
 	Answers map[string]decisionsAnswerScript `json:"answers,omitempty"`
-	Cost    float64                    `json:"cost,omitempty"`
+	Cost    float64                          `json:"cost,omitempty"`
 	// Match: see queuedResponse.Match's doc comment — identical semantics,
-	// just checked against a /systemone request body instead of a
+	// just checked against a decisions request body instead of a
 	// /chat/completions one.
 	Match string `json:"match,omitempty"`
 }
 
-// decisionsRequestBody mirrors jev.go's own requestBody/questionWire just
+// decisionsRequestBody mirrors decisions.go's own requestBody/questionWire just
 // enough to read back each question's criteria (option set) — needed to
 // pick a quiet default for any question a queued response doesn't cover.
 type decisionsRequestBody struct {
@@ -222,9 +223,9 @@ type server struct {
 	// shifts when a response starts, this stretches the stream itself.
 	chunkDelay time.Duration
 
-	// decisionsQueue/jevCalls: Jev's own queue/call-log, entirely separate from
-	// the chat-completion ones above — see the package doc comment's
-	// "Jev" section.
+	// decisionsQueue/decisionsCalls: the decisions API's own queue/call-log,
+	// entirely separate from the chat-completion ones above — see the package
+	// doc comment's "Decisions API" section.
 	decisionsQueue []queuedDecisionsResponse
 	decisionsCalls []json.RawMessage
 }
@@ -412,7 +413,7 @@ func decisionsQuietAnswer(criteria map[string]string) decisionsAnswerScript {
 }
 
 // takeDecisionsResponse mirrors takeResponse's match/FIFO precedence, just
-// against s.jevQueue — see queuedJevResponse.Match's doc comment.
+// against s.decisionsQueue — see queuedDecisionsResponse.Match's doc comment.
 func (s *server) takeDecisionsResponse(body string) (queuedDecisionsResponse, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -431,7 +432,7 @@ func (s *server) takeDecisionsResponse(body string) (queuedDecisionsResponse, bo
 	return queuedDecisionsResponse{}, false
 }
 
-func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleDecisions(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -515,9 +516,9 @@ func main() {
 	mux.HandleFunc("/_control/queue", s.handleQueue)
 	mux.HandleFunc("/_control/reset", s.handleReset)
 	mux.HandleFunc("/_control/calls", s.handleCalls)
-	mux.HandleFunc("/systemone", s.handleSystemOne)
-	mux.HandleFunc("/_control/jev/queue", s.handleDecisionsQueue)
-	mux.HandleFunc("/_control/jev/calls", s.handleDecisionsCalls)
+	mux.HandleFunc("/api/alpha/decisions", s.handleDecisions)
+	mux.HandleFunc("/_control/decisions/queue", s.handleDecisionsQueue)
+	mux.HandleFunc("/_control/decisions/calls", s.handleDecisionsCalls)
 
 	log.Printf("fake OpenRouter stub listening on %s (delay=%s) — point openrouter.base_url at it in config.yaml", *addr, *delay)
 	log.Fatal(http.ListenAndServe(*addr, mux))

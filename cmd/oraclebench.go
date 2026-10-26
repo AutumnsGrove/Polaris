@@ -115,7 +115,7 @@ func runOracleBench(cmd *cobra.Command, args []string) error {
 	for _, id := range modelIDs {
 		// The client's own timeout sits above the per-call one so the bench's
 		// deadline, not the HTTP client's, is what ends a slow call.
-		client := decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey).WithDecisionsAPI().WithModel(id).WithMaxQuestions(oraclebench.MaxQuestionsFor(id)).WithTimeout(obTimeout + 5*time.Second)
+		client := decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey).WithModel(id).WithMaxQuestions(oraclebench.MaxQuestionsFor(id)).WithTimeout(obTimeout + 5*time.Second)
 		roster = append(roster, oraclebench.Model{ID: id, Asker: client})
 	}
 

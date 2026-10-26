@@ -81,7 +81,7 @@ type Context struct {
 	// Decisions backs compare_sources (tools/compare_sources.go) — nil if
 	// OpenRouter itself isn't configured (decisions.NewClient's nil-means-
 	// unconfigured convention, same as Brave/Parallel/Tavily above), since
-	// Decisions is reached through OpenRouter's beta endpoint using the exact
+	// Decisions is reached through OpenRouter's Decisions API using the exact
 	// same api_key that already authenticates the main chat model, not a
 	// separate secret. DecisionsCostThisMonth/LogDecisionsCost back the monthly dollar
 	// cap (store.Store's jev_usage table) — dollar-based, not call-count-

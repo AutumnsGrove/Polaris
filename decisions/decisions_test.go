@@ -57,7 +57,7 @@ func TestAskChoiceReportsTheResolvedModel(t *testing.T) {
 		t.Errorf("Model = %q, want the dated build the server reported", resp.Model)
 	}
 
-	// A server that omits it (System One today) leaves it empty, not an error.
+	// A server that omits it leaves it empty, not an error.
 	srv2 := recordingServer(t, &cap, http.StatusOK, answerBody)
 	defer srv2.Close()
 	resp, err = NewClient(srv2.URL, "k").AskChoice(context.Background(), "s", oneQuestion())
@@ -72,7 +72,7 @@ func TestNewClientNilWithoutKey(t *testing.T) {
 	}
 }
 
-func TestAskChoiceDefaultsToSystemOneAndDefaultModel(t *testing.T) {
+func TestAskChoiceUsesDecisionsAPIAndDefaultModel(t *testing.T) {
 	var cap capture
 	srv := recordingServer(t, &cap, http.StatusOK, answerBody)
 	defer srv.Close()
@@ -85,8 +85,8 @@ func TestAskChoiceDefaultsToSystemOneAndDefaultModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AskChoice: %v", err)
 	}
-	if cap.path != "/systemone" {
-		t.Errorf("path = %q, want /systemone", cap.path)
+	if cap.path != "/api/alpha/decisions" {
+		t.Errorf("path = %q, want /api/alpha/decisions", cap.path)
 	}
 	if cap.body.Model != DefaultModel {
 		t.Errorf("model = %q, want %q", cap.body.Model, DefaultModel)
@@ -102,20 +102,17 @@ func TestAskChoiceDefaultsToSystemOneAndDefaultModel(t *testing.T) {
 	}
 }
 
-func TestWithModelAndDecisionsAPISwitchSurface(t *testing.T) {
+func TestWithModelOverridesDefault(t *testing.T) {
 	var cap capture
 	srv := recordingServer(t, &cap, http.StatusOK, answerBody)
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k").WithModel("typesafe/jev-1.14").WithDecisionsAPI()
+	c := NewClient(srv.URL, "k").WithModel("perplexity/flash-v1.2")
 	if _, err := c.AskChoice(context.Background(), "state", oneQuestion()); err != nil {
 		t.Fatalf("AskChoice: %v", err)
 	}
-	if cap.path != "/api/alpha/decisions" {
-		t.Errorf("path = %q, want /api/alpha/decisions", cap.path)
-	}
-	if cap.body.Model != "typesafe/jev-1.14" {
-		t.Errorf("model = %q, want typesafe/jev-1.14", cap.body.Model)
+	if cap.body.Model != "perplexity/flash-v1.2" {
+		t.Errorf("model = %q, want perplexity/flash-v1.2", cap.body.Model)
 	}
 }
 
@@ -291,9 +288,6 @@ func TestSettersAreNilSafe(t *testing.T) {
 	}
 	if c.WithModel("x") != nil {
 		t.Error("WithModel on nil client should stay nil")
-	}
-	if c.WithDecisionsAPI() != nil {
-		t.Error("WithDecisionsAPI on nil client should stay nil")
 	}
 	if c.WithTimeout(time.Second) != nil {
 		t.Error("WithTimeout on nil client should stay nil")

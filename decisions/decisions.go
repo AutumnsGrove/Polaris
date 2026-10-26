@@ -14,11 +14,14 @@
 // package is Jev-specific: the same request/response shape serves every decision
 // model in OpenRouter's catalog, confirmed live 2026-10 against Jev 1.13/1.14,
 // Inception, Microsoft, Cloudflare, Perplexity, OpenAI and Liquid — 22/22
-// answers each, identical fields. Jev was first reached through a Jev-only beta
-// endpoint (POST {base}/systemone); the Decisions API (POST
-// {host}/api/alpha/decisions) is the superset. WithModel selects any catalog
-// id, which is how the Oracle model benchmark (docs/plans/oracle-benchmark.md)
-// compares candidates; ListDecisionModels reads the live roster.
+// answers each, identical fields. Every request goes to the Decisions API
+// (POST {host}/api/alpha/decisions). Jev was first reached through a Jev-only
+// beta endpoint (POST {base}/systemone) that this client used until 2026-10;
+// the Decisions API is the superset, and a live A/B on the pinned model showed
+// the same answers and latency (p50 ~0.8s on both from a laptop, no failures in
+// 30 calls). WithModel selects any catalog id, which is how the Oracle model
+// benchmark (docs/plans/oracle-benchmark.md) compares candidates;
+// ListDecisionModels reads the live roster.
 package decisions
 
 import (
@@ -48,25 +51,20 @@ import (
 // typesafe/jev-1.14-20261014, the build that was benchmarked). Pinning the
 // dated id instead is also accepted and fully reproducible, but a retired
 // snapshot would 400 and Oracle would quietly go off, so the version-level id
-// is the safer pin. Both this and the bare "jev-1.14" work on the System One
-// surface; "typesafe/jev-latest" and bare "jev" both 400 "does not exist" there.
-// The Decisions API takes the same vendor-prefixed catalog ids — see WithModel.
-// To move to a new release, re-run `polaris oracle-bench` first.
+// is the safer pin. The Decisions API takes vendor-prefixed catalog ids like
+// this one (the old Jev-only endpoint also accepted bare "jev-1.14" and 400'd on
+// "typesafe/jev-latest"/bare "jev" as "does not exist") — see WithModel. To move
+// to a new release, re-run `polaris oracle-bench` first.
 const DefaultModel = "typesafe/jev-1.14"
 
 // Client is nil-safe like brave.Client/parallel.Client/tavily.Client — see
 // NewClient. Its setters are nil-safe too, so a chain started on an
 // unconfigured (nil) client stays nil instead of panicking.
 type Client struct {
-	baseURL string // OpenRouter's API base, e.g. https://openrouter.ai/api/v1 — AskChoice appends the selected surface's own path
+	baseURL string // OpenRouter's API base, e.g. https://openrouter.ai/api/v1 — only its scheme and host are used, see decisionsURL
 	apiKey  string
 	http    *http.Client
 	model   string
-	// decisions selects the Decisions API surface ({host}/api/alpha/decisions,
-	// every decision model) over the System One one ({base}/systemone, Jev
-	// only). Both speak the same request/response shape — see the package doc
-	// and WithDecisionsAPI.
-	decisions bool
 	// maxQuestions caps how many questions go in one request; 0 means no cap.
 	// See WithMaxQuestions.
 	maxQuestions int
@@ -89,17 +87,6 @@ func (c *Client) WithModel(id string) *Client {
 		return c
 	}
 	c.model = id
-	return c
-}
-
-// WithDecisionsAPI switches the client to OpenRouter's Decisions API
-// ({host}/api/alpha/decisions) instead of the Jev-only System One endpoint —
-// the surface every decision model in the live catalog speaks. Nil-safe.
-func (c *Client) WithDecisionsAPI() *Client {
-	if c == nil {
-		return c
-	}
-	c.decisions = true
 	return c
 }
 
@@ -134,18 +121,15 @@ func (c *Client) WithTimeout(d time.Duration) *Client {
 	return c
 }
 
-// endpoint is the full URL for this client's selected surface. System One
-// lives under the versioned API base ("{base}/systemone"); the Decisions API
-// lives at a fixed path on the host instead, not under that base.
+// endpoint is the full URL requests go to.
 func (c *Client) endpoint() string {
-	if c.decisions {
-		return decisionsURL(c.baseURL)
-	}
-	return strings.TrimRight(c.baseURL, "/") + "/systemone"
+	return decisionsURL(c.baseURL)
 }
 
 // decisionsURL derives {scheme}://{host}/api/alpha/decisions from the
-// configured API base (https://openrouter.ai/api/v1). Appending is the
+// configured API base (https://openrouter.ai/api/v1) — the Decisions API
+// lives at a fixed path on the host, not under the versioned API base, so a
+// base path like /api/v1 is dropped rather than appended to. Appending is the
 // fallback for a base that doesn't parse as a URL (tests, a proxy), so the
 // endpoint never comes back empty.
 func decisionsURL(baseURL string) string {
