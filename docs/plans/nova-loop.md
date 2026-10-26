@@ -553,6 +553,6 @@ With these, the parity harness compares request bodies with only `stream_options
 ### Not yet verified
 
 Everything above runs against scripted servers. Not yet exercised: a real OpenRouter call (the
-`content` omission and `stream_options` on the actual providers in `models/models.go`), a real 429,
+`stream_options` on the actual providers in `models/models.go`), a real 429,
 and the SvelteKit frontend driven by a Nova-loop turn. Per this repo's culture, do those on the potato
 before N10.
