@@ -1,0 +1,10 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model           score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50   p95   cost    
+1   respan/span-02  86.4   81.5-90.4  86.2       95%      92%    96%      98%    1%         0%   2.3s  2.6s  $0.061  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  respan/span-02  ██████████████░░                |         p50 2.3s   p95 2.6s  

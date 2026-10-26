@@ -6,10 +6,10 @@ person?", "is the user asking for something deep?") and quietly adjusts how the 
 decision model sits in front of every message, so it has to be **fast, cheap, and right**, in that
 order.
 
-This page records a full run of `polaris oracle-bench` across seventeen candidate models, and how to
+This page records a full run of `polaris oracle-bench` across eighteen candidate models, and how to
 repeat it.
 
-<p align="center"><img src="scorecard.svg" alt="Scorecard: seventeen decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
+<p align="center"><img src="scorecard.svg" alt="Scorecard: eighteen decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
 
 ## The short version
 
@@ -28,11 +28,16 @@ repeat it.
   free option (Mercury free, p95 4.3s), but it is a free tier that can change or disappear, so it is a
   candidate, not a replacement. Its smaller sibling **Elephant 1 scores 81.2** (445ms median, no errors),
   tied with Luna and clearly below Jev, mostly on focus actions (80%) and `premise` (40).
-- **Five models are statistically tied with Jev 1.14:** Liquid's **D1 Ultra (87.9)**, Microsoft Decision 1
-  (87.5), Jev 1.13 (86.5), Perplexity Decider v1.2 (86.5), and Mercury Decide's free tier (89.0). D1 Ultra is the strongest alternative: the
+- **Six models are statistically tied with Jev 1.14:** Liquid's **D1 Ultra (87.9)**, Microsoft Decision 1
+  (87.5), Jev 1.13 (86.5), Perplexity Decider v1.2 (86.5), Respan Span-02 (86.4), and Mercury Decide's free tier (89.0). D1 Ultra is the strongest alternative: the
   same score, 100% of calls under 2.5s, only about 85ms slower at the median, no weak question family,
   and it fixes Jev's weak spot (88 on `locale`, against Jev's 61). It is weaker at focus actions (90% vs
   98%), and that decision changes what Oracle actually does.
+- **Respan's Span-02 ties Jev 1.14 on score (86.4) but is far too slow:** 2.3s at the median, and only
+  85.9% of calls finish inside Oracle's 2.5s timeout, so about 1 turn in 7 would silently run without
+  Oracle. It is the cheapest paid model here ($0.060 per 1,000 turns) and matches Jev on focus actions
+  (98%), but speed is the first priority. Respan's older Span-01 family cannot run at all; see
+  [Models that couldn't be scored](#models-that-couldnt-be-scored).
 - **OpenAI's Luna is fast but a poor fit:** 82.3, 5.5 points behind Jev 1.14, the most expensive
   model per turn (about 2.6x Jev), and the only one that **refuses to answer** some questions: 15
   calls, all on the private-person family. See [Refusals](#refusals).
@@ -52,12 +57,13 @@ Recommendation: **keep `typesafe/jev-1.14` pinned.** Details and caveats below.
 
 ## Results
 
-Runs of 2026-10-16, 2026-10-19 and 2026-10-22: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
+Runs of 2026-10-16, 2026-10-19, 2026-10-22 and 2026-10-25: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
 separately), 3 repeats each, 2 calls in flight, weights `a6cbc140bd53`. The raw leaderboards are saved in
-[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in six
+[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in seven
 invocations with identical settings (the first nine models, then Luna, then D1 Ultra, Classify 1 and
 Solar Flash, then on 2026-10-19 Perplexity's Decider v1.2 and Flash v1.2, then on 2026-10-22 Baseten's
-Mammoth 1 and, separately, Elephant 1, each paced at one call per 3.5s because they are `:free` models; see
+Mammoth 1 and, separately, Elephant 1, each paced at one call per 3.5s because they are `:free` models, then on 2026-10-25 Respan's
+Span-02; see
 [Reproduce it](#reproduce-it)); the report command refuses to merge runs that differ in cases, repeats, concurrency or
 weights. The two earlier files in `runs/` (2026-10-15) used an older, smaller case bank and weights, so
 they are not comparable to these runs.
@@ -72,13 +78,14 @@ they are not comparable to these runs.
 | 6 | `microsoft/microsoft-decision-1` | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
 | 7 | `typesafe/jev-1.13` | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
 | 8 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.081 |
-| 9 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
-| 10 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | free |
-| 11 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 12 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 13 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 14 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
-| 15 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 9 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
+| 10 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 11 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | free |
+| 12 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 13 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 14 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 15 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 16 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
 | x | `inception/mercury-decide` | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 | x | `perplexity/pplx-decider-flash-v1.2` | not benchmarkable | n/a | n/a | n/a | n/a | 100% | n/a | n/a | n/a | n/a |
 
@@ -86,9 +93,9 @@ they are not comparable to these runs.
 (`oracleTimeout` in `gateway/oracle.go`); a call over that is dropped and the turn runs without Oracle.
 *$/1k turns* is the decision-call cost for 1,000 Oracle turns (one call each). Trigger and focus
 describe what production's rules *did* with the answer, not just the raw answer. The whole run cost
-**$3.02** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
-Perplexity's two new models, and $0.01 each for Mammoth and Elephant, which are free and cost only their
-judging), of which about $0.30 was the judge.
+**$3.08** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
+Perplexity's two new models, $0.01 each for Mammoth and Elephant, which are free and cost only their
+judging, and $0.06 for Span-02), of which about $0.31 was the judge.
 
 ### Overall quality
 
@@ -98,7 +105,7 @@ The headline score on its own, with speed deliberately left out.
 
 The intervals overlap heavily across the top seven. With 274 scored cases, a gap under about 2.5 points is
 noise, so the honest reading is four tiers: **Perplexity v1.1, Mammoth and Mercury free** at the top, **D1 Ultra, Jev 1.14,
-Microsoft, Jev 1.13 and Perplexity v1.2** tied just behind, **Luna, Elephant, D1, Clef and Classify 1** clearly below, and **Clef Flash
+Microsoft, Jev 1.13, Perplexity v1.2 and Span-02** tied just behind, **Luna, Elephant, D1, Clef and Classify 1** clearly below, and **Clef Flash
 and Solar Flash** at the bottom.
 
 ### Accuracy against speed
@@ -174,6 +181,7 @@ Where a model is unusually weak (25+ points below its own overall score):
 - **Perplexity Decider v1.2:** `clarify` (50) and `emotional` (42).
 - **Mammoth:** none.
 - **Elephant:** `premise` (40).
+- **Span-02:** none. Its lowest families are `clarify` (61) and `locale` (62), right at the 25-point line.
 - **Clef:** `emotional` (42).
 - **Luna:** `depth` (56), `emotional` (41) and `private_person` (48, mostly refusals).
 - **D1 Ultra:** none. Its lowest families are `emotional` (63) and `contested` (66), both within 25 points of its
@@ -202,9 +210,13 @@ Judged on the operator's stated priorities (speed first, then accuracy):
    latency, so it has no reason to replace Jev. v1.1 is the accurate one. To use v1.1 without dropping turns, the 2.5s
    cutoff would have to rise to roughly 4s, which adds seconds of dead air before every answer. At
    today's 2.5s it would turn Oracle off for about 11% of turns. Not recommended.
-5. **Skip Luna.** Fast (243ms median) but 5.5 points behind Jev 1.14, about 2.6x the cost per turn,
+5. **Skip Span-02 at today's timeout.** It ties Jev on score and focus actions and is the cheapest paid model
+   ($0.060 per 1,000 turns), but its median call is 2.3s and p95 is 2.6s, both right at Oracle's 2.5s
+   cutoff, so about 14% of turns would run without Oracle. Even a 4s cutoff would not buy it an advantage over
+   Jev, which is already as accurate and 15x faster.
+6. **Skip Luna.** Fast (243ms median) but 5.5 points behind Jev 1.14, about 2.6x the cost per turn,
    and it refuses the private-person questions Oracle most needs to classify.
-6. **Skip D1, the Clef models, Classify 1 and Solar Flash.** D1 and Clef are fast enough but lose 9 to 14
+7. **Skip D1, the Clef models, Classify 1 and Solar Flash.** D1 and Clef are fast enough but lose 9 to 14
    points, mostly on focus actions; Classify 1 and Solar Flash lose 12 to 30 points, and Solar Flash also
    produces the most dangerous false nudges.
 
@@ -220,6 +232,12 @@ Judged on the operator's stated priorities (speed first, then accuracy):
   p50 in OpenRouter's own stats) has the same cap: a 12-case smoke test failed every call with
   `HTTP 422: questions must be an object of 1..16 questions`. The 422 comes from the server's request
   validation, so it says nothing about the model's accuracy. Not run in full, for the same reason as 2.0.
+- **`respan/span-01`, `span-01-lite` and `span-01-lite:free`** reject every Choice question with
+  `HTTP 400: Respan only accepts noul questions whose instructions and criteria are plain strings`
+  (re-verified live 2026-10-25). Span-01 is a behavior scorer that takes only free-text `noul` questions, and
+  Oracle is 100% Choice, so these three are N/A rather than scored zero. The catalog lists them at
+  `context_length` 0. Respan's newer **Span-02** (released 2026-10-15) is a different product that does
+  accept Choice questions and is scored above.
 - **`upstage/solar-decide`** (the regular, non-Flash model) answers correctly (79.9 on a 6-case probe) but
   takes 13 to 21 seconds per call, about 100x Oracle's 2.5s timeout, and it timed out at the bench's 15s
   limit on most of a 12-case smoke test. It was not run in full: there is no way for it to be usable here.

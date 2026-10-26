@@ -1,0 +1,129 @@
+{
+  "run_at": "2026-10-25T23:50:19Z",
+  "cases": 295,
+  "repeats": 3,
+  "concurrency": 2,
+  "latency_budget": 5000000000,
+  "weights_hash": "a6cbc140bd53",
+  "entries": [
+    {
+      "model": "respan/span-02",
+      "resolved_models": [
+        "respan/span-02-20261015"
+      ],
+      "score": {
+        "cases": 274,
+        "disputed_cases": 21,
+        "headline": 86.37378845079155,
+        "headline_lo": 81.53699754936326,
+        "headline_hi": 90.42184574279798,
+        "headline_within_budget": 86.15639714644371,
+        "headline_disputed": 83.75,
+        "verdict": 0.9548872180451128,
+        "closeness": 0.9204508573619216,
+        "trigger": 0.9571428571428572,
+        "focus": 0.975,
+        "brier": 0.16837547901153158,
+        "dangerous_fp": 2,
+        "dangerous_opportunities": 391,
+        "dangerous_fp_rate": 0.005115089514066497,
+        "calls": 885,
+        "error_rate": 0,
+        "refusal_rate": 0,
+        "within_budget": 0.9977401129943503,
+        "latency_p50": 2301028792,
+        "latency_p95": 2631814500,
+        "latency_max": 9872126667,
+        "cost_usd": 0.05301017999999997,
+        "judge_cost_usd": 0.008473814117999998,
+        "judge_audited": 29,
+        "judge_disagreed": 1,
+        "review_cases": [
+          "hs-killer-deal-laptop"
+        ],
+        "by_track": {
+          "chips": {
+            "cases": 16,
+            "score": 99.62523319573332
+          },
+          "claim_check": {
+            "cases": 8,
+            "score": 99.62369350000002
+          },
+          "clarify": {
+            "cases": 9,
+            "score": 61.375643495238094
+          },
+          "contested": {
+            "cases": 7,
+            "score": 98.62390285714285
+          },
+          "deep_research": {
+            "cases": 13,
+            "score": 76.05450111673468
+          },
+          "depth": {
+            "cases": 6,
+            "score": 96.6093702222222
+          },
+          "emotional": {
+            "cases": 14,
+            "score": 69.91749424285715
+          },
+          "focus": {
+            "cases": 38,
+            "score": 93.09526617248781
+          },
+          "format": {
+            "cases": 10,
+            "score": 91.586049335125
+          },
+          "high_stakes": {
+            "cases": 24,
+            "score": 84.38407329623189
+          },
+          "intent": {
+            "cases": 22,
+            "score": 96.52895842452634
+          },
+          "locale": {
+            "cases": 5,
+            "score": 61.66821507692307
+          },
+          "premise": {
+            "cases": 13,
+            "score": 93.50270418461541
+          },
+          "private_person": {
+            "cases": 8,
+            "score": 88.34238579999999
+          },
+          "recall": {
+            "cases": 7,
+            "score": 76.60201775777777
+          },
+          "recency": {
+            "cases": 8,
+            "score": 86.80028918967743
+          },
+          "research": {
+            "cases": 19,
+            "score": 74.80549856880752
+          },
+          "source_type": {
+            "cases": 20,
+            "score": 82.85880876
+          },
+          "task": {
+            "cases": 11,
+            "score": 86.53190652296297
+          },
+          "ui": {
+            "cases": 16,
+            "score": 83.78649704802963
+          }
+        }
+      }
+    }
+  ]
+}

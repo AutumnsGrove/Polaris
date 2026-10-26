@@ -604,6 +604,10 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
 - `openai/gpt-6-luna-decisions` was run afterwards (82.3, 243ms, 1.7% refusals, all on `private_person`).
 - Also run since: `liquid/d1-ultra` (87.9, ties Jev 1.14, 236ms, best alternative), `scaledown/classify-1`
   (75.4) and `upstage/solar-decide-flash` (57.3, 4% dangerous false nudges).
+- `respan/span-02` (released 2026-10-15, after the spikes) is Choice-capable, unlike the `span-01*`
+  family, and was run 2026-10-25: 86.4, a tie with Jev 1.14 on score, but p50 2.3s and only 85.9% of calls
+  under 2.5s, so not a candidate. `span-01`, `span-01-lite` and `span-01-lite:free` remain N/A (`noul`-only,
+  re-verified live 2026-10-25).
 - Could not be scored: `nace-ai/drex-v2.0` and its successor `nace-ai/drex-max` (smoke-tested 2026-10-23)
   both reject calls over 16 questions (Oracle asks 23), and
   `upstage/solar-decide` takes 13 to 21s per call (probed, not run in full).
