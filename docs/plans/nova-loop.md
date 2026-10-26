@@ -550,9 +550,22 @@ available if its depth/concurrency caps are wanted later; nothing needs it for p
 
 With these, the parity harness compares request bodies with only `stream_options` normalized.
 
+### Verified live (2026-10-26, real OpenRouter, `deepseek`, bare-metal server, `nova_loop: true`)
+
+- A tool-calling turn (calculator) answered correctly; the second call in the turn read ~50% of its
+  prompt from OpenRouter's cache.
+- A follow-up on the same thread read 27,648 of 27,801 prompt tokens (99.4%) from cache: replayed history is
+  byte-stable under Nova, and `EmptyToolCallContent` keeps it identical to `llm.Client`'s.
+- `/api/ask/stream` produced the same ordered event sequence as the bespoke loop on the same prompt
+  (`user_message, reasoning, cost_update, tool_call, tool_result, cost_update, reasoning, token,
+  cost_update, done`), with cost, context and cache figures within a few percent (model variance).
+- Dropping the connection mid-stream left the server healthy (no panic, no leaked turn).
+- A rejected key gives byte-identical user-facing text on both loops
+  (`LLM API returned 401: {"error":{"message":"User not found.","code":401}}`), so `llm.APIError` and the raw
+  body survive the Nova path.
+- Hot-flipping `nova_loop` in `config.yaml` switched loops on the next request with no restart, both ways.
+
 ### Not yet verified
 
-Everything above runs against scripted servers. Not yet exercised: a real OpenRouter call (the
-`stream_options` on the actual providers in `models/models.go`), a real 429,
-and the SvelteKit frontend driven by a Nova-loop turn. Per this repo's culture, do those on the potato
-before N10.
+A real 429 (cannot be provoked on demand), the Docker deployment on the potato, and the SvelteKit
+frontend driven by a Nova-loop turn. Do those before N10.
