@@ -654,3 +654,79 @@ func asAPIError(err error, target **llm.APIError) bool {
 	}
 	return false
 }
+
+// --- N7: images -------------------------------------------------------------
+
+const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAHwFSsQAAAABJRU5ErkJggg=="
+
+func seeTool(t *testing.T, name string, n int) {
+	stubTool(t, name, func(args string, ctx *tools.Context, callID string) string {
+		ctx.Emit("tool_call", map[string]interface{}{"tool": name, "call_id": callID})
+		for i := 0; i < n; i++ {
+			ctx.AddPendingImageMessage(llm.ChatMessage{
+				Role:      "user",
+				Content:   fmt.Sprintf("[image %d from %s]", i+1, callID),
+				ImageURLs: []string{"data:image/png;base64," + tinyPNG},
+			})
+		}
+		ctx.Emit("tool_result", map[string]interface{}{"tool": name, "result": "queued", "call_id": callID})
+		return "queued"
+	})
+}
+
+func TestNovaParity_ImagesFollowTheWholeToolBatch(t *testing.T) {
+	seeTool(t, "parity_see_a", 1)
+	seeTool(t, "parity_see_b", 1)
+	c := parityCase{
+		script: []string{
+			toolBody(0.0003, [3]string{"call_a", "parity_see_a", `{}`}, [3]string{"call_b", "parity_see_b", `{}`}),
+			answerBody("I see two images.", 0.0002),
+		},
+		setup: func(ctx *tools.Context) { ctx.Multimodal = true },
+	}
+	bespoke, nova := assertParity(t, c)
+	diffEvents(t, eventSigs(bespoke.events), eventSigs(nova.events))
+
+	msgs := nova.bodies[1]["messages"].([]any)
+	var roles []string
+	for _, m := range msgs {
+		roles = append(roles, m.(map[string]any)["role"].(string))
+	}
+	// Both tool results first, in call order, and only then the image messages.
+	if got := strings.Join(roles, ","); got != "system,user,assistant,tool,tool,user,user" {
+		t.Fatalf("roles = %s", got)
+	}
+	img := msgs[5].(map[string]any)["content"].([]any)
+	if len(img) != 2 || img[0].(map[string]any)["type"] != "text" || img[1].(map[string]any)["type"] != "image_url" {
+		t.Errorf("image message content = %v, want [text, image_url]", img)
+	}
+	// The transcript round-trips the pixels so the next turn replays them.
+	var carried int
+	for _, m := range nova.result.Transcript {
+		carried += len(m.ImageURLs)
+	}
+	if carried != 2 {
+		t.Errorf("transcript carries %d images, want 2", carried)
+	}
+}
+
+// A text-only model never gets pixels: Nova drops image parts for a model whose
+// modalities exclude "image". Polaris already gates view_image "see" on
+// ctx.Multimodal, so this only bites on a thread that switched from a vision
+// model to a text one — where the bespoke loop would have sent the image and
+// earned a provider 400.
+func TestNova_TextOnlyModelDropsImageParts(t *testing.T) {
+	seeTool(t, "parity_see_a", 1)
+	c := parityCase{
+		script: []string{
+			toolBody(0.0003, [3]string{"call_a", "parity_see_a", `{}`}),
+			answerBody("ok", 0.0002),
+		},
+	}
+	nova := c.run(t, true)
+	for _, m := range nova.bodies[1]["messages"].([]any) {
+		if content, ok := m.(map[string]any)["content"].([]any); ok {
+			t.Errorf("a text-only model was sent an array-content message: %v", content)
+		}
+	}
+}

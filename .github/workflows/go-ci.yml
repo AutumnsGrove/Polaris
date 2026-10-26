@@ -56,3 +56,12 @@ jobs:
 
       - name: go test
         run: go test ./...
+
+      # The whole suite again with the agent loop on Nova (config nova_loop /
+      # POLARIS_NOVA_LOOP=1, docs/plans/nova-loop.md). Every agent.Run test and
+      # every gateway test that drives a scripted model then exercises the Nova
+      # path too, so the two loops cannot drift while both exist.
+      - name: go test (Nova loop)
+        env:
+          POLARIS_NOVA_LOOP: "1"
+        run: go test ./...

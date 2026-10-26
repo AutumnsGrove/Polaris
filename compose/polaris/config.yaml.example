@@ -125,6 +125,10 @@ service:
 
 context_window_tokens: 200000
 max_agent_turns: 50
+
+# Run the agent loop on Nova instead of the built-in loop. Experimental, off by
+# default; hot-reloaded, so setting it back to false is the rollback.
+# nova_loop: false
 default_model: "deepseek"
 
 # Which decision model answers Oracle, the source-verification badge, and

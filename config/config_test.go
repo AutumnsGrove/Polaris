@@ -439,3 +439,20 @@ func TestCompactionThreshold(t *testing.T) {
 		t.Errorf("per-model CompactionTokens = %d, want 80000", got)
 	}
 }
+
+func TestLoad_NovaLoopDefaultsOffAndParses(t *testing.T) {
+	load := func(extra string) *Config {
+		t.Helper()
+		cfg, err := Load(writeTestConfig(t, "openrouter:\n  api_key: \"sk-test\"\n"+extra), testRegistry)
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		return cfg
+	}
+	if load("").NovaLoop {
+		t.Error("NovaLoop defaulted to true; the Nova loop must be opt-in")
+	}
+	if !load("nova_loop: true\n").NovaLoop {
+		t.Error("nova_loop: true did not parse")
+	}
+}

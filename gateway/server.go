@@ -20,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"polaris/agent"
 	"polaris/brave"
 	"polaris/config"
 	"polaris/decisions"
@@ -680,6 +681,10 @@ func (s *Server) liveConfig() *config.Config {
 		s.cfgMu.Lock()
 		s.cfg = fresh
 		s.cfgMu.Unlock()
+		// Which agent loop runs is a hot-reloadable config value (see
+		// config.Config.NovaLoop); agent.Run reads it once per call, so a turn
+		// already in flight keeps the loop it started on.
+		agent.SetNovaLoop(fresh.NovaLoop)
 	}
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()

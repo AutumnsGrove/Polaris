@@ -3,6 +3,7 @@ module polaris
 go 1.26.6
 
 require (
+	github.com/AutumnsGrove/nova v0.0.0-20261026193841-3cb3bbac8802
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/charmbracelet/log v1.0.0
 	github.com/expr-lang/expr v1.17.8
@@ -21,7 +22,6 @@ require (
 )
 
 require (
-	github.com/AutumnsGrove/nova v0.0.0
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
@@ -48,5 +48,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
-replace github.com/AutumnsGrove/nova => /home/user/autumnsgrove/nova
