@@ -235,25 +235,39 @@ func (c *Client) AskChoice(ctx context.Context, state interface{}, questions map
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	resps := make([]*Response, len(chunks))
-	errs := make([]error, len(chunks))
-	var wg sync.WaitGroup
+	// firstErr is the error that actually caused the failure. It is recorded
+	// before the cancel, because the siblings that cancel then aborts all
+	// return "context canceled": returning the first error by chunk order
+	// instead let that echo mask the real cause (the Drex 2.0 run logged 102
+	// "context canceled" calls whose real error was an upstream 429).
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		firstErr error
+	)
 	for i, chunk := range chunks {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resps[i], errs[i] = c.askChunk(ctx, state, chunk)
-			if errs[i] != nil {
+			var err error
+			resps[i], err = c.askChunk(ctx, state, chunk)
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
 				cancel()
 			}
 		}()
 	}
 	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	merged := &Response{Answers: make(map[string]ChoiceAnswer, len(questions))}
-	for i, resp := range resps {
-		if errs[i] != nil {
-			return nil, errs[i]
-		}
+	for _, resp := range resps {
 		for k, a := range resp.Answers {
 			merged.Answers[k] = a
 		}

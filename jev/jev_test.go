@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -206,6 +207,15 @@ func splitServer(t *testing.T, sizes *[]int, mu *sync.Mutex, failWhenContains st
 		mu.Lock()
 		*sizes = append(*sizes, len(body.Questions))
 		mu.Unlock()
+		// In the failure scenario the healthy request is slow, so the failing
+		// one lands first and its sibling is still in flight to be cancelled.
+		if _, failsHere := body.Questions[failWhenContains]; failWhenContains != "" && !failsHere {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+		}
 		answers := map[string]ChoiceAnswer{}
 		for k := range body.Questions {
 			if failWhenContains != "" && k == failWhenContains {
@@ -266,6 +276,11 @@ func TestWithMaxQuestionsOneFailedChunkFailsTheCall(t *testing.T) {
 	resp, err := NewClient(srv.URL, "k").WithMaxQuestions(16).AskChoice(context.Background(), "s", questionSet(23))
 	if err == nil || resp != nil {
 		t.Fatalf("resp=%v err=%v, want an error and no partial response", resp, err)
+	}
+	// The healthy chunk (index 0) is cancelled by the failure; its "context
+	// canceled" must not be what the caller sees in place of the real cause.
+	if !strings.Contains(err.Error(), "boom") || strings.Contains(err.Error(), "canceled") {
+		t.Errorf("err = %v, want the failing chunk's own error, not the sibling's cancellation", err)
 	}
 }
 
