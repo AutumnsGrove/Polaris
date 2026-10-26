@@ -616,5 +616,7 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   under a two-request split". `report --allow-concurrency-mismatch` merges the concurrency-1 run and marks it.
   Fixed along the way: the splitter reported a cancelled sibling's `context canceled` instead of the real error.
 - Could not be scored: `upstage/solar-decide` takes 13 to 21s per call (probed, not run in full).
-- Not yet run: `cloudflare/clef-omni`, `togethercomputer/tev1-4b-experimental`,
-  `jaredpalmer/kev-4b`, `~perplexity/pplx-decider-latest`.
+- `togethercomputer/tev1-4b-experimental` (70.3, 778ms) and `jaredpalmer/kev-4b` (58.5, 1.0s) were run
+  2026-10-26 at concurrency 2: no question cap, no errors, Kev's 8k context holds Oracle's call. Both are
+  far behind Jev on accuracy.
+- Not yet run: `cloudflare/clef-omni`, `~perplexity/pplx-decider-latest`.

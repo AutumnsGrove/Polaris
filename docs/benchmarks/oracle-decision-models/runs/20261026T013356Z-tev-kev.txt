@@ -1,0 +1,16 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                                  score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95   cost    
+1   togethercomputer/tev1-4b-experimental  70.3   63.8-75.8  70.3       93%      85%    91%      75%    1%         0%   778ms  1.0s  $0.239  
+2   jaredpalmer/kev-4b                     58.5   52.4-64.1  58.5       94%      74%    87%      55%    0%         0%   1.0s   1.6s  $0.144  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  togethercomputer/tev1-4b-experimental  ████░░                          |         p50 778ms  p95 1.0s  
+  jaredpalmer/kev-4b                     ██████░░░░                      |         p50 1.0s   p95 1.6s  
+
+Tracks scoring 25+ points below the model's own headline:
+  togethercomputer/tev1-4b-experimental: premise 26, private_person 38
+  jaredpalmer/kev-4b: depth 33
