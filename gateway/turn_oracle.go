@@ -70,7 +70,7 @@ func (t *turnRun) runOracleStage() {
 			_, hasWorker := t.cfg.ResearchWorkerModel()
 			offersDeepResearch := t.agentCtx.RequestLocation != nil && !t.agentCtx.DeepResearch && !t.msg.NoResearch && !t.msg.VoiceMode && hasWorker
 			t.oracleAttempted = true
-			t.oracleResult = RunOracle(t.ctx, t.s.decisions, OracleInput{
+			t.oracleResult = RunOracle(t.ctx, t.decisionsClient(), OracleInput{
 				CurrentMessage:       t.msg.Content,
 				PrevUserMessage:      t.prevUserMessage,
 				IsFirstMessage:       isFirstMsg,

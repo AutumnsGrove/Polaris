@@ -111,6 +111,24 @@ func TestLoad_ExpandsEnvVars(t *testing.T) {
 	}
 }
 
+func TestLoad_DecisionsModelIsOptional(t *testing.T) {
+	cfg, err := Load(writeTestConfig(t, "openrouter:\n  api_key: k\n"), testRegistry)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Decisions.Model != "" {
+		t.Errorf("Decisions.Model = %q, want empty so the client keeps its pinned default", cfg.Decisions.Model)
+	}
+
+	cfg, err = Load(writeTestConfig(t, "openrouter:\n  api_key: k\ndecisions:\n  model: \"perplexity/flash-v1.2\"\n"), testRegistry)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Decisions.Model != "perplexity/flash-v1.2" {
+		t.Errorf("Decisions.Model = %q, want the configured id", cfg.Decisions.Model)
+	}
+}
+
 // TestLoad_EnvVarSetButConfigYamlMissingBlockLeavesKeyEmpty locks in the
 // exact shape of a real production incident: BRAVE_API_KEY/PARALLEL_API_KEY
 // were live in the container's environment, but config.yaml (gitignored,

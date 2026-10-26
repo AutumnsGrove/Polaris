@@ -149,12 +149,22 @@ default_model: "deepseek"
 #     reasoning:
 #       effort: "high"
 
+# Which decision model answers Oracle, the source-verification badge, and
+# compare_sources — an OpenRouter decision-model catalog id, reached with the
+# same api_key as above. Optional: left out, it stays on the pinned
+# typesafe/jev-1.14. Re-read on every turn, no restart. A wrong id makes every
+# call fail quietly (Oracle just goes off), so check the logs after changing
+# it, and re-run `polaris oracle-bench` first — it only measures Oracle's task.
+# decisions:
+#   model: "typesafe/jev-1.14"
+
 # Oracle mode tuning (opt-in in Settings; see README). Thresholds are the
-# minimum probability Jev's answer needs for a check to fire; the lists
-# decide which focus modes Oracle may pick, keep, or skip. All of this is
-# optional — anything left out uses the value shown here — and it's re-read
-# on every turn, so edits take effect without a restart. The wording Jev is
-# asked, and the text injected into the answer, lives in prompts.yaml.
+# minimum probability the decision model's answer needs for a check to fire;
+# the lists decide which focus modes Oracle may pick, keep, or skip. All of
+# this is optional — anything left out uses the value shown here — and it's
+# re-read on every turn, so edits take effect without a restart. The wording
+# the model is asked, and the text injected into the answer, lives in
+# prompts.yaml.
 oracle:
   checks:
     focus:

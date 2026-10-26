@@ -32,6 +32,22 @@ type Config struct {
 		BaseURL string `yaml:"base_url"`
 	} `yaml:"openrouter"`
 
+	// Decisions tunes the decision-model client behind Oracle mode, the
+	// source-verification badge, and compare_sources. Reached through
+	// OpenRouter with the same api_key above, so there is nothing else to
+	// configure but which model answers.
+	Decisions struct {
+		// Model is an OpenRouter decision-model catalog id (vendor-prefixed,
+		// e.g. "typesafe/jev-1.14"; `polaris oracle-bench` lists the roster).
+		// Empty keeps decisions.DefaultModel. Hot-reloaded: it is re-read at
+		// the start of every turn, no restart needed. An id the Decisions API
+		// rejects makes every call fail, which the callers treat as "Oracle
+		// off / no badge" rather than an error, so check the logs after
+		// changing it. The bench only validated models on Oracle's task, not
+		// on verification claims — re-run it before moving off the default.
+		Model string `yaml:"model"`
+	} `yaml:"decisions"`
+
 	SearXNG struct {
 		BaseURL string `yaml:"base_url"`
 	} `yaml:"searxng"`

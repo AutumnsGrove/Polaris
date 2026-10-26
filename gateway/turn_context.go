@@ -6,10 +6,23 @@ import (
 	"sync"
 
 	"polaris/agent"
+	"polaris/decisions"
 	"polaris/llm"
 	"polaris/store"
 	"polaris/tools"
 )
+
+// decisionsClient is the server's shared decisions client pointed at the model
+// this turn's config names (decisions.model; empty keeps the pinned default).
+// t.cfg is re-read at the start of every turn, so editing config.yaml takes
+// effect on the next message with no restart. ForModel copies rather than
+// mutating the shared client, which concurrent turns are using right now. Both
+// Oracle and the tools' Context must come through here, or one of them would
+// keep asking the old model after a config edit. Nil stays nil, so an
+// unconfigured server still disables the features that gate on it.
+func (t *turnRun) decisionsClient() *decisions.Client {
+	return t.s.decisions.ForModel(t.cfg.Decisions.Model)
+}
 
 // buildAgentContext assembles the tools.Context the agent runs with: the
 // always-on wiring first, then each optional capability (personalization,
@@ -62,7 +75,7 @@ func (t *turnRun) buildAgentContext() {
 		Parallel:                t.s.parallel,
 		ParallelUsageThisMonth:  func() (int, error) { return t.s.db.GetAPIUsage("parallel") },
 		IncrementParallelUsage:  func() error { _, err := t.s.db.IncrementAPIUsage("parallel"); return err },
-		Decisions:               t.s.decisions,
+		Decisions:               t.decisionsClient(),
 		DecisionsCostThisMonth:  t.s.db.DecisionsCostThisMonth,
 		LogDecisionsCost:        t.s.db.LogDecisionsCost,
 		LogCompareDecisionsCost: t.s.db.LogCompareDecisionsCost,

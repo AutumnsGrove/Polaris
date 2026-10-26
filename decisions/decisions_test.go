@@ -102,6 +102,41 @@ func TestAskChoiceUsesDecisionsAPIAndDefaultModel(t *testing.T) {
 	}
 }
 
+// ForModel is what lets one shared client serve a model that is re-read from
+// config every turn: it must hand back a copy and leave the receiver alone, or
+// two concurrent turns configured differently would race on the same field.
+func TestForModelCopiesWithoutMutatingTheReceiver(t *testing.T) {
+	var cap capture
+	srv := recordingServer(t, &cap, http.StatusOK, answerBody)
+	defer srv.Close()
+
+	base := NewClient(srv.URL, "k")
+	derived := base.ForModel("perplexity/flash-v1.2")
+	if derived == base {
+		t.Fatal("ForModel with a different id returned the receiver, want a copy")
+	}
+	if _, err := derived.AskChoice(context.Background(), "s", oneQuestion()); err != nil {
+		t.Fatalf("AskChoice: %v", err)
+	}
+	if cap.body.Model != "perplexity/flash-v1.2" {
+		t.Errorf("derived client sent model %q, want perplexity/flash-v1.2", cap.body.Model)
+	}
+	if _, err := base.AskChoice(context.Background(), "s", oneQuestion()); err != nil {
+		t.Fatalf("AskChoice: %v", err)
+	}
+	if cap.body.Model != DefaultModel {
+		t.Errorf("receiver sent model %q after ForModel, want it left at %q", cap.body.Model, DefaultModel)
+	}
+
+	if base.ForModel("") != base || base.ForModel(DefaultModel) != base {
+		t.Error("ForModel with an empty or unchanged id should return the receiver")
+	}
+	var nilClient *Client
+	if nilClient.ForModel("x") != nil {
+		t.Error("ForModel on a nil client should stay nil")
+	}
+}
+
 func TestWithModelOverridesDefault(t *testing.T) {
 	var cap capture
 	srv := recordingServer(t, &cap, http.StatusOK, answerBody)

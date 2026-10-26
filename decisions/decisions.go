@@ -90,6 +90,20 @@ func (c *Client) WithModel(id string) *Client {
 	return c
 }
 
+// ForModel returns a copy of the client that sends id instead of this client's
+// model; an empty id returns the receiver unchanged. Unlike WithModel it never
+// mutates the receiver, so one long-lived shared client can serve a model that
+// is re-read from config on every turn without a data race between concurrent
+// turns. The copy shares the HTTP client (and so its timeout). Nil-safe.
+func (c *Client) ForModel(id string) *Client {
+	if c == nil || id == "" || id == c.model {
+		return c
+	}
+	cp := *c
+	cp.model = id
+	return &cp
+}
+
 // WithMaxQuestions makes AskChoice split a call with more than n questions into
 // the fewest balanced requests that each fit, sent concurrently and merged back
 // into one Response. Some decision models cap a single request (Nace's Drex 2.0
