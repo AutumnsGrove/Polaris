@@ -166,7 +166,8 @@ Registration order is `catalogOrder`, because tool definitions are part of the r
 a reordered list would miss the prompt cache. Descriptions are the catalog overlay, so the registry
 is rebuilt per `Run` (about 40 values; cheap) rather than cached across a catalog edit.
 
-The wrapper depends on `tool.Context.CallID`, which Nova does not have today — that is N0.
+The wrapper depends on `tool.Context.CallID`, which Nova does not have today — that is N0
+([nova#38](https://github.com/AutumnsGrove/nova/issues/38)).
 
 ### 5.4 Events
 
@@ -232,7 +233,8 @@ that touches concurrency runs its cases under `-race`. The flag stays off until 
 
 ### N0 (Nova) — `tool.Context.CallID`
 
-**Blocker found during review.** Every Polaris tool tags its live events with the call id
+**Blocker found during review.** Filed as [nova#38](https://github.com/AutumnsGrove/nova/issues/38).
+Every Polaris tool tags its live events with the call id
 (`ctx.Emit("tool_call", {..., "call_id": callID})`), and the browser correlates the tool card by it.
 Nova's `tool.Context` has no call id, and the adapter cannot invent one: a synthesized id would not
 match the assistant message's `tool_calls[].id`. `agent.runCall` already builds a fresh
@@ -468,7 +470,8 @@ commit with its own tests.
 ## 13. References
 
 - Nova: `docs/INTEGRATION.md` (the polaris section and the compatibility checklist),
-  `docs/IMAGE.md`, `docs/DECISIONS.md` D115 to D130, D144 to D149, nova#22, nova#31, nova#33.
+  `docs/IMAGE.md`, `docs/DECISIONS.md` D115 to D130, D144 to D149, nova#22, nova#31, nova#33,
+  nova#38.
 - Polaris: `agent/driver.go`, `agent/pseudocall.go`, `agent/subagent.go`,
   `agent/spawn_researchers.go`, `tools/context.go`, `tools/registry.go`, `llm/client.go`,
   `gateway/turn_agent.go`, `docs/plans/verbatim-turn-transcripts.md`.
