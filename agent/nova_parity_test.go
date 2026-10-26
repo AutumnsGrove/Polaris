@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"polaris/llm"
 	"polaris/tools"
@@ -728,5 +729,43 @@ func TestNova_TextOnlyModelDropsImageParts(t *testing.T) {
 		if content, ok := m.(map[string]any)["content"].([]any); ok {
 			t.Errorf("a text-only model was sent an array-content message: %v", content)
 		}
+	}
+}
+
+// --- cancellation ------------------------------------------------------------
+
+// The stop button cancels reqCtx mid-stream. Run's contract (its doc comment)
+// is a graceful early finish — no error, whatever streamed so far as the
+// answer — wherever the cancel lands.
+func TestNovaParity_StopMidStreamIsAGracefulFinish(t *testing.T) {
+	run := func(nova bool) (*Result, error) {
+		started := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: "+contentChunk("Partial answer so far. And a bit more to flush.")+"\n\n")
+			w.(http.Flusher).Flush()
+			close(started)
+			<-r.Context().Done()
+		}))
+		defer srv.Close()
+		client := llm.NewClient(srv.URL, "k", "test/model", 0.7, 100)
+		reqCtx, cancel := context.WithCancel(context.Background())
+		go func() { <-started; time.Sleep(50 * time.Millisecond); cancel() }()
+		ctx := &tools.Context{LLM: client, Emit: (&recordingEmit{}).emit, MaxTurns: 3}
+		if nova {
+			return runWithNova(reqCtx, ctx, nil, "hello")
+		}
+		return runBespoke(reqCtx, ctx, nil, "hello")
+	}
+	for name, nova := range map[string]bool{"bespoke": false, "nova": true} {
+		t.Run(name, func(t *testing.T) {
+			res, err := run(nova)
+			if err != nil {
+				t.Fatalf("a stop must not be an error, got %v", err)
+			}
+			if !strings.HasPrefix(res.Answer, "Partial answer") {
+				t.Errorf("Answer = %q, want the text streamed before the stop", res.Answer)
+			}
+		})
 	}
 }

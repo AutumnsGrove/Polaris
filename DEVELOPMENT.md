@@ -36,6 +36,17 @@ Runs as a Docker Compose stack, which bundles a SearXNG instance alongside it �
 latest image from GHCR and hand off to a host-side watcher (`gateway/docker_update.go`,
 `compose/watcher/`) — no in-process git pull/rebuild.
 
+### The agent loop and Nova
+
+`agent.Run` has two implementations behind one signature: Polaris's own loop (`agent/driver.go`) and
+one built on [Nova](https://github.com/AutumnsGrove/nova) (`agent/nova_*.go`). `nova_loop: true` in
+`config.yaml` (hot-reloaded) or `POLARIS_NOVA_LOOP=1` selects Nova; it is off by default. Run
+`POLARIS_NOVA_LOOP=1 go test ./...` to exercise it — CI does both. The design, the parity harness
+(`agent/nova_parity_test.go`) and the known differences are in `docs/plans/nova-loop.md`.
+
+`go.mod` pins Nova to a published commit. To work on both repos at once, use an uncommitted overlay
+instead of editing `go.mod`: `go work init . ../nova` (and delete `go.work` when done).
+
 ## Frontend development
 
 The Go binary embeds the frontend's built static output (`web/build/`) via `go:embed`. It's not

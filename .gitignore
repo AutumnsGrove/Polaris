@@ -55,3 +55,5 @@ benchmark-tracking.db*
 # and its tracking DB. The finished leaderboards in
 # docs/benchmarks/oracle-decision-models/runs/ ARE meant to be committed.
 oraclebench/results/
+go.work
+go.work.sum

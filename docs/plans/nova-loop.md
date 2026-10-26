@@ -2,8 +2,9 @@
 
 **Added 2026-10-26 on branch `nova-loop`.**
 
-**Status: scoping. Nothing in this document is built, and this branch does not touch Polaris
-`main`.**
+**Status: N0-N9 built on branch `nova-loop-impl`, behind `nova_loop` (default off). N10 (the flip)
+is deliberately not done — it needs a live check against real OpenRouter and a human go-ahead. See
+§14 for what shipped, what deviated from this plan, and the gaps to file on Nova.**
 
 This is the Polaris half of Nova's M8 adoption. The upstream contract is
 [AutumnsGrove/nova#22](https://github.com/AutumnsGrove/nova/issues/22) (`docs/INTEGRATION.md`,
@@ -475,3 +476,83 @@ commit with its own tests.
 - Polaris: `agent/driver.go`, `agent/pseudocall.go`, `agent/subagent.go`,
   `agent/spawn_researchers.go`, `tools/context.go`, `tools/registry.go`, `llm/client.go`,
   `gateway/turn_agent.go`, `docs/plans/verbatim-turn-transcripts.md`.
+
+## 14. Implementation notes (2026-10-26)
+
+What exists: `agent/run.go` (the `Run` dispatch), `agent/nova_loop.go` (hooks, event mapping, result
+mapping), `agent/nova_provider.go` (provider + decorator), `agent/nova_tools.go` (the one tool
+wrapper), `agent/nova_convert.go`, `llm/settings.go` + `llm/leakfilter.go` (small exports the adapter
+needs), and `agent/nova_parity_test.go` (the §7 harness). The flag is `nova_loop` in `config.yaml`
+(or `POLARIS_NOVA_LOOP=1`), applied at startup **and on every config reload**, so flipping it back is
+the rollback and needs no restart; verified live against `dev/fakeopenrouter`. CI runs the whole
+suite a second time with the flag on.
+
+N0 (`tool.Context.CallID`, nova#38) was already merged upstream. Workstream N8 needed no work of its
+own: researcher children already call `agent.Run`, so they run on Nova with the parent's flag, with
+their own `*tools.Context` and Polaris's existing event tagging and cost folding. `agent/sub` is
+available if its depth/concurrency caps are wanted later; nothing needs it for parity.
+
+### Deviations from the plan above
+
+- **Nova pin.** `go.mod` pins a published Nova commit (pseudo-version), not a local `replace`. Nova is
+  public, so CI and the Docker build resolve it with no sibling checkout. To co-develop against a
+  local Nova, use an uncommitted `go.work` (`go work init . ../nova`) rather than editing `go.mod`.
+- **Model catalog.** Not registered at boot (§12.3). The per-run `InputModalities` comes straight from
+  `ctx.Multimodal`, and `PromptCache` is set explicitly from the same `anthropic/` rule `llm.Client`
+  uses, so there is no global state and no disagreement to reconcile.
+- **Request transport.** Built from `llm.Client.Settings()` (a read-only snapshot added for this) so no
+  call site had to change. When `ctx.LLM` is not a `*llm.Client` (`llmtest.MockClient`), a bridge
+  provider wraps the `ChatClient`, which is what lets every existing scripted-model test run on Nova.
+- **Tool gating is stricter.** A catalog tool that `tools.Defs` withheld (disabled in settings, missing
+  key, wrong run kind) is refused rather than executed. The bespoke loop dispatched anything in the
+  global handler table, so a hallucinated call to a disabled tool would run. Handlers with no catalog
+  entry (test probes) stay dispatchable (`tools.UncatalogedHandlers`).
+- **Model-facing tool schemas** are Polaris's own, swapped in by a `BeforeProviderRequest` hook. The
+  registry's `Info.Parameters` is empty so Nova's argument validation never rejects a call before the
+  handler runs and emits its `tool_call`/`tool_result` pair.
+
+### What the wire comparison caught (not listed in §5.1)
+
+1. Nova sends neither `tool_choice: "auto"` nor `parallel_tool_calls: true`. Set in the hook above, only
+   when tools are offered (never on the wrap-up request).
+2. Nova records the empty assistant message of an empty-answer retry and the raw text of a pseudo tool
+   call. Both are dropped from the wire and from the persisted transcript (`dropUnsendable`): an
+   assistant message with neither content nor `tool_calls` is invalid to some providers, and replay
+   should match what the bespoke loop stored.
+3. `provider.Error` keeps only the parsed message. A per-run transport keeps the raw error body so
+   `llm.APIError` (the 429 "providers tried" text, `LLM API returned N: <body>`, `IsNetworkError`)
+   behaves as before.
+4. Nova's `Result.Answer` is "the last non-empty assistant text", which can be a stale pre-tool remark
+   when the real final message was empty; the answer is read from the final message instead.
+5. The bespoke loop emits no `cost_update` after the forced wrap-up call; matched.
+6. Nova has no per-call deadline; a 3-minute one (matching `llm.Client`) wraps every call.
+7. Nova's SSE reader requires blank-line-separated events (the spec; real OpenRouter complies). A dozen
+   gateway test fakes wrote `data: …\n` with no blank line and are fixed.
+
+### Accepted differences
+
+- Nova omits an empty `content` on a tool-call-only assistant message (valid per the chat-completions
+  spec); `llm.Client` sends `"content":""`. Replayed history re-encodes, so each existing thread pays
+  one prompt-cache miss on its first turn after the flip, then is stable again.
+- `stream_options: {"include_usage": true}` is sent by Nova only (§5.1).
+- Unknown/refused tool text and the panic text differ (model-facing only).
+- A 3-minute timeout is now an error; `llm.Client` turned it into a silent empty response.
+- Nova also retries 5xx and network failures (twice, 2s/4s); `llm.Client` retried only 429.
+- A text-only model never receives image parts (Nova drops them); the bespoke loop would send them and
+  earn a provider 400.
+
+### Gaps to file on Nova (this branch makes no Nova edits)
+
+1. `provider.Error` should retain the scrubbed, truncated raw response body.
+2. An option to emit `tool_choice` and `parallel_tool_calls` (or a `Request.ParallelToolCalls`).
+3. An option to emit `"content": ""` for tool-call-only assistant messages.
+4. Do not record, or do not send, an assistant message with no content, parts or tool calls.
+5. A per-call request deadline in the provider config.
+6. `Result.Answer` returning the final message's text (or documenting the stale case).
+
+### Not yet verified
+
+Everything above runs against scripted servers. Not yet exercised: a real OpenRouter call (the
+`content` omission and `stream_options` on the actual providers in `models/models.go`), a real 429,
+and the SvelteKit frontend driven by a Nova-loop turn. Per this repo's culture, do those on the potato
+before N10.
