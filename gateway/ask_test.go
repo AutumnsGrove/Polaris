@@ -163,7 +163,7 @@ func commentaryThenAnswerServer(t *testing.T) *httptest.Server {
 			lines = round2
 		}
 		for _, line := range lines {
-			fmt.Fprintf(w, "%s\n", line)
+			fmt.Fprintf(w, "%s\n\n", line)
 			flusher.Flush()
 		}
 	}))

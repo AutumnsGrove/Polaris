@@ -53,7 +53,7 @@ func sseAnswerBody(content string) string {
 		fmt.Sprintf(`data: {"choices":[{"delta":{"content":%q}}]}`, content),
 		`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`,
 		`data: [DONE]`,
-	}, "\n") + "\n"
+	}, "\n\n") + "\n\n"
 }
 
 // wireMessages splits a recorded request body's "messages" array into each
@@ -89,7 +89,7 @@ func TestFollowUpTurn_RequestExtendsPreviousTurnByteForByte(t *testing.T) {
 				`{"index":1,"id":"call_x2","type":"function","function":{"name":"calculator","arguments":"{\"expression\":\"3*3\"}"}}]}}]}`,
 			`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"cost":0.0001}}`,
 			`data: [DONE]`,
-		}, "\n") + "\n",
+		}, "\n\n") + "\n\n",
 		// Turn 1, call 2: the answer.
 		sseAnswerBody("2+2 is 4 and 3*3 is 9."),
 		// Turn 2.
@@ -127,8 +127,16 @@ func TestFollowUpTurn_RequestExtendsPreviousTurnByteForByte(t *testing.T) {
 			t.Errorf("message %d differs between turns, breaking the cached prefix:\nturn 1: %s\nturn 2: %s", i, prev[i], next[i])
 		}
 	}
-	if want := `{"role":"assistant","content":"2+2 is 4 and 3*3 is 9."}`; string(next[len(prev)]) != want {
-		t.Errorf("turn 1's answer replayed as %s, want %s (no appended source note)", next[len(prev)], want)
+	// Compared as JSON, not bytes: key order is the encoder's business (Polaris's
+	// llm.Client writes role first, Nova's writes it second), and what the cache
+	// needs is that every turn after the first replays the same bytes, which the
+	// prefix loop above already asserts.
+	var replayed struct{ Role, Content string }
+	if err := json.Unmarshal(next[len(prev)], &replayed); err != nil {
+		t.Fatalf("decoding replayed answer %s: %v", next[len(prev)], err)
+	}
+	if want := (struct{ Role, Content string }{"assistant", "2+2 is 4 and 3*3 is 9."}); replayed != want {
+		t.Errorf("turn 1's answer replayed as %s, want %+v (no appended source note)", next[len(prev)], want)
 	}
 	if !strings.Contains(string(next[len(prev)+1]), "and their sum?") {
 		t.Errorf("last message = %s, want the new question", next[len(prev)+1])

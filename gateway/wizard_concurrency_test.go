@@ -28,7 +28,7 @@ func blockingSSEServer(t *testing.T, toolCallJSON string, release <-chan struct{
 			`data: [DONE]`,
 		}
 		for _, line := range lines {
-			fmt.Fprintf(w, "%s\n", line)
+			fmt.Fprintf(w, "%s\n\n", line)
 			flusher.Flush()
 		}
 	}))

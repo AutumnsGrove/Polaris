@@ -152,10 +152,10 @@ func fakeLLMServer(t *testing.T, systemPrompt, answer string) *httptest.Server {
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	t.Cleanup(srv.Close)
 	return srv

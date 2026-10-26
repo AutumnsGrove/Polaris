@@ -262,10 +262,10 @@ func TestWebSocket_RejectsConcurrentTurnOnSameConnection(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -347,23 +347,23 @@ func TestWebSocket_DisconnectDoesNotTruncateInFlightTurn(t *testing.T) {
 			chunk1, _ := json.Marshal(map[string]interface{}{
 				"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "Hello, "}}},
 			})
-			fmt.Fprintf(w, "data: %s\n", chunk1)
+			fmt.Fprintf(w, "data: %s\n\n", chunk1)
 			flusher.Flush()
 			chunk2, _ := json.Marshal(map[string]interface{}{
 				"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "world!"}}},
 			})
-			fmt.Fprintf(w, "data: %s\n", chunk2)
+			fmt.Fprintf(w, "data: %s\n\n", chunk2)
 			flusher.Flush()
 		} else {
 			chunk, _ := json.Marshal(map[string]interface{}{
 				"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "n/a"}}},
 			})
-			fmt.Fprintf(w, "data: %s\n", chunk)
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
 			flusher.Flush()
 		}
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
 		flusher.Flush()
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
 		flusher.Flush()
 	}))
 	defer srv.Close()
@@ -470,10 +470,10 @@ func TestWebSocket_EditFirstMessage_PreservesOriginalAsVariant(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -609,10 +609,10 @@ func TestWebSocket_MultipleRegeneratesCreateOrderedVariants(t *testing.T) {
 		})
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -716,10 +716,10 @@ func TestWebSocket_ContinuingAfterBrowsingToOldVariant_ForksTheNewerOne(t *testi
 		})
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -831,10 +831,10 @@ func TestWebSocket_TitleSeedOverridesGenerateTitleInput(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -956,10 +956,10 @@ func TestWebSocket_WeaverSourceThread_RestrictsToolsToWeaverSet(t *testing.T) {
 		})
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -1014,10 +1014,10 @@ func TestWebSocket_WeaverThreadContinuation_StaysRestricted(t *testing.T) {
 		})
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -1083,11 +1083,11 @@ func TestWebSocket_GhostThread_DisconnectDeletesUnpromotedThread(t *testing.T) {
 		chunk, _ := json.Marshal(map[string]interface{}{
 			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": content}}},
 		})
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
 		flusher.Flush()
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
 		flusher.Flush()
 	}))
 	defer srv.Close()
@@ -1250,10 +1250,10 @@ func TestWebSocket_GhostThread_RegainsMemoryAndChatSearchOncePromoted(t *testing
 		})
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n", chunk)
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 

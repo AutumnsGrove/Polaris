@@ -456,6 +456,10 @@ func TestRun_AskUserQuestionEndsTurn(t *testing.T) {
 	}
 	rec := &recordingEmit{}
 	ctx := newTestContext(mock, rec, 5)
+	// ask_user_question is only offered on an interactive turn (see
+	// catalog.go's "interactive_chat" gate); a hallucinated call to it on a
+	// turn that doesn't offer it is refused, not executed.
+	ctx.RequestLocation = func() (string, bool) { return "", false }
 
 	result, err := Run(context.Background(), ctx, nil, "find me a coffee shop")
 	if err != nil {
