@@ -21,6 +21,14 @@ func Register(name string, fn HandlerFunc) {
 	registry[name] = fn
 }
 
+// Registered returns the handler currently registered under name, so a test
+// that overrides a real handler can put it back instead of leaking its stub
+// into every test that runs after it in the same process.
+func Registered(name string) (HandlerFunc, bool) {
+	fn, ok := registry[name]
+	return fn, ok
+}
+
 func Dispatch(name, argsJSON string, ctx *Context, callID string) string {
 	fn, ok := registry[name]
 	if !ok {

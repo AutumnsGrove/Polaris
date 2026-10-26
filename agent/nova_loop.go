@@ -141,7 +141,8 @@ func runWithNova(reqCtx context.Context, ctx *tools.Context, history []llm.ChatM
 		Hooks: novaagent.Hooks{
 			// The model must see Polaris's own tool schemas, not the permissive
 			// ones the registry validates against (see polarisTool).
-			BeforeProviderRequest: func(_ context.Context, req *provider.Request) { req.Tools = novaDefs },
+			TransformContext:      func(_ context.Context, msgs []message.Message) []message.Message { return dropUnsendable(msgs) },
+			BeforeProviderRequest: func(_ context.Context, req *provider.Request) { shapeToolRequest(req, novaDefs) },
 			TurnEnd:               st.turnEnd,
 		},
 	}
@@ -150,11 +151,34 @@ func runWithNova(reqCtx context.Context, ctx *tools.Context, history []llm.ChatM
 	}
 
 	res, err := novaagent.Run(reqCtx, cfg, toNovaMessages(conversation))
-	return st.build(reqCtx, res, err, turnPrefix)
+	return st.build(reqCtx, res, err, turnPrefix, prov)
+}
+
+// shapeToolRequest makes a tool-offering request match llm.Client's wire body.
+//
+// The model must see Polaris's own tool schemas, not the permissive ones the
+// registry validates against (see polarisTool). tool_choice "auto" and
+// parallel_tool_calls true are sent explicitly, not left to the provider's
+// default: the bespoke client documents that as deliberate, and the parity
+// goldens caught Nova omitting both. They are only valid alongside tools, so
+// the wrap-up request — which Nova builds with none — must not carry them;
+// at this hook that is exactly the case where req.Tools is still empty.
+func shapeToolRequest(req *provider.Request, defs []provider.ToolDef) {
+	if len(req.Tools) == 0 {
+		return
+	}
+	req.Tools = defs
+	req.ToolChoice = "auto"
+	opts := make(map[string]any, len(req.ProviderOptions)+1)
+	for k, v := range req.ProviderOptions {
+		opts[k] = v
+	}
+	opts["parallel_tool_calls"] = true
+	req.ProviderOptions = opts
 }
 
 // build maps Nova's result back into Polaris's, whatever way the run ended.
-func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err error, turnPrefix []llm.ChatMessage) (*Result, error) {
+func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err error, turnPrefix []llm.ChatMessage, prov *polarisProvider) (*Result, error) {
 	ctx := s.ctx
 	out := &Result{
 		Citations:        ctx.Citations,
@@ -188,11 +212,20 @@ func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err 
 		out.ContextTokens = s.lastPromptTokens + s.lastCompletionTokens
 	default:
 		out.Answer = finalAnswer(newMsgs)
-		if s.wrapMsg != nil && s.wrapMsg.Content == "" && len(s.wrapMsg.ToolCalls) == 0 {
-			// Deliberately no empty-answer fallback after the wrap-up (see
-			// runBespoke): gateway's "model returned no answer" check owns that
-			// case, and Nova's own fallback text would defeat it.
-			out.Answer = ""
+		if w := s.wrapMsg; w != nil {
+			switch {
+			case len(w.ToolCalls) == 0 && strings.TrimSpace(w.Content) == "":
+				// Deliberately no empty-answer fallback after the wrap-up (see
+				// runBespoke): gateway's "model returned no answer" check owns
+				// that case, and Nova's own fallback text would defeat it.
+				out.Answer = ""
+			case len(w.ToolCalls) == 0 && len(parsePseudoToolCalls(w.Content)) > 0:
+				// Even told not to, the model wrote a tool call as text. The
+				// attempt was already demoted to commentary (onEvent); an honest
+				// "couldn't finish" beats showing raw pseudo-call syntax.
+				out.Answer = wrapUpFallback
+				ctx.Emit("token", map[string]interface{}{"content": wrapUpFallback})
+			}
 		}
 		out.ContextTokens = s.lastPromptTokens + s.lastCompletionTokens
 	}
@@ -224,15 +257,35 @@ func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err 
 	if n := len(newMsgs); n > 0 && newMsgs[n-1].Role == message.RoleAssistant && len(newMsgs[n-1].ToolCalls) == 0 {
 		newMsgs = newMsgs[:n-1]
 	}
+	newMsgs = dropUnsendable(newMsgs)
 	transcript := make([]llm.ChatMessage, 0, len(turnPrefix)+len(newMsgs)+1)
 	transcript = append(transcript, turnPrefix...)
 	transcript = append(transcript, fromNovaMessages(newMsgs)...)
 	out.Transcript = append(transcript, llm.ChatMessage{Role: "assistant", Content: out.Answer})
 
 	if failed {
-		return out, translateRunError(err)
+		return out, prov.translateRunError(err)
 	}
 	return out, nil
+}
+
+// dropUnsendable removes the assistant messages Nova records that the bespoke
+// loop never kept: an empty one (the empty-answer retry — a provider can reject
+// an assistant message with neither content nor tool_calls, and Nova's encoder
+// omits empty content entirely) and a pseudo-tool-call attempt, whose result
+// the loop replays as a user message instead. Applied to the wire request and
+// to the persisted transcript, so the next turn replays exactly what the
+// bespoke loop would have stored.
+func dropUnsendable(msgs []message.Message) []message.Message {
+	out := make([]message.Message, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Role == message.RoleAssistant && len(m.ToolCalls) == 0 && len(m.Parts) == 0 &&
+			(strings.TrimSpace(m.Content) == "" || len(parsePseudoToolCalls(m.Content)) > 0) {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // finalAnswer is the content of the transcript's closing plain assistant
@@ -284,12 +337,17 @@ func (s *novaRunState) onEvent(e proto.Event) {
 		s.lastPromptTokens = u.PromptTokens
 		s.lastCompletionTokens = u.CompletionTokens
 		s.llmCalls++
-		// Live-only running total — see runBespoke's matching emit.
-		ctx.Emit("cost_update", map[string]interface{}{"cost_usd": s.totalCost + ctx.ExtraCostUSD})
 		msg := s.lastMsg
-		if e.Turn != nil && *e.Turn >= s.maxTurns {
+		wrapUp := e.Turn != nil && *e.Turn >= s.maxTurns
+		if wrapUp {
 			m := msg
 			s.wrapMsg = &m
+		}
+		// Live-only running total — see runBespoke's matching emit. Not after the
+		// forced wrap-up call: the bespoke loop doesn't either (the closing
+		// "done" event carries the final figure), and event parity is the bar.
+		if !wrapUp {
+			ctx.Emit("cost_update", map[string]interface{}{"cost_usd": s.totalCost + ctx.ExtraCostUSD})
 		}
 		if len(msg.ToolCalls) > 0 || len(parsePseudoToolCalls(msg.Content)) > 0 {
 			emitCommentary(ctx, msg.Content)

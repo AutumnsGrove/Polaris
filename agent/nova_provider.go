@@ -1,10 +1,14 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AutumnsGrove/nova/message"
@@ -44,7 +48,7 @@ type novaModel struct {
 // and reasoning. Anything else — llmtest.MockClient, in practice — is bridged
 // as-is, so the existing scripted-model tests drive the Nova loop unchanged
 // instead of needing a second mock.
-func novaProviderFor(client llm.ChatClient) (provider.Provider, novaModel) {
+func novaProviderFor(client llm.ChatClient) (*polarisProvider, novaModel) {
 	sp, ok := client.(llm.SettingsProvider)
 	if !ok {
 		return &polarisProvider{inner: chatClientProvider{client}}, novaModel{Name: "chat-client"}
@@ -71,13 +75,52 @@ func novaProviderFor(client llm.ChatClient) (provider.Provider, novaModel) {
 	if len(opts) > 0 {
 		m.Options = opts
 	}
+	errBody := &errBodyTransport{base: http.DefaultTransport}
 	inner := openrouter.New(openrouter.Config{
-		APIKey:  s.APIKey,
-		BaseURL: s.BaseURL,
-		Referer: "https://github.com/AutumnsGrove/Polaris",
-		Title:   "Polaris",
+		APIKey:     s.APIKey,
+		BaseURL:    s.BaseURL,
+		Referer:    "https://github.com/AutumnsGrove/Polaris",
+		Title:      "Polaris",
+		HTTPClient: &http.Client{Transport: errBody},
 	})
-	return &polarisProvider{inner: inner}, m
+	return &polarisProvider{inner: inner, errBody: errBody}, m
+}
+
+// errBodyTransport remembers the body of the last non-2xx response. Nova's
+// provider.Error keeps only the parsed code and message, but two user-facing
+// behaviours key on the raw body: llm.APIError's "LLM API returned N: <body>"
+// text and the 429 message's "providers tried: ..." list parsed out of
+// OpenRouter's error JSON. One transport per run (the provider is built per
+// run), so there is no cross-run bleed; a run's calls are sequential.
+type errBodyTransport struct {
+	base   http.RoundTripper
+	mu     sync.Mutex
+	status int
+	body   string
+}
+
+func (t *errBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil || resp.StatusCode < 400 {
+		return resp, err
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	resp.Body.Close()
+	t.mu.Lock()
+	t.status, t.body = resp.StatusCode, string(b)
+	t.mu.Unlock()
+	resp.Body = io.NopCloser(bytes.NewReader(b))
+	return resp, nil
+}
+
+// bodyFor returns the raw body of the last error response if it had this status.
+func (t *errBodyTransport) bodyFor(status int) (string, bool) {
+	if t == nil {
+		return "", false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.body, t.status == status && t.body != ""
 }
 
 // polarisProvider layers the three llm.Client behaviours Nova's provider does
@@ -85,7 +128,8 @@ func novaProviderFor(client llm.ChatClient) (provider.Provider, novaModel) {
 // re-filing, and (via translateRunError, applied by the caller) Polaris's
 // user-facing error types.
 type polarisProvider struct {
-	inner provider.Provider
+	inner   provider.Provider
+	errBody *errBodyTransport // nil for the ChatClient bridge, which returns *llm.APIError itself
 }
 
 func (p *polarisProvider) Name() string { return p.inner.Name() }
@@ -139,13 +183,17 @@ func (p *polarisProvider) Stream(ctx context.Context, req provider.Request, onEv
 // of Polaris keys on: *llm.APIError (whose Error() is the user-facing text,
 // including the friendly 429 message) for an HTTP failure. Transport errors
 // keep their *url.Error in the chain, so llm.IsNetworkError still works.
-func translateRunError(err error) error {
+func (p *polarisProvider) translateRunError(err error) error {
 	if err == nil {
 		return nil
 	}
 	var pe *provider.Error
 	if errors.As(err, &pe) && pe.Status != 0 {
-		return &llm.APIError{StatusCode: pe.Status, Body: pe.Message}
+		body := pe.Message
+		if raw, ok := p.errBody.bodyFor(pe.Status); ok {
+			body = raw
+		}
+		return &llm.APIError{StatusCode: pe.Status, Body: body}
 	}
 	return err
 }
