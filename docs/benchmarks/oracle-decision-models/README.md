@@ -62,7 +62,8 @@ repeat it.
   weak on `premise` 26 and `private_person` 38) and Jared Palmer's Kev 4B scores 58.5 (1.0s, no errors, focus
   actions only 55%, weak on `depth` 33). Both took Oracle's full 23-question call in one request with no
   cap, Kev fitting inside its 8k context, so the failure is accuracy, not compatibility.
-- **Upstage's regular Solar Decide couldn't be scored:** it takes 13 to 21 seconds per call. See
+- **Upstage's regular Solar Decide couldn't be scored:** it takes 10 to 21 seconds per call, far outside the
+  bench's 5s budget as well as Oracle's 2.5s timeout. See
   [Models that couldn't be scored](#models-that-couldnt-be-scored).
 - **Perplexity's Decider Flash v1.2 scores 76.2 (386ms, no errors, $0.057 per 1,000 turns).** It first failed
   every call to upstream 429s on 2026-10-19 and was re-run once the limit cleared on 2026-10-26. It is cheap
@@ -324,7 +325,10 @@ Read the split models with three caveats:
   accept Choice questions and is scored above.
 - **`upstage/solar-decide`** (the regular, non-Flash model) answers correctly (79.9 on a 6-case probe) but
   takes 13 to 21 seconds per call, about 100x Oracle's 2.5s timeout, and it timed out at the bench's 15s
-  limit on most of a 12-case smoke test. It was not run in full: there is no way for it to be usable here.
+  limit on most of a 12-case smoke test. A re-check on 2026-10-26 was somewhat faster but still hopeless: 8 of 8
+  calls succeeded at 10.0 to 12.1s each (median 10.7s, 4 to 5x Oracle's timeout and double the bench's 5s
+  budget), with a smoke score of 98.1 on those 8 cases, so the model looks accurate and simply too slow. It was
+  not run in full: there is no way for it to be usable here.
 
 ### Perplexity Decider Flash v1.2
 

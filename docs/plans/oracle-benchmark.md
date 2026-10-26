@@ -625,6 +625,7 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   failed every call to upstream 429s on 2026-10-19 but works now and was re-run: 76.2, 386ms, no errors.
   `perplexity/pplx-decider-v1.1-27b` (our top scorer, 91.4) now returns 404 and is retired. Paid
   `inception/mercury-decide` is the same build as the free tier (already 89.0), so it is not worth re-running.
-  `upstage/solar-decide` answered a 1-question probe in 2.1s (it took 13 to 21s on the full payload); not re-tested.
+  `upstage/solar-decide` was re-checked on the full payload: 8 of 8 ok at 10.0 to 12.1s (median 10.7s), so still
+  far past the 2.5s timeout and the bench's 5s budget. Skipped for good; the roster is complete.
 - Deliberately not run: `~perplexity/pplx-decider-latest`, an alias for a Perplexity model already benchmarked
   by its versioned id (an alias moving would make a result uninterpretable).
