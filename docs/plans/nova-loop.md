@@ -531,9 +531,6 @@ available if its depth/concurrency caps are wanted later; nothing needs it for p
 
 ### Accepted differences
 
-- Nova omits an empty `content` on a tool-call-only assistant message (valid per the chat-completions
-  spec); `llm.Client` sends `"content":""`. Replayed history re-encodes, so each existing thread pays
-  one prompt-cache miss on its first turn after the flip, then is stable again.
 - `stream_options: {"include_usage": true}` is sent by Nova only (§5.1).
 - Unknown/refused tool text and the panic text differ (model-facing only).
 - A 3-minute timeout is now an error; `llm.Client` turned it into a silent empty response.
@@ -541,14 +538,17 @@ available if its depth/concurrency caps are wanted later; nothing needs it for p
 - A text-only model never receives image parts (Nova drops them); the bespoke loop would send them and
   earn a provider 400.
 
-### Gaps to file on Nova (this branch makes no Nova edits)
+### Gaps found on Nova — all fixed upstream (nova#40-#45, merged in nova#46)
 
-1. `provider.Error` should retain the scrubbed, truncated raw response body.
-2. An option to emit `tool_choice` and `parallel_tool_calls` (or a `Request.ParallelToolCalls`).
-3. An option to emit `"content": ""` for tool-call-only assistant messages.
-4. Do not record, or do not send, an assistant message with no content, parts or tool calls.
-5. A per-call request deadline in the provider config.
-6. `Result.Answer` returning the final message's text (or documenting the stale case).
+1. `provider.Error.Body` — Polaris reads it for `llm.APIError`; the error-body transport is gone.
+2. `Request.ParallelToolCalls` — set in the `BeforeProviderRequest` hook alongside `ToolChoice`.
+3. `EmptyToolCallContent` on `openrouter.Config` — Polaris sets it, so replayed history keeps
+   `"content":""` and the "accepted differences" bullet about a one-time prompt-cache miss no longer applies.
+4. An empty assistant message is recorded but not sent (Polaris still strips it from the persisted transcript).
+5. `agent.Config.RequestTimeout` — replaces the provider-side deadline wrapper.
+6. `Result.Final` — replaces the locally computed final answer.
+
+With these, the parity harness compares request bodies with only `stream_options` normalized.
 
 ### Not yet verified
 
