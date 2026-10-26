@@ -6,10 +6,10 @@ person?", "is the user asking for something deep?") and quietly adjusts how the 
 decision model sits in front of every message, so it has to be **fast, cheap, and right**, in that
 order.
 
-This page records a full run of `polaris oracle-bench` across twenty-three candidate models, and how to
+This page records a full run of `polaris oracle-bench` across twenty-four candidate models, and how to
 repeat it.
 
-<p align="center"><img src="scorecard.svg" alt="Scorecard: twenty-three decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
+<p align="center"><img src="scorecard.svg" alt="Scorecard: twenty-four decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
 
 ## The short version
 
@@ -42,7 +42,10 @@ repeat it.
   model per turn (about 2.6x Jev), and the only one that **refuses to answer** some questions: 15
   calls, all on the private-person family. See [Refusals](#refusals).
 - **Liquid D1 and both Cloudflare Clef models trail by 9 to 14 points,** mostly on *focus actions*
-  (68 to 75% right, against 90 to 98% for the leaders). **Scaledown Classify 1 (75.4) and Upstage Solar
+  (68 to 75% right, against 90 to 98% for the leaders). **Cloudflare's Clef Omni does worse than either
+  (66.3) and is the most expensive model tested ($0.802 per 1,000 turns, 3.8x Jev):** it is fast (379ms
+  median) but is the multimodal variant and Oracle sends only text, and it is badly wrong on `premise`
+  (16). **Scaledown Classify 1 (75.4) and Upstage Solar
   Decide Flash (57.3) trail further.** Solar Flash is also the closest to a disqualifying 5% of
   dangerous false nudges (4%).
 - **Nace's Drex Max is the most interesting new result: 91.3, tied for the top score, with 482ms at the median
@@ -70,11 +73,11 @@ Recommendation: **keep `typesafe/jev-1.14` pinned.** Details and caveats below.
 
 Runs of 2026-10-16, 2026-10-19, 2026-10-22, 2026-10-25 and 2026-10-26: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
 separately), 3 repeats each, 2 calls in flight, weights `a6cbc140bd53`. The raw leaderboards are saved in
-[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in nine
+[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in ten
 invocations with identical settings (except the Drex run, which used concurrency 1) (the first nine models, then Luna, then D1 Ultra, Classify 1 and
 Solar Flash, then on 2026-10-19 Perplexity's Decider v1.2 and Flash v1.2, then on 2026-10-22 Baseten's
 Mammoth 1 and, separately, Elephant 1, each paced at one call per 3.5s because they are `:free` models, then on 2026-10-25 Respan's
-Span-02, then on 2026-10-26 Nace's three Drex models and, separately, Together's Tev1 and Kev; see
+Span-02, then on 2026-10-26 Nace's three Drex models and, separately, Together's Tev1 and Kev, and finally Cloudflare's Clef Omni; see
 [Reproduce it](#reproduce-it)); the report command refuses to merge runs that differ in cases, repeats or
 weights, and in concurrency unless given `--allow-concurrency-mismatch`, which marks those models' rows (†). The two earlier files in `runs/` (2026-10-15) used an older, smaller case bank and weights, so
 they are not comparable to these runs.
@@ -99,8 +102,9 @@ they are not comparable to these runs.
 | 16 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
 | 17 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
 | 18 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
-| 19 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
-| 20 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 19 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
+| 20 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
+| 21 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.173 |
 | x | `inception/mercury-decide` | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 | x | `perplexity/pplx-decider-flash-v1.2` | not benchmarkable | n/a | n/a | n/a | n/a | 100% | n/a | n/a | n/a | n/a |
@@ -116,9 +120,9 @@ upstream `429 Model busy` responses (details in that section), which is why it i
 (`oracleTimeout` in `gateway/oracle.go`); a call over that is dropped and the turn runs without Oracle.
 *$/1k turns* is the decision-call cost for 1,000 Oracle turns (one call each). Trigger and focus
 describe what production's rules *did* with the answer, not just the raw answer. The whole run cost
-**$4.04** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
+**$4.76** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
 Perplexity's two new models, $0.01 each for Mammoth and Elephant, which are free and cost only their
-judging, $0.06 for Span-02, $0.58 for the three Drex models, and $0.38 for Tev and Kev), of which about $0.35 was the judge.
+judging, $0.06 for Span-02, $0.58 for the three Drex models, $0.38 for Tev and Kev, and $0.72 for Clef Omni), of which about $0.36 was the judge.
 
 ### Overall quality
 
@@ -129,7 +133,7 @@ The headline score on its own, with speed deliberately left out.
 The intervals overlap heavily across the top seven. With 274 scored cases, a gap under about 2.5 points is
 noise, so the honest reading is four tiers: **Perplexity v1.1, Drex Max, Mammoth and Mercury free** at the top, **D1 Ultra, Jev 1.14,
 Microsoft, Jev 1.13, Perplexity v1.2 and Span-02** tied just behind, **Luna, Elephant, Drex 1.5, D1, Clef and Classify 1** clearly below, and **Clef Flash,
-Tev1, Kev and Solar Flash** at the bottom (Drex 2.0 is disqualified for errors).
+Tev1, Clef Omni, Kev and Solar Flash** at the bottom (Drex 2.0 is disqualified for errors).
 
 ### Accuracy against speed
 
@@ -154,8 +158,8 @@ calls in flight.
 
 <p align="center"><img src="cost.svg" alt="Cost per 1000 Oracle turns, ranked" width="860"></p>
 
-Cost is a rounding error at this scale: even the priciest models (Solar Flash and Luna, about $0.56 to $0.58
-per 1,000 turns) cost cents in a heavy month. Note the bills run higher than the catalog's per-token prices
+Cost is a rounding error at this scale: even the priciest models (Clef Omni at $0.80, then Solar Flash and
+Luna at about $0.56 to $0.58 per 1,000 turns) cost cents in a heavy month. Note the bills run higher than the catalog's per-token prices
 suggest for several models (Classify 1 and Solar Flash especially), so compare the measured figures here, not
 the list prices. The frontier is only useful for the free-versus-paid question: Mercury
 free and Perplexity v1.1 are the only models nothing beats on both price and score (v1.2 is cheaper than
@@ -215,6 +219,7 @@ Where a model is unusually weak (25+ points below its own overall score):
   the provider's 429s (an errored call scores zero), so they say more about the errors than the model.
 - **Span-02:** none. Its lowest families are `clarify` (61) and `locale` (62), right at the 25-point line.
 - **Clef:** `emotional` (42).
+- **Clef Omni:** `premise` (16).
 - **Luna:** `depth` (56), `emotional` (41) and `private_person` (48, mostly refusals).
 - **D1 Ultra:** none. Its lowest families are `emotional` (63) and `contested` (66), both within 25 points of its
   overall score.
@@ -259,7 +264,7 @@ Judged on the operator's stated priorities (speed first, then accuracy):
    scored about 66 even in a 60-call re-sample with only 3% errors.
 9. **Skip Tev1 and Kev.** Both are compatible (no question cap) but about 18 and 29 points behind Jev, and Kev's
    focus actions are right only 55% of the time.
-10. **Skip D1, the Clef models, Classify 1 and Solar Flash.** D1 and Clef are fast enough but lose 9 to 14
+10. **Skip D1, the Clef models (Omni especially), Classify 1 and Solar Flash.** D1 and Clef are fast enough but lose 9 to 14
    points, mostly on focus actions; Classify 1 and Solar Flash lose 12 to 30 points, and Solar Flash also
    produces the most dangerous false nudges.
 

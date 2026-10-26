@@ -619,4 +619,7 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
 - `togethercomputer/tev1-4b-experimental` (70.3, 778ms) and `jaredpalmer/kev-4b` (58.5, 1.0s) were run
   2026-10-26 at concurrency 2: no question cap, no errors, Kev's 8k context holds Oracle's call. Both are
   far behind Jev on accuracy.
-- Not yet run: `cloudflare/clef-omni`, `~perplexity/pplx-decider-latest`.
+- `cloudflare/clef-omni` was run 2026-10-26: 66.3, 379ms, $0.802 per 1,000 turns (the most expensive
+  model tested); no question cap, no errors.
+- Deliberately not run: `~perplexity/pplx-decider-latest`, an alias for a Perplexity model already benchmarked
+  by its versioned id (an alias moving would make a result uninterpretable).
