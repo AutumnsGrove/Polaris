@@ -212,13 +212,13 @@
 					{#if turn.costVerification}
 						<div class="cost-row">
 							<span class="dot t-verify"></span>Verification<span class="sub"
-								>Jev · {turn.verification?.length ?? 0} verified</span
+								>Decisions · {turn.verification?.length ?? 0} verified</span
 							><span class="amt">${turn.costVerification.toFixed(5)}</span>
 						</div>
 					{/if}
 					{#if turn.costOracle}
 						<div class="cost-row">
-							<span class="dot t-oracle"></span>Oracle<span class="sub">Jev · {checks.length} checks</span
+							<span class="dot t-oracle"></span>Oracle<span class="sub">Decisions · {checks.length} checks</span
 							><span class="amt">${turn.costOracle.toFixed(5)}</span>
 						</div>
 					{/if}
