@@ -3,7 +3,7 @@ module polaris
 go 1.26.6
 
 require (
-	github.com/AutumnsGrove/nova v0.0.0-20261026220431-9ce5473c7beb
+	github.com/AutumnsGrove/nova v0.2.0
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/charmbracelet/log v1.0.0
 	github.com/expr-lang/expr v1.17.8
