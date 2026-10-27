@@ -67,7 +67,7 @@ container sharing the same data volume, with the real service stopped
 first:
 
   docker compose stop polaris
-  docker compose run --rm --no-deps polaris backup restore <name> --config /data/config.yaml --yes
+  docker compose run --rm --no-deps polaris backup restore <name> --config /data/config/config.yaml --yes
   docker compose up -d polaris`,
 	Args: cobra.ExactArgs(1),
 	RunE: runBackupRestore,

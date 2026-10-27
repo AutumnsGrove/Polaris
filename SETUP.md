@@ -132,16 +132,19 @@ settings panel:
   provider for consistent prompt-cache pricing), SearXNG's URL, logging, voice model choices.
   Meant to be hand-edited. Most fields need a restart (the OpenRouter/SearXNG clients are built at
   startup); the handful that are re-read on every request — `max_agent_turns`,
-  `context_window_tokens`, `nova_loop` — apply to the next turn with no restart, **provided you edit
-  the file in place** (vim/nano's normal save). Docker bind-mounts this one *file*, so an edit that
-  replaces it — `sed -i`, `mv`, `git checkout`, a GUI editor that writes-then-renames — leaves the
-  container reading the old copy until it is recreated (`docker compose up -d --force-recreate`).
+  `context_window_tokens`, `nova_loop` — apply to the next turn with no restart. Its whole
+  directory is bind-mounted into the container rather than the single file, so replacing the file
+  (`sed -i`, a GUI editor, `git checkout`) is picked up too — that used to silently leave the
+  container reading its start-up copy until it was recreated.
 - **Settings panel** (gear icon in the sidebar) — theme, default model, price visibility, a manual
   location fallback for `nearby_search`, the update button, and (behind the small info-icon
   button) a usage/tuning stats page — cost, tool-call counts/error rates, research-loop steering
   signals. Changes apply instantly, no restart, no file editing.
 - **prompt.md** — the system prompt, read fresh on every turn. Edit it, see the change on your
-  very next message.
+  very next message. (Same for `prompts.yaml`, `blocked_sources.txt` and `tools/descriptions/`.)
+  These are still single-*file* bind mounts, unlike `config.yaml`: a save that replaces the file
+  rather than rewriting it — `sed -i`, `mv` — leaves the container serving the old copy until it is
+  recreated (`docker compose up -d --force-recreate`). vim/nano's normal save is fine.
 
 Browser geolocation (used automatically for "near me" questions, before falling back to the
 manual location above or `config.yaml`'s `default_location`) needs a secure context — it won't
@@ -174,7 +177,7 @@ one-off container sharing the same data volume, with the real service stopped fi
 
 ```bash
 docker compose stop polaris
-docker compose run --rm --no-deps polaris backup restore <name> --config /data/config.yaml --yes
+docker compose run --rm --no-deps polaris backup restore <name> --config /data/config/config.yaml --yes
 docker compose up -d polaris
 ```
 
@@ -202,6 +205,6 @@ polaris backup restore-remote <name>       # disaster recovery: download from R2
 configured, it downloads the named backup from R2 into `backup.dir` and then runs the exact same
 verify/preserve/swap sequence `restore` does. Same one-off-container invocation as plain
 `restore` above (`docker compose stop polaris && docker compose run --rm --no-deps polaris
-backup restore-remote <name> --config /data/config.yaml --yes && docker compose up -d polaris`)
+backup restore-remote <name> --config /data/config/config.yaml --yes && docker compose up -d polaris`)
 — that container shares the same bind-mounted `config.yaml` (so it has the R2 credentials) and
 the same data volume as the real service.
