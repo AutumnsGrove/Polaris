@@ -494,7 +494,7 @@ available if its depth/concurrency caps are wanted later; nothing needs it for p
 
 ### Deviations from the plan above
 
-- **Nova pin.** `go.mod` pins a published Nova commit (pseudo-version), not a local `replace`. Nova is
+- **Nova pin.** `go.mod` pins a tagged Nova release (v0.2.0), not a local `replace`. Nova is
   public, so CI and the Docker build resolve it with no sibling checkout. To co-develop against a
   local Nova, use an uncommitted `go.work` (`go work init . ../nova`) rather than editing `go.mod`.
 - **Model catalog.** Not registered at boot (§12.3). The per-run `InputModalities` comes straight from
