@@ -130,7 +130,12 @@ settings panel:
 - **`.env`** — Docker Compose's own secret-interpolation mechanism (API keys, `SEARXNG_SECRET`).
 - **`compose/polaris/config.yaml`** — the model catalog (each entry pins a specific OpenRouter
   provider for consistent prompt-cache pricing), SearXNG's URL, logging, voice model choices.
-  Meant to be hand-edited; changes require a restart.
+  Meant to be hand-edited. Most fields need a restart (the OpenRouter/SearXNG clients are built at
+  startup); the handful that are re-read on every request — `max_agent_turns`,
+  `context_window_tokens`, `nova_loop` — apply to the next turn with no restart, **provided you edit
+  the file in place** (vim/nano's normal save). Docker bind-mounts this one *file*, so an edit that
+  replaces it — `sed -i`, `mv`, `git checkout`, a GUI editor that writes-then-renames — leaves the
+  container reading the old copy until it is recreated (`docker compose up -d --force-recreate`).
 - **Settings panel** (gear icon in the sidebar) — theme, default model, price visibility, a manual
   location fallback for `nearby_search`, the update button, and (behind the small info-icon
   button) a usage/tuning stats page — cost, tool-call counts/error rates, research-loop steering

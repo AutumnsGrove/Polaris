@@ -2,9 +2,9 @@
 
 **Added 2026-10-26 on branch `nova-loop`.**
 
-**Status: N0-N9 built on branch `nova-loop-impl`, behind `nova_loop` (default off). N10 (the flip)
-is deliberately not done — it needs a live check against real OpenRouter and a human go-ahead. See
-§14 for what shipped, what deviated from this plan, and the gaps to file on Nova.**
+**Status: N0-N9 built on branch `nova-loop-impl`, behind `nova_loop` (default off). Verified live on
+bare-metal and in Docker on the potato — see §14. N10 (the flip) is deliberately not done; it needs
+a human go-ahead.**
 
 This is the Polaris half of Nova's M8 adoption. The upstream contract is
 [AutumnsGrove/nova#22](https://github.com/AutumnsGrove/nova/issues/22) (`docs/INTEGRATION.md`,
@@ -590,7 +590,34 @@ With these, the parity harness compares request bodies with only `stream_options
   body survive the Nova path.
 - Hot-flipping `nova_loop` in `config.yaml` switched loops on the next request with no restart, both ways.
 
+### Verified live in Docker (2026-10-27, potato, arm64 image built from this branch, #185)
+
+A throwaway stack (own container name, port 8898, own volume, own `config.yaml` copy) alongside the
+real deployment, which stayed up and untouched throughout:
+
+- Container starts healthy and reports `deployment: docker`; the image resolves Nova v0.2.0 from the
+  public module proxy at build time with no `GOPRIVATE`/`replace` and no sibling checkout.
+- `nova_loop: true` in the mounted config put a real turn on the Nova loop — confirmed from the wire
+  capture, not inferred: the outbound request carried `stream_options` and no `session_id`, and no
+  other field differed from the bespoke body.
+- A **real OpenRouter turn** through the container on `deepseek` answered correctly (1 call, ~15.7K
+  prompt tokens), and a follow-up on the same thread read **15,616 of 15,732 prompt tokens (99.3%)
+  from cache** — $0.0049 → $0.0002. Replayed history is byte-stable under Nova inside the container,
+  which is the whole economical point of the switch.
+- Hot-flip rollback works in Docker: editing `nova_loop` true → false → true took effect on the next
+  request each time with the container's `StartedAt` unchanged (no restart).
+
+**One gotcha found doing that, worth knowing before relying on the flip as the rollback.**
+`docker-compose.yml` bind-mounts `compose/polaris/config.yaml` as a single *file*, so the container
+is pinned to the inode it resolved at start. An edit that **replaces** the file — `sed -i`, `mv`, a
+`git checkout`, most GUI editors — leaves the container reading the stale copy forever, silently:
+flipping the flag that way did nothing until the container was recreated. Truly in-place writes
+(vim/nano's normal save, shell `>` redirection) are picked up immediately. This affects every
+hot-reloaded config field, not just `nova_loop`, and is now noted in `SETUP.md`. The durable fix is
+to mount the config *directory* rather than the file; until then, roll back with an in-place edit or
+`docker compose up -d --force-recreate`.
+
 ### Not yet verified
 
-A real 429 (cannot be provoked on demand), the Docker deployment on the potato, and the SvelteKit
-frontend driven by a Nova-loop turn. Do those before N10.
+A real 429 (cannot be provoked on demand) and the SvelteKit frontend driven by a Nova-loop turn. Do
+those before N10.
