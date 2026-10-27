@@ -65,7 +65,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	agent.SetNovaLoop(cfg.NovaLoop)
+	agent.SetNovaLoop(cfg.NovaLoopEnabled())
 
 	if err := logger.Init(cfg.Logging.Dir); err != nil {
 		return fmt.Errorf("initializing logger: %w", err)

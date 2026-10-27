@@ -2,9 +2,9 @@
 
 **Added 2026-10-26 on branch `nova-loop`.**
 
-**Status: N0-N9 built on branch `nova-loop-impl`, behind `nova_loop` (default off). Verified live on
-bare-metal and in Docker on the potato — see §14. N10 (the flip) is deliberately not done; it needs
-a human go-ahead.**
+**Status: N0-N10 built on branch `nova-loop-impl`. Nova is the default agent loop; `nova_loop:
+false` / `POLARIS_NOVA_LOOP=0` is the kill switch kept for one release (#188 deletes the old loop).
+Verified live on bare-metal, in Docker on the potato, and in a browser — see §14.**
 
 This is the Polaris half of Nova's M8 adoption. The upstream contract is
 [AutumnsGrove/nova#22](https://github.com/AutumnsGrove/nova/issues/22) (`docs/INTEGRATION.md`,
@@ -72,8 +72,9 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 ```
 
 - `runBespoke` is today's body, unchanged, so the branch is never a half-migrated loop.
-- `novaLoopEnabled` reads `cfg.NovaLoop` (new, default false) and `POLARIS_NOVA_LOOP=1` for a dev
-  override. It applies to all seven callers at once; the first end-to-end test drives
+- `novaLoopEnabled` reads `cfg.NovaLoopEnabled()` (default **true** since N10) and
+  `POLARIS_NOVA_LOOP`, which overrides it either way — `0` is the environment's kill switch. It
+  applies to all seven callers at once; the first end-to-end test drives
   `gateway/turn_agent.go` only.
 - `runWithNova` still returns Polaris's `*agent.Result`; Nova's `agent.Result` is mapped into it,
   so `gateway/` never learns which loop ran.
@@ -376,12 +377,20 @@ does not change.
 
 ### N10 — Flip
 
-**Behaviour.** Default on, delete `runBespoke`, delete the dead helpers, keep the flag as a
-kill switch for one release.
+**Behaviour.** Default on, keep the flag as a kill switch for one release. *Deleting* `runBespoke`
+and the dead helpers moved to #188 — one release of the kill switch has to ship first, and that is
+what the issue asks for.
 
 **Cases.** The whole suite passes with the flag off and on; a golden replay of every shape (plain,
 tools, nudges, pseudo, early exit, images, research, wrap-up) is identical; a benchmark run matches
 within noise on cost and turn count.
+
+**Done (2026-10-27).** `config.Config.NovaLoop` is now a `*bool` read through `NovaLoopEnabled()`, so
+an absent key means **on** while `nova_loop: false` still parses as off — a plain `bool` cannot tell
+those apart, and getting it wrong either way is silent. `POLARIS_NOVA_LOOP` became a real override in
+both directions rather than an OR, which is what makes `POLARIS_NOVA_LOOP=0` usable as a kill switch
+from the environment. CI's second `go test ./...` run now forces the *bespoke* loop instead of Nova's,
+so the fallback keeps being exercised until #188 removes it.
 
 ## 7. Parity harness
 
@@ -605,6 +614,29 @@ With these, the parity harness compares request bodies with only `stream_options
   `pulsar/daily`/`comet` latest-edition fetches on an empty database).
 - `POLARIS_NOVA_LOOP=1 go test -race ./gateway ./agent ./tools ./llm` — green. CI only runs the
   non-race suite, so this is the first full race run of the gateway package with the flag on.
+
+### N10 flip (2026-10-27)
+
+`config.Config.NovaLoop` is a `*bool` read through `NovaLoopEnabled()`, so an absent key means **on**
+and `nova_loop: false` still parses as off (a plain `bool` cannot tell those apart, and guessing wrong
+in either direction is silent). `POLARIS_NOVA_LOOP` is now a real override both ways — `0` is the
+environment's kill switch — where it used to be an OR that could only force the loop on. CI's second
+`go test ./...` run forces the *bespoke* loop, so the fallback keeps being exercised until #188
+deletes it.
+
+Benchmark, `simpleqa`, `--n 6 --seed 42`, `deepseek`, run once per loop:
+
+| | correct | assistant turns | Brave calls | subject cost | total cost |
+|---|---|---|---|---|---|
+| bespoke | 6/6 | 2,2,2,3,2,2 (13) | 6 | $0.0171 | $0.0187 |
+| Nova | 6/6 | 2,2,2,3,2,3 (14) | 5 | $0.0073 | $0.0083 |
+
+Turn counts match on four of six rows and differ by one on the rest, which is what a six-question
+sample of a model choosing its own tool paths looks like — the loop cannot change usage *accounting*
+for the same turn (the parity harness asserts prompt/completion/cache/cost equality per scripted
+turn), and the cost gap here tracks the extra/fewer Brave reads rather than anything per-call. A
+bigger sample is what would tighten it; this is enough to say the flip does not cost more or answer
+worse.
 
 ### Verified live in Docker (2026-10-27, potato, arm64 image built from this branch, #185)
 

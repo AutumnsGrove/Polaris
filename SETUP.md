@@ -132,7 +132,8 @@ settings panel:
   provider for consistent prompt-cache pricing), SearXNG's URL, logging, voice model choices.
   Meant to be hand-edited. Most fields need a restart (the OpenRouter/SearXNG clients are built at
   startup); the handful that are re-read on every request — `max_agent_turns`,
-  `context_window_tokens`, `nova_loop` — apply to the next turn with no restart. Its whole
+  `context_window_tokens`, `nova_loop` — apply to the next turn with no restart. `nova_loop` is on
+  by default; set it to `false` to fall back to the built-in agent loop. Its whole
   directory is bind-mounted into the container rather than the single file, so replacing the file
   (`sed -i`, a GUI editor, `git checkout`) is picked up too — that used to silently leave the
   container reading its start-up copy until it was recreated.

@@ -39,10 +39,11 @@ latest image from GHCR and hand off to a host-side watcher (`gateway/docker_upda
 ### The agent loop and Nova
 
 `agent.Run` has two implementations behind one signature: Polaris's own loop (`agent/driver.go`) and
-one built on [Nova](https://github.com/AutumnsGrove/nova) (`agent/nova_*.go`). `nova_loop: true` in
-`config.yaml` (hot-reloaded) or `POLARIS_NOVA_LOOP=1` selects Nova; it is off by default. Run
-`POLARIS_NOVA_LOOP=1 go test ./...` to exercise it — CI does both. The design, the parity harness
-(`agent/nova_parity_test.go`) and the known differences are in `docs/plans/nova-loop.md`.
+one built on [Nova](https://github.com/AutumnsGrove/nova) (`agent/nova_*.go`). **Nova is the
+default**; `nova_loop: false` in `config.yaml` (hot-reloaded) or `POLARIS_NOVA_LOOP=0` is the kill
+switch kept for one release. Run `POLARIS_NOVA_LOOP=0 go test ./...` to exercise the bespoke loop —
+CI does both. The design, the parity harness (`agent/nova_parity_test.go`) and the known differences
+are in `docs/plans/nova-loop.md`.
 
 `go.mod` pins Nova to a **tagged release** (`vX.Y.Z`), never a commit pseudo-version and never a
 committed `replace` — `CLAUDE.md`'s "Bumping Nova" section has the procedure. To work on both repos

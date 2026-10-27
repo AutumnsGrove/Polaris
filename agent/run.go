@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"os"
+	"strings"
 	"sync/atomic"
 
 	"polaris/llm"
@@ -11,16 +12,22 @@ import (
 
 // novaLoop is the process-wide switch between the bespoke loop and the Nova
 // one (docs/plans/nova-loop.md §4). It is set once at startup from
-// config.Config.NovaLoop, never mid-turn: Run reads it exactly once per call.
+// config.Config.NovaLoopEnabled and on every config reload, never mid-turn:
+// Run reads it exactly once per call.
 var novaLoop atomic.Bool
 
 // SetNovaLoop selects the Nova-backed loop for every subsequent Run.
 func SetNovaLoop(on bool) { novaLoop.Store(on) }
 
-// novaLoopEnabled is the config flag OR the POLARIS_NOVA_LOOP=1 dev override,
-// so a developer can flip a running checkout without editing config.yaml.
+// novaLoopEnabled is the config value, with POLARIS_NOVA_LOOP as a full
+// override in both directions: "1"/"true" forces the Nova loop on for a
+// checkout that has it off, "0"/"false" forces the bespoke loop and is the
+// environment's kill switch (docs/plans/nova-loop.md §6 N10).
 func novaLoopEnabled() bool {
-	return novaLoop.Load() || os.Getenv("POLARIS_NOVA_LOOP") == "1"
+	if v, ok := os.LookupEnv("POLARIS_NOVA_LOOP"); ok {
+		return v == "1" || strings.EqualFold(v, "true")
+	}
+	return novaLoop.Load()
 }
 
 // Run executes one turn of the agent loop: given prior conversation history

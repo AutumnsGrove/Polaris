@@ -682,9 +682,9 @@ func (s *Server) liveConfig() *config.Config {
 		s.cfg = fresh
 		s.cfgMu.Unlock()
 		// Which agent loop runs is a hot-reloadable config value (see
-		// config.Config.NovaLoop); agent.Run reads it once per call, so a turn
-		// already in flight keeps the loop it started on.
-		agent.SetNovaLoop(fresh.NovaLoop)
+		// config.Config.NovaLoopEnabled); agent.Run reads it once per call, so a
+		// turn already in flight keeps the loop it started on.
+		agent.SetNovaLoop(fresh.NovaLoopEnabled())
 	}
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
