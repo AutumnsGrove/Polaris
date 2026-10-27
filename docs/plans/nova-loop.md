@@ -590,6 +590,22 @@ With these, the parity harness compares request bodies with only `stream_options
   body survive the Nova path.
 - Hot-flipping `nova_loop` in `config.yaml` switched loops on the next request with no restart, both ways.
 
+### Verified live: retries, and the frontend (2026-10-27)
+
+- **A 429 storm.** `dev/fakeopenrouter` can now script a provider failure (`{"status":429}`, see
+  `queuedResponse.Status` — nothing else could produce one on demand, which is why this was listed as
+  unverifiable). Two 429s then an answer: both loops made three attempts, took 6.0s (the 2s/4s
+  backoff), and returned the same answer. Three 429s: both loops made three attempts and returned
+  byte-identical user-facing text (the friendly "temporarily overloaded and rate-limited … even after
+  retrying" message from `llm.APIError`). So the retry policy, the delay sequence and the error
+  translation all match.
+- **A real browser turn (#186).** Playwright against a real `polaris run` serving the built SvelteKit
+  frontend, `nova_loop: true`, a scripted calculator call: the question, the tool card, the tool
+  result and the answer all rendered, with no console errors (the only 404s were the sidebar's
+  `pulsar/daily`/`comet` latest-edition fetches on an empty database).
+- `POLARIS_NOVA_LOOP=1 go test -race ./gateway ./agent ./tools ./llm` — green. CI only runs the
+  non-race suite, so this is the first full race run of the gateway package with the flag on.
+
 ### Verified live in Docker (2026-10-27, potato, arm64 image built from this branch, #185)
 
 A throwaway stack (own container name, port 8898, own volume, own `config.yaml` copy) alongside the
@@ -619,5 +635,6 @@ to mount the config *directory* rather than the file; until then, roll back with
 
 ### Not yet verified
 
-A real 429 (cannot be provoked on demand) and the SvelteKit frontend driven by a Nova-loop turn. Do
-those before N10.
+Nothing that blocks the flip. A real 429 *from OpenRouter itself* is still unprovoked (the scripted
+one above covers the same code path), and #188's deletion of the bespoke loop should wait for a soak
+on the flag.
