@@ -1,0 +1,14 @@
+# Nova is the one dependency Polaris tracks closely: the agent loop runs on it
+# (docs/plans/nova-loop.md). Dependabot opens a PR when Nova tags a release, and
+# CI (including the second run with POLARIS_NOVA_LOOP=1) decides whether it is
+# safe. Scoped to Nova on purpose; other Go modules are bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-name: "github.com/AutumnsGrove/nova"
+    commit-message:
+      prefix: "deps"
