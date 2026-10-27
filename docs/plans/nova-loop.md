@@ -291,7 +291,7 @@ turn continues; the `call_id` on each tool event equals the assistant message's 
 how `code_exec`'s serialization is expressed — no per-tool special case in the adapter. Mark
 tools parallel/barrier to match today's behaviour exactly: Polaris runs everything concurrently
 except `code_exec`. The unknown-tool text differs by design (`error: unknown tool x` today,
-`unknown tool "x"; known tools: ...` in Nova); it is model-facing only, so it is recorded as an
+`unknown tool "x"; known tools: ...` in Nova); it is model-facing, so it is recorded as an
 accepted difference rather than faked in the wrapper.
 
 ### N4 — Live filtering and pseudo tool calls
@@ -399,6 +399,20 @@ Two layers, both using `llm/llmtest.MockClient` so nothing touches the network:
 
 The harness is the acceptance gate for every workstream: a workstream may not merge with only
 behavioural tests.
+
+**Two things the harness must pin, not sample.** A batch of parallel tools runs concurrently in
+both loops, so anything that depends on *completion* order has to be gated in the script or the
+test flakes:
+
+- The `tool_call`/`tool_result` events of two calls interleave per scheduler, not per contract.
+- `ctx.AddPendingImageMessage` is a queue, flushed in completion order, so two tools each queueing
+  an image put them on the wire in whichever order they finished.
+
+`TestNovaParity_ImagesFollowTheWholeToolBatch` gates the second tool on the first one's completion
+(`parityCase.beforeRun` re-arms the gate for each loop), which keeps every comparison byte-exact.
+Without the gate it failed about one run in twelve, on the wire and in the transcript. The underlying
+nondeterminism is Polaris's, not Nova's — the bespoke loop flushes the same queue the same way —
+so it is pinned in the test rather than fixed in the adapter.
 
 ## 8. Order
 
@@ -532,7 +546,18 @@ available if its depth/concurrency caps are wanted later; nothing needs it for p
 ### Accepted differences
 
 - `stream_options: {"include_usage": true}` is sent by Nova only (§5.1).
-- Unknown/refused tool text and the panic text differ (model-facing only).
+- Unknown/refused tool text and the panic text differ. Refusing a tool is not only model-facing: the
+  bespoke loop's `tools.Dispatch` emits a `tool_call`/`tool_result` pair for a name it does not
+  know, and each tool emits its own pair for a bad-argument call, while Nova refuses (or rejects the
+  arguments) before the handler runs and the adapter drops Nova's own tool events — so that call
+  gets no card in the UI, live or after reload. A model calling a tool the user just disabled shows
+  nothing instead of an error card. Confirmed live on `/api/ask` (where `ask_user_question` is
+  gated off, so the model cannot legitimately call it): bespoke ended the turn with the question as
+  its answer, Nova answered `unknown tool "ask_user_question"` and carried on. Both are arguably
+  better than the old behaviour; the missing card is the one thing to look at if a turn ever seems
+  to skip a step. Giving the wrapper a `ToolResult` hook that emits the pair for a refused call is
+  the fix if it matters — deliberately not done here, since it would put the wrapper back in the
+  business of deciding which calls to draw.
 - A 3-minute timeout is now an error; `llm.Client` turned it into a silent empty response.
 - Nova also retries 5xx and network failures (twice, 2s/4s); `llm.Client` retried only 429.
 - A text-only model never receives image parts (Nova drops them); the bespoke loop would send them and

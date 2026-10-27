@@ -123,11 +123,22 @@ type parityCase struct {
 	model   string
 	routing *llm.ProviderRouting
 	reason  *llm.ReasoningParams
+	// sessionID mirrors the WithSessionID every real chat turn sets
+	// (gateway/turn_thread.go), so the adapter's documented drop of it is
+	// exercised rather than assumed.
+	sessionID string
+	// beforeRun, when set, runs immediately before each loop executes the
+	// script. A script whose tools need per-run state (a completion gate, say)
+	// re-arms it here, because one parityCase runs twice — once per loop.
+	beforeRun func()
 }
 
 // run executes the case through one loop against a fresh server.
 func (c parityCase) run(t *testing.T, nova bool) loopRecord {
 	t.Helper()
+	if c.beforeRun != nil {
+		c.beforeRun()
+	}
 	fr := &fakeRouter{script: c.script, status: c.status}
 	srv := fr.serve(t)
 	model := c.model
@@ -140,6 +151,9 @@ func (c parityCase) run(t *testing.T, nova bool) loopRecord {
 	}
 	if c.reason != nil {
 		client = client.WithReasoning(c.reason)
+	}
+	if c.sessionID != "" {
+		client = client.WithSessionID(c.sessionID)
 	}
 	rec := &recordingEmit{}
 	ctx := &tools.Context{LLM: client, Emit: rec.emit, MaxTurns: 6}
@@ -175,8 +189,15 @@ func (c parityCase) run(t *testing.T, nova bool) loopRecord {
 func normalizeBody(m map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range m {
-		if k == "stream_options" {
+		switch k {
+		case "stream_options":
 			continue // Nova asks for usage in the stream; Polaris reads it unprompted.
+		case "session_id":
+			// Dropped by the adapter in v1 (plan §5.1): OpenRouter documents it
+			// as a no-op while provider.order is set, which every Polaris caller
+			// does. TestNovaParity_PlainTurn asserts the drop itself, so this
+			// skip cannot hide the field vanishing from both loops.
+			continue
 		}
 		out[k] = v
 	}
@@ -368,11 +389,21 @@ func quietTool(t *testing.T, name string) {
 // --- N1: wire parity -------------------------------------------------------
 
 func TestNovaParity_PlainTurn(t *testing.T) {
-	c := parityCase{script: []string{answerBody("Hello there.", 0.0002)}}
+	c := parityCase{script: []string{answerBody("Hello there.", 0.0002)}, sessionID: "thread-parity"}
 	bespoke, nova := assertParity(t, c)
 	diffEvents(t, eventSigs(bespoke.events), eventSigs(nova.events))
 	if nova.result.Answer != "Hello there." {
 		t.Errorf("Answer = %q", nova.result.Answer)
+	}
+	// The one request difference that is a deliberate omission rather than an
+	// addition: the bespoke client sends OpenRouter's session_id, the adapter
+	// drops it (plan §5.1). Pinned here so "the field went missing from both
+	// loops" still fails, which normalizeBody alone would hide.
+	if got := bespoke.bodies[0]["session_id"]; got != "thread-parity" {
+		t.Errorf("bespoke session_id = %v, want thread-parity", got)
+	}
+	if got, ok := nova.bodies[0]["session_id"]; ok {
+		t.Errorf("nova sent session_id = %v; the adapter drops it in v1", got)
 	}
 }
 
@@ -422,7 +453,7 @@ func TestNovaParity_ParallelBatchKeepsCallOrder(t *testing.T) {
 	both := make(chan struct{})
 	for _, name := range []string{"parity_slow", "parity_fast"} {
 		name := name
-		tools.Register(name, func(args string, ctx *tools.Context, callID string) string {
+		stubTool(t, name, func(args string, ctx *tools.Context, callID string) string {
 			mu.Lock()
 			started++
 			if started%2 == 0 {
@@ -435,7 +466,6 @@ func TestNovaParity_ParallelBatchKeepsCallOrder(t *testing.T) {
 			ctx.Emit("tool_call", map[string]interface{}{"tool": name, "call_id": callID})
 			return name + " done"
 		})
-		defer delete(map[string]bool{}, name)
 	}
 	run := func(nova bool) loopRecord {
 		mu.Lock()
@@ -638,7 +668,19 @@ func asAPIError(err error, target **llm.APIError) bool {
 const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAHwFSsQAAAABJRU5ErkJggg=="
 
 func seeTool(t *testing.T, name string, n int) {
+	seeToolOrdered(t, name, n, nil, nil)
+}
+
+// seeToolOrdered is seeTool with an optional completion gate: a non-nil wait
+// blocks the call until it returns, and a non-nil done is called once this
+// call's events and queued images are in. Only a test with two image-queuing
+// tools in one batch needs it — see
+// TestNovaParity_ImagesFollowTheWholeToolBatch.
+func seeToolOrdered(t *testing.T, name string, n int, wait, done func()) {
 	stubTool(t, name, func(args string, ctx *tools.Context, callID string) string {
+		if wait != nil {
+			wait()
+		}
 		ctx.Emit("tool_call", map[string]interface{}{"tool": name, "call_id": callID})
 		for i := 0; i < n; i++ {
 			ctx.AddPendingImageMessage(llm.ChatMessage{
@@ -648,19 +690,47 @@ func seeTool(t *testing.T, name string, n int) {
 			})
 		}
 		ctx.Emit("tool_result", map[string]interface{}{"tool": name, "result": "queued", "call_id": callID})
+		if done != nil {
+			done()
+		}
 		return "queued"
 	})
 }
 
 func TestNovaParity_ImagesFollowTheWholeToolBatch(t *testing.T) {
-	seeTool(t, "parity_see_a", 1)
-	seeTool(t, "parity_see_b", 1)
+	// The flush appends queued image messages in tool *completion* order in both
+	// loops, so with two tools each queueing one image the scheduler decided which
+	// caption sat in which message — and the bespoke run and the Nova run then
+	// disagreed on the wire (and in the transcript) about one run in twelve. The gate
+	// pins parity_see_a to finish first so the comparison below stays a real
+	// byte-for-byte one; the calls are still dispatched as one concurrent batch,
+	// which TestNovaParity_ParallelBatchKeepsCallOrder is what proves.
+	var mu sync.Mutex
+	var aDone chan struct{}
+	seeToolOrdered(t, "parity_see_a", 1, nil, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		close(aDone)
+	})
+	seeToolOrdered(t, "parity_see_b", 1, func() {
+		mu.Lock()
+		done := aDone
+		mu.Unlock()
+		<-done
+	}, nil)
 	c := parityCase{
 		script: []string{
 			toolBody(0.0003, [3]string{"call_a", "parity_see_a", `{}`}, [3]string{"call_b", "parity_see_b", `{}`}),
 			answerBody("I see two images.", 0.0002),
 		},
 		setup: func(ctx *tools.Context) { ctx.Multimodal = true },
+		// Each loop gets its own gate: a channel left closed by the previous run
+		// would let parity_see_b start before parity_see_a and put the race back.
+		beforeRun: func() {
+			mu.Lock()
+			defer mu.Unlock()
+			aDone = make(chan struct{})
+		},
 	}
 	bespoke, nova := assertParity(t, c)
 	diffEvents(t, eventSigs(bespoke.events), eventSigs(nova.events))
