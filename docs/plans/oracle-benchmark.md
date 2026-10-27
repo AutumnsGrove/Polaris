@@ -627,5 +627,7 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   `inception/mercury-decide` is the same build as the free tier (already 89.0), so it is not worth re-running.
   `upstage/solar-decide` was re-checked on the full payload: 8 of 8 ok at 10.0 to 12.1s (median 10.7s), so still
   far past the 2.5s timeout and the bench's 5s budget. Skipped for good; the roster is complete.
+- `liquid/d1.1` (created 2026-10-27, successor to `liquid/d1`, same System One endpoint and price) was run the
+  same day: 79.3, 421ms p50, 100% under 2.5s, $0.075 per 1,000 turns. A tie with d1 (78.5) and well below d1-ultra.
 - Deliberately not run: `~perplexity/pplx-decider-latest`, an alias for a Perplexity model already benchmarked
   by its versioned id (an alias moving would make a result uninterpretable).
