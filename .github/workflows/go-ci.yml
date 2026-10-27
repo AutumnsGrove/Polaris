@@ -56,3 +56,14 @@ jobs:
 
       - name: go test
         run: go test ./...
+
+      # The whole suite again on the *other* agent loop. Nova is the default
+      # (N10, docs/plans/nova-loop.md), so the plain run above covers it; this
+      # one forces the bespoke loop via the kill switch, because that loop is
+      # still shipped as the fallback for one release (deleted in #188) and must
+      # not rot while it waits. Flip this to POLARIS_NOVA_LOOP=1 and drop it when
+      # #188 lands.
+      - name: go test (bespoke loop)
+        env:
+          POLARIS_NOVA_LOOP: "0"
+        run: go test ./...

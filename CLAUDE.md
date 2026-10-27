@@ -344,3 +344,25 @@ inconsistent with the rest of the file.
   `--z-*` for stacking, `--radius-*` for corner rounding, `--space-*` for padding/margin/gap —
   instead of a new raw px literal. Pick the nearest existing step rather than inventing a value;
   only add a new token when nothing on the scale actually fits.
+
+## Bumping Nova
+
+Nova (`github.com/AutumnsGrove/nova`) is the library the agent loop runs on (`docs/plans/nova-loop.md`). Polaris
+requires a **tagged** release in `go.mod`, never a commit pseudo-version and never a committed `replace`. When
+the user asks to bump, update, or pick up a Nova version:
+
+1. Read Nova's `CHANGELOG.md` for every version between the pinned one and the target, especially the
+   **upgrade notes** (Nova is `v0.x`, so a minor bump may break callers) and anything touching `agent`, `provider`,
+   `tool` or `message`, the packages `agent/nova_*.go` use.
+2. `go get github.com/AutumnsGrove/nova@vX.Y.Z && go mod tidy` (set `GOPRIVATE`/`GONOSUMDB` for
+   `github.com/AutumnsGrove/*` if the sum database has not seen the tag yet). Confirm `go.mod` shows the tag.
+3. Run `go build ./... && go vet ./...`, then `go test ./...` **twice**: once as is (Nova, the default) and
+   once with `POLARIS_NOVA_LOOP=0` (the bespoke loop, still shipped as the kill switch until #188).
+   `agent/nova_parity_test.go` compares the new request bytes with the bespoke loop, so a
+   Nova wire change shows up there; fix the adapter, or normalize a difference only with a note in
+   `docs/plans/nova-loop.md`.
+4. Commit as `deps: bump nova to vX.Y.Z` and say what the upgrade notes required. Dependabot also opens these
+   PRs weekly; treat its PR the same way.
+5. If a fix is needed in Nova itself, file an issue there and fix it there first (Nova's own `AGENTS.md`
+   describes releasing a version). To try unreleased Nova locally, use an uncommitted `go.work`
+   (`go work init . ../nova`), never a `replace` in `go.mod`.

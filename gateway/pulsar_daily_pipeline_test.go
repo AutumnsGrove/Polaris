@@ -531,7 +531,7 @@ func TestHandleGenerateDailyNow(t *testing.T) {
 // prose replies with toolCallSSEBody replies across one fake model's
 // sequence of stage calls.
 func plainSSEBody(content string) string {
-	return fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n", content) +
-		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"cost\":0.0001}}\n" +
-		"data: [DONE]\n"
+	return fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", content) +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"cost\":0.0001}}\n\n" +
+		"data: [DONE]\n\n"
 }

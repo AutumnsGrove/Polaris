@@ -104,6 +104,7 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+	agent.SetNovaLoop(cfg.NovaLoopEnabled())
 	modelCfg := cfg.ModelByID(benchmarkModel)
 
 	falseVal := false

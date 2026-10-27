@@ -400,6 +400,15 @@ func applyCodeExecThemePlaceholder(prompt string, ctx *tools.Context) string {
 const deepResearchTurnMultiplier = 2
 const deepResearchCheckInMultiplier = 2
 
+// wrapUpInstruction/wrapUpFallback are the exact human-facing strings of the
+// forced wrap-up at the turn budget; both loops use them so the text cannot
+// drift between implementations.
+const (
+	wrapUpInstruction = "Wrap up now — give your best answer with what you've gathered so far. Do not call any more tools."
+	wrapUpFallback    = "I wasn't able to finish researching this in time to give a complete answer — " +
+		"try asking again, or narrow the question a bit."
+)
+
 // currentContextPreamble grounds the model in today's real date — without
 // this, a model has no way to know "today" beyond its training cutoff, and
 // will confidently answer with a stale date or search for news anchored to
@@ -534,7 +543,7 @@ type Result struct {
 	Transcript []llm.ChatMessage
 }
 
-// Run executes one turn of the agent loop: given prior conversation
+// runBespoke executes one turn of Polaris's own agent loop: given prior conversation
 // history plus a new user message, it streams progress (thinking/
 // tool_call/tool_result/token events) via ctx.Emit and returns once the
 // model has produced its final answer. ctx must have LLM and Emit set;
@@ -543,7 +552,7 @@ type Result struct {
 // reqCtx cancels the whole turn (the "stop" button) — a cancellation
 // isn't treated as an error, since the LLM client already turns it into a
 // graceful early finish with whatever content streamed so far.
-func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Result, error) {
+func runBespoke(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Result, error) {
 	client := ctx.LLM
 	ctx.Ctx = reqCtx
 	warmUpEmbedClient(ctx)
@@ -877,7 +886,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	emitNudge(ctx, "max_turns_wrapup", researchCalls, len(ctx.Citations))
 	messages = append(messages, llm.ChatMessage{
 		Role:    "user",
-		Content: "Wrap up now — give your best answer with what you've gathered so far. Do not call any more tools.",
+		Content: wrapUpInstruction,
 	})
 	wrapSniff := &streamSniffer{
 		emit:     func(s string) { ctx.Emit("token", map[string]interface{}{"content": s}) },
@@ -922,8 +931,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		// replacement message below starts clean instead of concatenating
 		// onto the abandoned attempt (see emitCommentary's doc comment).
 		emitCommentary(ctx, resp.Content)
-		answerText = "I wasn't able to finish researching this in time to give a complete answer — " +
-			"try asking again, or narrow the question a bit."
+		answerText = wrapUpFallback
 		ctx.Emit("token", map[string]interface{}{"content": answerText})
 	}
 	// Deliberately no empty-answerText fallback here (unlike the main

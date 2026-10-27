@@ -161,6 +161,14 @@ type queuedResponse struct {
 	// against a live server. Script a growing value across a tool turn's
 	// responses to see the last-call-vs-sum distinction.
 	PromptTokens int `json:"prompt_tokens,omitempty"`
+	// Status, when non-zero, makes this scripted response a bare HTTP error with
+	// that code and OpenRouter's `{"error":{"message":...}}` envelope instead of
+	// a stream. Provider failures were the one thing this double could not
+	// script, which left Polaris's retry path (429 at 2s then 4s, see
+	// llm/client.go's max429Retries) only ever exercised by unit fakes: queue
+	// `{"status":429}` twice and then a normal response to watch a live server
+	// retry and recover, or three times to see the user-facing rate-limit text.
+	Status int `json:"status,omitempty"`
 }
 
 // defaultReply is what every call gets when the queue is empty — lets a
@@ -172,6 +180,9 @@ type queuedResponse struct {
 // script driving a live browser can easily trigger more turns than it
 // explicitly scripted, e.g. title/suggestion generation calls).
 const defaultReply = "This is the fake OpenRouter server's default reply — queue a scripted response via POST /_control/queue for anything more specific."
+
+// scriptedErrorMessage is the message inside a queuedResponse.Status error body.
+const scriptedErrorMessage = "scripted provider failure from dev/fakeopenrouter"
 
 // decisionsAnswerScript is one scripted question's answer — see
 // decisions.ChoiceAnswer. Probabilities defaults to {Choice: 1.0} when omitted,
@@ -246,6 +257,15 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := s.takeResponse(string(body))
+
+	// A scripted failure answers as an error, never as a stream — see
+	// queuedResponse.Status.
+	if resp.Status != 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.Status)
+		fmt.Fprintf(w, `{"error":{"message":%q,"code":%d}}`, scriptedErrorMessage, resp.Status)
+		return
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	flusher, ok := w.(http.Flusher)

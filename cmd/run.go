@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"polaris/agent"
 	"polaris/backup"
 	"polaris/config"
 	"polaris/gateway"
@@ -64,6 +65,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	agent.SetNovaLoop(cfg.NovaLoopEnabled())
 
 	if err := logger.Init(cfg.Logging.Dir); err != nil {
 		return fmt.Errorf("initializing logger: %w", err)

@@ -439,3 +439,26 @@ func TestCompactionThreshold(t *testing.T) {
 		t.Errorf("per-model CompactionTokens = %d, want 80000", got)
 	}
 }
+
+func TestLoad_NovaLoopDefaultsOnAndParses(t *testing.T) {
+	load := func(extra string) *Config {
+		t.Helper()
+		cfg, err := Load(writeTestConfig(t, "openrouter:\n  api_key: \"sk-test\"\n"+extra), testRegistry)
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		return cfg
+	}
+	// N10 flipped the default: a config that never mentions the key runs on Nova.
+	if !load("").NovaLoopEnabled() {
+		t.Error("NovaLoop defaulted to off; N10 made Nova the default loop")
+	}
+	if !load("nova_loop: true\n").NovaLoopEnabled() {
+		t.Error("nova_loop: true did not parse")
+	}
+	// The kill switch: an explicit false has to survive, which is why the field
+	// is a pointer (a plain bool cannot tell "absent" from "false").
+	if load("nova_loop: false\n").NovaLoopEnabled() {
+		t.Error("nova_loop: false did not parse; the kill switch is broken")
+	}
+}

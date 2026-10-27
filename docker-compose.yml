@@ -94,7 +94,25 @@ services:
       # Hand-editable files, bind-mounted so host edits take effect
       # without a rebuild — see the Dockerfile's comment on why these
       # are copied into the image AND mounted here.
-      - ./compose/polaris/config.yaml:/data/config.yaml:ro
+      #
+      # The config is mounted as its *directory*, not as the single file it
+      # used to be. Docker resolves a file bind mount to the inode that existed
+      # at container start, so any edit that replaces the file rather than
+      # rewriting it — `sed -i`, `mv`, `git checkout`, most GUI editors — was
+      # invisible to the running container: it kept serving the old config until
+      # something recreated it. That bit on a real attempt to roll the Nova loop
+      # back with `sed -i` (docs/plans/nova-loop.md §14), and it applies to every
+      # field gateway/server.go's liveConfig re-reads per request, not just
+      # `nova_loop`. Mounting the directory makes the path resolve per read, so
+      # an in-place write and a replace both land. That moves the container's
+      # config path to /data/config/config.yaml (Dockerfile CMD), so the image
+      # and this file have to land together — `polaris update` does exactly that
+      # (compose/watcher/update.sh syncs the checkout before recreating); a bare
+      # `docker compose pull` against an old checkout would instead crash-loop
+      # on a missing config. The three below are still
+      # single-file mounts: edit those in place (vim/nano's normal save) or
+      # recreate the container, or the same trap applies.
+      - ./compose/polaris:/data/config:ro
       - ./prompt.md:/app/prompt.md:ro
       - ./prompts.yaml:/app/prompts.yaml:ro
       - ./blocked_sources.txt:/app/blocked_sources.txt:ro

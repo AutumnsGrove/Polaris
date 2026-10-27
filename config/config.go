@@ -338,6 +338,24 @@ type Config struct {
 	// routinely use 5-8 calls on a real multi-part research question.
 	MaxAgentTurns int `yaml:"max_agent_turns"`
 
+	// NovaLoop runs the agent loop on Nova (github.com/AutumnsGrove/nova)
+	// instead of Polaris's own bespoke loop — one switch for every agent.Run
+	// caller (chat turns, Pulsar, Pulsar Daily, Comet, Weaver, the wizard,
+	// the benchmark). Default **true** since N10; the bespoke loop still exists
+	// and `nova_loop: false` (or POLARIS_NOVA_LOOP=0) is the kill switch kept for
+	// one release — see docs/plans/nova-loop.md §6's N10 and issue #188 for the
+	// deletion.
+	//
+	// A pointer so "absent" and "explicitly false" are distinguishable: the zero
+	// value of a plain bool would silently mean "off" for every config file that
+	// never mentions the key, which is the opposite of the default. Read through
+	// NovaLoopEnabled, never directly.
+	//
+	// Read fresh on every request like max_agent_turns, so flipping it in
+	// config.yaml takes effect on the next turn with no restart — which is also
+	// the rollback (edit the file in place in Docker; see SETUP.md).
+	NovaLoop *bool `yaml:"nova_loop"`
+
 	// Oracle is Oracle mode's tuning — thresholds and focus-mode rules, not
 	// prompt text. See oracle.go; Load fills every gap from DefaultOracle.
 	Oracle OracleConfig `yaml:"oracle"`
@@ -402,6 +420,14 @@ type ModelConfig struct {
 	// the tier — ContextTokens is measured after a turn, and the next turn
 	// adds the user message plus every tool result in its agent loop.
 	CompactionTokens int `yaml:"compaction_tokens"`
+}
+
+// NovaLoopEnabled reports whether agent.Run should use the Nova loop. On
+// unless the config says otherwise: `nova_loop: false` is the kill switch (see
+// the field's own comment), and POLARIS_NOVA_LOOP overrides either way in
+// agent.novaLoopEnabled.
+func (c *Config) NovaLoopEnabled() bool {
+	return c.NovaLoop == nil || *c.NovaLoop
 }
 
 // CompactionThreshold is the context size (tokens) at which a thread on m

@@ -5,6 +5,8 @@
 package tools
 
 import (
+	"sort"
+
 	"polaris/llm"
 	"polaris/logger"
 )
@@ -19,6 +21,14 @@ func Register(name string, fn HandlerFunc) {
 	registry[name] = fn
 }
 
+// Registered returns the handler currently registered under name, so a test
+// that overrides a real handler can put it back instead of leaking its stub
+// into every test that runs after it in the same process.
+func Registered(name string) (HandlerFunc, bool) {
+	fn, ok := registry[name]
+	return fn, ok
+}
+
 func Dispatch(name, argsJSON string, ctx *Context, callID string) string {
 	fn, ok := registry[name]
 	if !ok {
@@ -29,6 +39,27 @@ func Dispatch(name, argsJSON string, ctx *Context, callID string) string {
 		return result
 	}
 	return fn(argsJSON, ctx, callID)
+}
+
+// UncatalogedHandlers lists handlers registered with Register that have no
+// catalog entry, sorted. They are never offered to a model (Defs only walks
+// catalogOrder), but they stay dispatchable — which is how a test probe tool or
+// a future internal-only tool hooks in without a catalog row. A *catalog* tool
+// that Defs withheld (disabled in settings, missing API key, wrong run kind) is
+// deliberately not in this list: the Nova loop refuses a call to it.
+func UncatalogedHandlers() []string {
+	inCatalog := make(map[string]bool, len(catalogOrder))
+	for _, n := range catalogOrder {
+		inCatalog[n] = true
+	}
+	var out []string
+	for name := range registry {
+		if !inCatalog[name] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // emitToolError reports a tool call that failed before doing any real work
