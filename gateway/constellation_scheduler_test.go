@@ -23,7 +23,7 @@ func TestRunConstellationTick_DisabledMakesNoChanges(t *testing.T) {
 	// defaults to 0) — never call UpdateConstellationConfig, this tests
 	// the true first-read default.
 
-	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate(), nil)
 
 	cfgRow, err := db.GetConstellationConfig()
 	if err != nil {
@@ -53,7 +53,7 @@ func TestRunConstellationTick_NothingEligible_StillRecordsLastChecked(t *testing
 		t.Fatalf("UpdateConstellationConfig: %v", err)
 	}
 
-	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate(), nil)
 
 	cfgRow, err := db.GetConstellationConfig()
 	if err != nil {
@@ -84,7 +84,7 @@ func TestRunConstellationTick_SkipsWhileBackfillInProgress(t *testing.T) {
 		t.Fatalf("SetConstellationBackfillStarted: %v", err)
 	}
 
-	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate(), nil)
 
 	cfgRow, err := db.GetConstellationConfig()
 	if err != nil {
@@ -105,7 +105,7 @@ func TestRunConstellationTick_SkipsWhileBackfillInProgress(t *testing.T) {
 	if err := db.ClearConstellationBackfillStarted(); err != nil {
 		t.Fatalf("ClearConstellationBackfillStarted: %v", err)
 	}
-	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate(), nil)
 	cfgRow, err = db.GetConstellationConfig()
 	if err != nil {
 		t.Fatalf("GetConstellationConfig (after clearing): %v", err)
@@ -128,7 +128,7 @@ func TestRunConstellationTick_StopsWhenGateRefuses(t *testing.T) {
 	}
 
 	gate := turnGate{tryStart: func() bool { return false }, finish: func() {}}
-	runConstellationTick(context.Background(), db, testConstellationConfig(), gate)
+	runConstellationTick(context.Background(), db, testConstellationConfig(), gate, nil)
 
 	run, err := db.LastShootingStarRun(threadID)
 	if err != nil {
@@ -162,7 +162,7 @@ func TestRunConstellationTick_SweepsStaleRuns(t *testing.T) {
 	shootingStarStaleAfter = 0
 	defer func() { shootingStarStaleAfter = oldStaleAfter }()
 
-	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate(), nil)
 
 	run, err := db.LastShootingStarRun(threadID)
 	if err != nil {

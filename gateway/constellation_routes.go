@@ -164,17 +164,18 @@ func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load() || s.cometGenerationRunning.Load() || embeddingBackfillRunning.Load()})
 }
 
-// handleSearchConstellationStars backs the Library's search box —
-// SearchLibraryStars, not SearchStars (Weaver's own internal lead, which
-// deliberately includes rejected stars — see its doc comment for why
-// that'd be wrong to surface here).
+// handleSearchConstellationStars backs the Library's search box — the
+// library-eligible star set, not SearchStars (Weaver's own internal lead,
+// which deliberately includes rejected stars — see its doc comment for why
+// that'd be wrong to surface here). Hybrid: keyword and semantic results
+// fused, falling back to keyword-only when no embedding service exists.
 func (s *Server) handleSearchConstellationStars(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
 		writeJSON(w, []store.Star{})
 		return
 	}
-	results, err := s.db.SearchLibraryStars(query, 30)
+	results, err := searchLibraryStarsHybrid(s.embeds, s.db, r.Context(), query, 30)
 	if err != nil {
 		log.Warn("searching constellation stars failed", "err", err, "query", query)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -812,7 +813,7 @@ func (s *Server) handleConstellationBackfill(w http.ResponseWriter, r *http.Requ
 	cfg := s.liveConfig()
 	client := WeaverClient(cfg, cfgRow.Model)
 	modelID := cfg.ModelByID(cfgRow.Model).ID
-	processed, err := BackfillConstellation(r.Context(), s.db, client, modelID, limit, s.shootingStarTurnGate())
+	processed, err := BackfillConstellation(r.Context(), s.db, client, modelID, limit, s.shootingStarTurnGate(), s.embeds)
 	if err == store.ErrBackfillAlreadyRunning {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return

@@ -528,3 +528,51 @@ Found while adding the sixth bucket, which is exactly the failure mode
 (confirmed by running it repeatedly in a clean `main` worktree). It's a concurrency-dependent
 Pulsar Daily test — the mock's scripted responses race Stage A's concurrent block calls — not an
 embeddings regression. Not fixed here.
+
+## Implementation notes (phase 2 — hybrid star retrieval, 2026-10-28)
+
+`stars` (the assistant's library tool), the Library's search box, and Weaver's `search_stars` are
+now hybrid. Same output shapes as before; only which rows come back changed.
+
+**One fusion helper, two surfaces.** `gateway/embedding_search.go` holds `fuseRRF` (RRF, k=60) and
+the two service methods. The semantic side runs against the in-memory cache and returns ids; the
+ids are then re-fetched through the *existing* eligibility queries (`store.StarsByIDs`,
+`store.LibraryStarsByIDs` mirroring `SearchStars` / `SearchLibraryStars`), so Weaver's surface still
+sees rejected stars and the Library's still can't. That keeps each surface's rule where it already
+lives instead of duplicating a status filter into the vector path.
+
+**Degradation is the default path, not an error path.** `searchStarsHybrid`/`searchLibraryStarsHybrid`
+take a possibly-nil service and call the plain FTS method when it's nil, and `embedService.embedQuery`
+returns nil (→ keyword-only) rather than an error when the provider is unreachable. A broken
+provider can therefore never make search worse than it was before this subsystem existed.
+
+**Query embeddings cost real money per call** (about $0.0000001 — negligible, but recorded), so
+`embedQuery` writes an `aux_usage` row per query. The ideal would be `ctx.AddCost` against the live
+turn; the seam these tools call through has no turn to bill, and both paths land in the same
+Embeddings bucket the settings panel shows, so this is a known, documented approximation rather
+than an oversight.
+
+### Live check on the real library (220 stars, $0.0005 to index)
+
+`gateway/embedding_search_livecheck_test.go` (build tag `livecheck`), run against a copy of the
+production database. The clearest result, verbatim:
+
+```
+Q: what do I like to drink in the morning
+  FTS (5): Loves when fiction describes its technology concretely | Biology curiosity: ...
+  HYB (5): Green tea over coffee: light, sweet, never bitter | ...
+```
+
+FTS5 returned five stars, none about anything she drinks. Fusion returned the actual green-tea star
+first. Same pattern for "places to eat near that jazz club" (fusion added "Jinya ramen is a
+favorite") and "music that sounds like longing" (fusion replaced three unrelated stars with the
+atmospheric-fiction and Wayfaring-stranger ones). One query where neither did well ("how does she
+keep her notes organized") — there may simply be no such star.
+
+### Weaver's context still gets no Embed client
+
+The plan said Weaver's tool context must stay Embed-free. It does: `tools.Context` gained no field.
+The query embedding happens inside the service, which Weaver reaches only through the `search`
+closure `weaverToolClosures` already took. Threading the service into
+`RunShootingStar`/`RunShootingStarRecovered`/`runConstellationTick`/`BackfillConstellation` as an
+explicit parameter (rather than a package-level hook) is the only signature change.

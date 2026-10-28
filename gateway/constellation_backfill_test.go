@@ -22,7 +22,7 @@ func TestBackfillConstellation_ProcessesEligibleThreadsUpToLimit(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "Noted."}},
 	}}
 
-	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 2, NoopTurnGate())
+	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 2, NoopTurnGate(), nil)
 	if err != nil {
 		t.Fatalf("BackfillConstellation: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestBackfillConstellation_ZeroLimitProcessesEverything(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "Noted."}},
 	}}
 
-	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, NoopTurnGate())
+	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, NoopTurnGate(), nil)
 	if err != nil {
 		t.Fatalf("BackfillConstellation: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestBackfillConstellation_StopsWhenGateRefuses(t *testing.T) {
 		finish: func() {},
 	}
 
-	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, gate)
+	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, gate, nil)
 	if err != nil {
 		t.Fatalf("BackfillConstellation: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestBackfillConstellation_SweepsStaleRunsBeforeBusyCheck(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: []llmtest.Response{
 		{Resp: &llm.ChatResponse{Content: "Noted."}},
 	}}
-	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, NoopTurnGate())
+	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, NoopTurnGate(), nil)
 	if err != nil {
 		t.Fatalf("BackfillConstellation: %v (a stale run should have been swept before the busy check, not blocked it)", err)
 	}

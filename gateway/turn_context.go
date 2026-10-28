@@ -185,7 +185,12 @@ func (t *turnRun) wirePersonalization() {
 		// SearchLibraryStars already applies, so a guessed/stale star_id
 		// can't surface something the person rejected or hid via the
 		// Library UI's Disable action.
-		t.agentCtx.StarsSearch = t.s.db.SearchLibraryStars
+		// Hybrid (keyword + semantic, fused) via the embedding service; with
+		// no service configured, searchLibraryStarsHybrid degrades to exactly
+		// the FTS-only call this used to be.
+		t.agentCtx.StarsSearch = func(query string, limit int) ([]store.Star, error) {
+			return searchLibraryStarsHybrid(t.s.embeds, t.s.db, t.agentCtx.Ctx, query, limit)
+		}
 		t.agentCtx.StarsRead = func(starID int64) (*store.Star, error) {
 			star, err := t.s.db.GetStar(starID)
 			if err != nil {
@@ -289,7 +294,7 @@ func (t *turnRun) wireWeaver() {
 		if err != nil {
 			categories = nil
 		}
-		search, read, create, update, link := weaverToolClosures(t.s.db, t.threadID)
+		search, read, create, update, link := weaverToolClosures(t.s.db, t.threadID, t.s.embeds, t.agentCtx.Ctx)
 		t.agentCtx.WeaverRun = true
 		t.agentCtx.WeaverInteractive = true
 		t.agentCtx.MaxTurns = weaverMaxTurns

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -30,7 +31,7 @@ func TestWeaverToolClosures_SeenStars_ConcurrentAccess(t *testing.T) {
 		ids = append(ids, id)
 	}
 
-	search, read, _, _, _ := weaverToolClosures(db, "thread-1")
+	search, read, _, _, _ := weaverToolClosures(db, "thread-2", nil, context.Background())
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {

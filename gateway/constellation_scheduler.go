@@ -41,7 +41,7 @@ var shootingStarStaleAfter = 30 * time.Minute
 // RunPulsarScheduler's doc comment for the same shutdown-drain shape.
 func (s *Server) RunConstellationScheduler(done <-chan struct{}) {
 	runOnce := func() {
-		runConstellationTick(context.Background(), s.db, s.liveConfig(), s.shootingStarTurnGate())
+		runConstellationTick(context.Background(), s.db, s.liveConfig(), s.shootingStarTurnGate(), s.embeds)
 	}
 
 	runOnce()
@@ -74,7 +74,7 @@ func WeaverClient(cfg *config.Config, modelID string) llm.ChatClient {
 // nothing is eligible this tick, this makes zero AI calls — a hard
 // requirement (see the plan doc's design principles, specifically the
 // her-go "dream sequence" failure mode this guards against).
-func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.Config, gate turnGate) {
+func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.Config, gate turnGate, embeds *embedService) {
 	// Ahead of the Enabled check below — a run can be orphaned (crash, OOM,
 	// SIGKILL) whether or not Constellation is still enabled by the time
 	// the next tick runs, and self-healing it costs nothing (a single
@@ -152,7 +152,7 @@ func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.C
 				log.Warn("constellation: server is restarting, stopping tick early", "threads_remaining", len(threadIDs))
 				break
 			}
-			err := RunShootingStarRecovered(reqCtx, db, client, threadID, modelID)
+			err := RunShootingStarRecovered(reqCtx, db, client, threadID, modelID, embeds)
 			gate.finish()
 			if err != nil {
 				log.Warn("constellation: shooting star failed", "thread_id", threadID, "err", err)

@@ -45,7 +45,7 @@ const weaverMaxTurns = 25
 // convention gateway/turn.go's own CreateThread call uses) — needed only
 // to label the run's own hidden thread (see below), not to build client,
 // which the caller already constructed from the same id.
-func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string) error {
+func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string, embeds *embedService) error {
 	// LastSuccessfulShootingStarRun, not LastShootingStarRun — see its own
 	// doc comment for the live-verified bug this avoids: basing the delta
 	// on a failed run's own last_message_id_seen made a retry with no new
@@ -126,7 +126,7 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return err
 	}())
 
-	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID)
+	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID, embeds)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		warnOnErr("finishing failed shooting star run", db.FinishShootingStarRun(runID, "", err.Error(), true))
@@ -175,14 +175,14 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 // unrecovered panic anywhere in Weaver's loop (agent.Run, any of the five
 // tool handlers) would otherwise take down the whole Polaris process
 // instead of just failing that one shooting star.
-func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string) (err error) {
+func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string, embeds *embedService) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Error("panic running shooting star", "thread_id", threadID, "panic", rec)
 			err = fmt.Errorf("shooting star: panic: %v", rec)
 		}
 	}()
-	return RunShootingStar(reqCtx, db, client, threadID, modelID)
+	return RunShootingStar(reqCtx, db, client, threadID, modelID, embeds)
 }
 
 // turnGate lets a shooting star register with the server's shutdown-drain
@@ -380,7 +380,7 @@ func warnOnErr(op string, err error) {
 // star_id this exact run has already surfaced via search_stars/read_star
 // (or just created itself), never one that appears in a tool call with no
 // prior lookup in this run at all.
-func weaverToolClosures(db *store.Store, threadID string) (
+func weaverToolClosures(db *store.Store, threadID string, embeds *embedService, ctx context.Context) (
 	search func(query string) ([]store.StarSearchResult, error),
 	read func(starID int64) (*store.Star, error),
 	create func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool, reasoning string) (int64, error),
@@ -415,7 +415,11 @@ func weaverToolClosures(db *store.Store, threadID string) (
 	}
 
 	search = func(query string) ([]store.StarSearchResult, error) {
-		results, err := db.SearchStars(query, 10)
+		// Hybrid: this is Weaver's dedup guard, and a false "nothing found"
+		// is exactly how duplicate stars get created (see
+		// store.SearchStars' doc comment). Keyword results stay first-class
+		// — fusion only reorders — so an exact-title hit still wins.
+		results, err := searchStarsHybrid(embeds, db, ctx, query, 10)
 		for _, r := range results {
 			markSeen(r.ID)
 		}
@@ -462,7 +466,7 @@ func weaverToolClosures(db *store.Store, threadID string) (
 	return
 }
 
-func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID, weaverThreadID, turnID string) *tools.Context {
+func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID, weaverThreadID, turnID string, embeds *embedService) *tools.Context {
 	categories, err := db.DistinctCategories()
 	if err != nil {
 		// Not fatal — the escape hatch just falls back to guessing blind,
@@ -478,7 +482,7 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 	personName := PersonNameFromStore(db)
 	personPronouns := PersonPronounsFromStore(db)
 
-	search, read, create, update, link := weaverToolClosures(db, threadID)
+	search, read, create, update, link := weaverToolClosures(db, threadID, embeds, reqCtx)
 
 	return &tools.Context{
 		Ctx:       reqCtx,
