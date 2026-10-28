@@ -90,6 +90,7 @@ func printStats(s *store.Stats) {
 	fmt.Printf("  daily:   $%.4f total, $%.4f (%s)\n", s.CostBySource.Daily.TotalCostUSD, s.CostBySource.Daily.PeriodCostUSD, period)
 	fmt.Printf("  constellation: $%.4f total, $%.4f (%s)\n", s.CostBySource.Constellation.TotalCostUSD, s.CostBySource.Constellation.PeriodCostUSD, period)
 	fmt.Printf("  comet:   $%.4f total, $%.4f (%s)\n", s.CostBySource.Comet.TotalCostUSD, s.CostBySource.Comet.PeriodCostUSD, period)
+	fmt.Printf("  embeddings: $%.4f total, $%.4f (%s)\n", s.CostBySource.Embeddings.TotalCostUSD, s.CostBySource.Embeddings.PeriodCostUSD, period)
 	fmt.Printf("threads: %d, turns: %d (%s)\n", s.ThreadCount, s.TurnCount, period)
 	fmt.Printf("avg turn duration: %.1fs\n", float64(s.AvgTurnDurationMs)/1000)
 	fmt.Printf("auto-compactions: %d (%s)\n", s.CompactionCount, period)

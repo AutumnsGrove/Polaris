@@ -290,6 +290,17 @@ func (s *Store) EmbeddingCoverage(kind, model string) (EmbeddingCoverage, error)
 	return cov, nil
 }
 
+// DeleteAllEmbeddings drops every stored vector — the reindex path's first
+// step, deliberately in one statement rather than a loop so there's no
+// half-cleared state if it fails.
+func (s *Store) DeleteAllEmbeddings() error {
+	if _, err := s.db.Exec(`DELETE FROM embeddings`); err != nil {
+		return fmt.Errorf("clearing embeddings: %w", err)
+	}
+	s.bumpEmbeddingsEpoch()
+	return nil
+}
+
 // CountEmbeddings returns the total number of stored rows for kind,
 // regardless of eligibility or model — the raw count. Coverage's Indexed
 // is the eligible-only number the settings panel shows; this exists for

@@ -25,16 +25,17 @@ export interface UsageStats {
 	period_days: number;
 	total_cost_usd: number;
 	period_cost_usd: number;
-	// cost_by_source splits both totals above five ways — see
+	// cost_by_source splits both totals above six ways — see
 	// store.Stats.CostBySource's doc comment. Daily (Pulsar Daily
-	// editions), constellation (Weaver runs + Refine/Edit calls), and comet
-	// (Approach classifications + the monthly trend synthesis) are all
-	// wholly separate cost paths that never touch an ordinary thread, but
-	// total_cost_usd/period_cost_usd above are still the real, complete sum
-	// across all five — every row here always adds back up to the headline
-	// figure exactly. polaris includes ghost-mode (incognito thread) turns'
-	// spend, folded in directly — a ghost thread is just an incognito
-	// regular chat, not a separate subsystem the way
+	// editions), constellation (Weaver runs + Refine/Edit calls), comet
+	// (Approach classifications + the monthly trend synthesis) and
+	// embeddings (semantic index builds/backfills, aux_usage kind
+	// 'embedding') are all wholly separate cost paths that never touch an
+	// ordinary thread, but total_cost_usd/period_cost_usd above are still
+	// the real, complete sum across all six — every row here always adds
+	// back up to the headline figure exactly. polaris includes ghost-mode
+	// (incognito thread) turns' spend, folded in directly — a ghost thread
+	// is just an incognito regular chat, not a separate subsystem the way
 	// pulsar/daily/constellation/comet are, so there's no separate bucket
 	// for it.
 	cost_by_source: {
@@ -43,6 +44,10 @@ export interface UsageStats {
 		daily: { period_cost_usd: number; total_cost_usd: number };
 		constellation: { period_cost_usd: number; total_cost_usd: number };
 		comet: { period_cost_usd: number; total_cost_usd: number };
+		// embeddings: index maintenance, not a content source. Optional so an
+		// older backend without the bucket just hides the row instead of
+		// making the panel sum a missing field into NaN.
+		embeddings?: { period_cost_usd: number; total_cost_usd: number };
 	};
 	// verification_cost_usd is a breakout, not a fourth bucket — how much
 	// of cost_by_source.polaris/.pulsar above (already counted once) was
@@ -85,6 +90,16 @@ export interface UsageStats {
 	// Total wall-clock time code_exec has spent running sandboxed scripts —
 	// see store.Stats.CodeExecWallTimeMS' doc comment.
 	code_exec_wall_time_ms: number;
+	// embedding_index backs the settings panel's semantic-index row: how much
+	// of each kind is indexed, against the *eligible* count (see
+	// gateway.EmbeddingIndexStatus on why raw counts would read as a stuck
+	// 79%). Optional so an older backend hides the row entirely.
+	embedding_index?: {
+		configured: boolean;
+		model?: string;
+		messages: { indexed: number; eligible: number; stale_model: number };
+		stars: { indexed: number; eligible: number; stale_model: number };
+	};
 	// Summed prompt tokens and prompt-cache reads, one count per turn —
 	// see store.Stats.CacheUsage. Optional so an older backend without it
 	// just hides the row instead of breaking the panel.

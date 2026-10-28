@@ -17,6 +17,35 @@ import (
 type StatsResponse struct {
 	*store.Stats
 	APICaps APICaps `json:"api_caps"`
+	// EmbeddingIndex is here rather than in store.Stats because it reports
+	// on a live in-process subsystem (which model is configured, what the
+	// cache holds), not on rows a SQL query can answer. Optional on the
+	// consuming side, so an older client just ignores it.
+	EmbeddingIndex EmbeddingIndexStatus `json:"embedding_index"`
+}
+
+// EmbeddingIndexStatus backs the settings panel's semantic-index row: how
+// much of each kind is indexed, against the *eligible* count (see
+// store.EmbeddingCoverage on why raw counts would read as a stuck 79%).
+type EmbeddingIndexStatus struct {
+	// Configured is false when no embeddings backend is set up at all, in
+	// which case the panel shows nothing — a deployment that never turned
+	// this on shouldn't see a row implying something is broken.
+	Configured bool                  `json:"configured"`
+	Model      string                `json:"model,omitempty"`
+	Messages   EmbeddingKindProgress `json:"messages"`
+	Stars      EmbeddingKindProgress `json:"stars"`
+}
+
+type EmbeddingKindProgress struct {
+	Indexed int `json:"indexed"`
+	// Eligible is the denominator: what the current eligibility rules allow
+	// to be indexed at all.
+	Eligible int `json:"eligible"`
+	// StaleModel is rows left over from a previous model. Non-zero means
+	// semantic retrieval is deliberately off until `polaris embeddings
+	// reindex` runs — the panel's one actionable warning.
+	StaleModel int `json:"stale_model"`
 }
 
 // APICaps is where every hard monthly ceiling stands. These are calendar-
@@ -109,5 +138,5 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, StatsResponse{Stats: stats, APICaps: caps})
+	writeJSON(w, StatsResponse{Stats: stats, APICaps: caps, EmbeddingIndex: s.embeddingIndexStatus()})
 }

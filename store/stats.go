@@ -164,10 +164,17 @@ type SourceCost struct {
 
 // CostBySource is Stats.TotalCostUSD/PeriodCostUSD broken down by where
 // the cost actually came from. Polaris + Pulsar + Daily + Constellation +
-// Comet always sums back to the plain total/period figures exactly — see
-// GetStats. There's no separate "ghost" bucket: ghost-mode spend is
-// folded straight into Polaris, the same source a ghost thread would
-// have been tagged if it were persisted — see GetStats.
+// Comet + Embeddings always sums back to the plain total/period figures
+// exactly — see GetStats. There's no separate "ghost" bucket: ghost-mode
+// spend is folded straight into Polaris, the same source a ghost thread
+// would have been tagged if it were persisted — see GetStats.
+//
+// Embeddings is the one bucket that isn't a content source: it's index
+// maintenance spend (aux_usage kind 'embedding'), with no conversation or
+// edition behind it. It gets its own row rather than being folded into
+// Polaris the way ghost spend is, because folding would attribute
+// infrastructure cost to conversation cost and make "what did my chats
+// cost" quietly wrong after every backfill.
 //
 // Comet's bucket is two payers: its Approaches are real turns, so their
 // spend rides ordinary messages.cost_usd on a source = 'comet_approach'
@@ -181,6 +188,7 @@ type CostBySource struct {
 	Daily         SourceCost `json:"daily"`
 	Constellation SourceCost `json:"constellation"`
 	Comet         SourceCost `json:"comet"`
+	Embeddings    SourceCost `json:"embeddings"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -392,10 +400,32 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	).Scan(&cometAuxPeriod); err != nil {
 		return nil, err
 	}
+	// Embedding spend is aux spend too, but it belongs in its own bucket:
+	// it's index maintenance, not something a conversation caused. Split out
+	// by its exact kind rather than a prefix, since there is deliberately
+	// only ever one (see store.AuxKindEmbedding).
+	var embedAuxTotal, embedAuxPeriod float64
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind = ?`, AuxKindEmbedding,
+	).Scan(&embedAuxTotal); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		embedAuxPeriod = embedAuxTotal
+	} else if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind = ? AND created_at >= ?`, AuxKindEmbedding, since,
+	).Scan(&embedAuxPeriod); err != nil {
+		return nil, err
+	}
+	stats.CostBySource.Embeddings.TotalCostUSD += embedAuxTotal
+	stats.CostBySource.Embeddings.PeriodCostUSD += embedAuxPeriod
+
 	stats.CostBySource.Comet.TotalCostUSD += cometAuxTotal
 	stats.CostBySource.Comet.PeriodCostUSD += cometAuxPeriod
-	stats.CostBySource.Polaris.TotalCostUSD += auxTotal - cometAuxTotal
-	stats.CostBySource.Polaris.PeriodCostUSD += auxPeriod - cometAuxPeriod
+	// Everything else stays chat-adjacent and folds into Polaris — minus both
+	// of the splits above, or those dollars would be counted twice.
+	stats.CostBySource.Polaris.TotalCostUSD += auxTotal - cometAuxTotal - embedAuxTotal
+	stats.CostBySource.Polaris.PeriodCostUSD += auxPeriod - cometAuxPeriod - embedAuxPeriod
 
 	// TotalCostUSD/PeriodCostUSD: the true, complete grand total across
 	// every real spend path — computed last, once every bucket above
@@ -405,9 +435,11 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// excluded — see CostBySource's own doc comment for why that looked
 	// like the breakdown didn't add up.
 	stats.TotalCostUSD = stats.CostBySource.Polaris.TotalCostUSD + stats.CostBySource.Pulsar.TotalCostUSD +
-		stats.CostBySource.Daily.TotalCostUSD + stats.CostBySource.Constellation.TotalCostUSD + stats.CostBySource.Comet.TotalCostUSD
+		stats.CostBySource.Daily.TotalCostUSD + stats.CostBySource.Constellation.TotalCostUSD +
+		stats.CostBySource.Comet.TotalCostUSD + stats.CostBySource.Embeddings.TotalCostUSD
 	stats.PeriodCostUSD = stats.CostBySource.Polaris.PeriodCostUSD + stats.CostBySource.Pulsar.PeriodCostUSD +
-		stats.CostBySource.Daily.PeriodCostUSD + stats.CostBySource.Constellation.PeriodCostUSD + stats.CostBySource.Comet.PeriodCostUSD
+		stats.CostBySource.Daily.PeriodCostUSD + stats.CostBySource.Constellation.PeriodCostUSD +
+		stats.CostBySource.Comet.PeriodCostUSD + stats.CostBySource.Embeddings.PeriodCostUSD
 
 	// VerificationCostUSD: a breakout, not an addition — this money is
 	// already inside TotalCostUSD/CostBySource above (it arrived via

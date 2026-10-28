@@ -158,7 +158,10 @@ func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load() || s.cometGenerationRunning.Load()})
+	// embeddingBackfillRunning counts too — see its own doc comment: an
+	// update recreating the container mid-backfill cuts the run off rather
+	// than draining it.
+	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load() || s.cometGenerationRunning.Load() || embeddingBackfillRunning.Load()})
 }
 
 // handleSearchConstellationStars backs the Library's search box —

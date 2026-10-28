@@ -2,9 +2,16 @@
 
 **Added: 2026-10-28.**
 
-**Status: planning. Nothing written yet — no schema, no code. Sections marked "(settled)" are
-decisions from the 2026-10-28 planning session; everything else is still open and listed under
-"Open questions" at the bottom.**
+**Status: phases 1a–1c implemented (2026-10-28) on `feature/embeddings` — provider abstraction,
+schema + indexer, backfill CLI, cost bucket and settings-panel rows. Phases 2–4 (hybrid retrieval
+for `stars`/`search_stars`/`search_chats`, then onboarding `agent/query_similarity.go`) are not
+started; until they land, nothing about search or a turn has changed. Where the plan and the code
+disagree, the code is authoritative — the deltas are recorded in "Implementation notes" at the
+bottom.**
+
+Live verification so far: the real 2,344-message history backfilled 1,598 eligible messages + 220
+stars for **$0.0022** in one CLI run against a scratch copy of the production database, 100%
+coverage reported, and `reindex --yes` reproduced it from zero for another $0.0022.
 
 Supersedes the deferred "v2: semantic search" section of `docs/plans/search-chats.md` and the
 "deliberately FTS5, not embeddings" call in `docs/plans/knowledge-vault.md`, both of which parked
@@ -230,9 +237,10 @@ CREATE INDEX IF NOT EXISTS embeddings_by_model ON embeddings(model, kind);
 
 ### Indexing lifecycle
 
-- **On-write, asynchronous, never in the request path.** `AddMessage`/star-write call sites enqueue a
-  `(kind, refID)` and return; a single indexer goroutine batches them (up to 128 per request or a
-  2 s flush timer) into one embeddings call, writes rows, and updates the in-memory slice.
+- **Sweep-driven, asynchronous, never in the request path** (revised from the original
+  enqueue design — see "Implementation notes"). Every 30 s the indexer asks the store what's
+  outstanding, embeds up to 200 rows in one batched call, writes them, and reloads the cache. An
+  idle Polaris costs one indexed SQL query per tick and nothing else.
 - **Backfill sweep on the Pulsar scheduler tick** (`gateway/pulsar_scheduler.go`, the established
   home for due-check work — same as Comet's and `backup.go`'s daily job). Picks up rows written
   before the subsystem was enabled, rows that failed, and rows inserted while the provider was
@@ -303,11 +311,14 @@ Every embedding call reports real cost in the response's `usage.cost`, so nothin
   | `web/src/lib/components/SettingsPanel.svelte` | "Embeddings" row in Cost by source **and** both `headline*CostUSD` derivations (they enumerate buckets by hand — a missing addend is the documented past bug that made the breakdown not sum to the headline) |
   | `cmd/stats.go` | `printStats` bucket line |
 
-- Plus, in the same panel, an **index status** row (`1,856 / 1,856 eligible messages, 220 / 220 stars
-  indexed`) so "why is my search dumb" is answerable without SSH'ing in. Coverage is reported
-  against the *eligible* count, not the raw row count — the real snapshot is 2,344 messages total
-  but 1,856 once the eligibility predicate below is applied, and a permanently-stuck "79%" because
-  488 rows are excluded by design would read as a bug.
+- Plus, in the same panel, a **Semantic index** row (`1,598 / 1,598 messages, 220 / 220 stars`),
+  the model id underneath it, and a "Needs reindex" warning when rows from a previous model are
+  still present — so "why is my search dumb" is answerable without SSH'ing in. Coverage is reported
+  against the *eligible* count, not the raw row count: the real snapshot holds 2,344 messages, but
+  only 1,598 pass the eligibility predicate, and a permanently-stuck 68% because the rest are
+  excluded by design would read as a bug. The numbers come from `/api/stats`' new
+  `embedding_index` section (gateway-side, since "which model is configured" isn't a SQL question),
+  not from `store.Stats`.
 
 ### CLI (thin client, per the Docker-only rule)
 
@@ -434,3 +445,86 @@ down.
   pegged" question are not.
 - **Settings panel**: status only, no buttons.
 - **Reindex verb**: distinct `reindex`, not a `--force` flag.
+
+## Implementation notes (phases 1a–1c, 2026-10-28)
+
+Deltas between this plan and the code that actually shipped, recorded so a reviewer can tell a
+deliberate change from a bug.
+
+### The indexer is sweep-driven, not queue-driven
+
+The plan called for on-write enqueue: `AddMessage`/star writes hand a `(kind, refID)` to a queue.
+That was dropped. Enqueueing means threading a callback through every write path (message insert,
+star create, star merge, Pulsar, Weaver, imports), and the freshness it buys is nil in practice —
+a 30 s tick that finds nothing pending costs one indexed SQL query, and the only thing the delay
+costs is that a thread written *this instant* isn't semantically searchable for a few seconds.
+
+Instead: `MessagesNeedingEmbedding` / `StarsNeedingEmbedding` derive what's outstanding from what
+is stored, so the sweep is also naturally resumable, and `embedService.Kick()` exists for the one
+case where freshness will matter (a chat searching its own just-written turn) when phase 3 wires
+it up.
+
+### The in-memory cache is invalidated by an epoch, not by "did I write anything"
+
+This was a real bug caught by `TestEmbedIndexer_PurgesAfterFieldOptOut`, not by review. The first
+implementation reloaded the cache only when the sweep itself had written rows — so a purge with no
+writes (an opt-out, a ghost hard-delete) left the deleted vector **resident and still
+semantically searchable** after the row behind it was gone.
+
+`store.EmbeddingsEpoch` fixes it properly: an atomic counter bumped by every mutation of the
+`embeddings` table (upsert, delete, purge, reindex), which the service compares against the value
+it last loaded from. That also made the ghost purge's bump need to happen *after* the transaction
+commits, not inside it, or a rollback would trigger a pointless reload.
+
+### `searchableThreadWhere` is one shared value, used by three call sites
+
+Extracted out of `SearchMessages` into `store/message_search.go`, and consumed by: the FTS path,
+the indexer's "what may be indexed" query, and its "what is no longer eligible" anti-join. A
+per-rule purge list would have been a second copy of a six-condition predicate; a rule added to one
+copy and not the other either leaks a hidden thread or silently drops an eligible one.
+`TestEmbeddings_EligibilityParityWithSearch` compares the two paths by thread id on a fixture
+containing one of every shape (ghost, disabled, pulsar, weaver, comet_approach, Atlas-continued,
+Atlas-not, Field-opted-out).
+
+### Config: a new `embeddings:` block, with the old behavior as the fallback
+
+```yaml
+embeddings:
+  provider: "openrouter"   # openrouter | ollama | "" (unset)
+  model: "perplexity/pplx-embed-v1-0.6b"
+  base_url: ""             # per-provider default
+```
+
+Resolved by `config.Config.NewEmbedClient()`. An unset provider keeps the pre-subsystem behavior
+(Ollama if `ollama.base_url` is set, otherwise no embeddings at all), so an existing `config.yaml`
+behaves exactly as before. The `openrouter` provider reuses `openrouter.api_key` — no new secret,
+no new `docker-compose.yml` passthrough, no new `.env` line.
+
+### CLI as shipped
+
+```
+polaris embeddings status
+polaris embeddings backfill [--kind message|star|all] [--limit N]
+polaris embeddings reindex  [--kind message|star|all] [--yes]
+```
+
+`reindex` without `--yes` refuses before making a request. All three are thin HTTP clients against
+`/api/embeddings/{status,backfill,reindex}`; the backfill/reindex POSTs are single-flight (409 on a
+second concurrent run) and hold `embeddingBackfillRunning`, which `handleServerBusy` now consults so
+a self-update can't recreate the container mid-run.
+
+### A pre-existing settings-panel bug fixed along the way
+
+`SettingsPanel.svelte`'s `headlinePeriodCostUSD`/`headlineTotalCostUSD` enumerated five buckets by
+hand and summed only four — **Comet was silently missing from the headline**, so the panel's
+"$X last 30 days" under-reported by the Comet amount while the rows beneath it added up to more.
+Found while adding the sixth bucket, which is exactly the failure mode
+`store.GetStats`' invariant is supposed to prevent. Both derivations now sum every bucket, and
+`TestBuildStats_EmbeddingBucketSumsBackToTotal` asserts the invariant server-side.
+
+### Known-unrelated flake
+
+`TestRunDailyPipeline_ItemizedTopStory` fails roughly 1 run in 15 on both this branch and `main`
+(confirmed by running it repeatedly in a clean `main` worktree). It's a concurrency-dependent
+Pulsar Daily test — the mock's scripted responses race Stage A's concurrent block calls — not an
+embeddings regression. Not fixed here.

@@ -49,10 +49,33 @@ ollama:
   # this URL does anything. That widens Ollama's reach to your whole LAN,
   # not just Docker, since it has no built-in auth — only do this on a
   # host with no untrusted local network users. Empty base_url just
-  # disables agent.Run's query-similarity stale-search signal, nothing
-  # else breaks — see config.Config's Ollama field doc comment.
+  # disables embeddings, nothing else breaks — see config.Config's Ollama
+  # field doc comment.
   base_url: "http://host.docker.internal:11434"
   embed_model: "nomic-embed-text"
+
+embeddings:
+  # Which backend computes every embedding in Polaris — the semantic index
+  # over your own chat history and Constellation stars, plus the
+  # query-similarity signal in the research loop.
+  #
+  # "openrouter" is the recommended default: a hosted model, reusing
+  # openrouter.api_key above (no extra secret), so nothing runs on this
+  # host. That matters on hardware like a Le Potato — a full backfill of a
+  # real history measured ~$0.004 and 80 seconds off-device, versus minutes
+  # of pegged CPU locally for a smaller-context model.
+  #
+  # "ollama" uses the local instance configured above instead, and is what
+  # an empty `embeddings:` block falls back to for back-compat.
+  #
+  # Changing model invalidates every stored vector — they're tagged with the
+  # model that produced them, so semantic search turns itself off (keyword
+  # search keeps working) until you run `polaris embeddings reindex --yes`.
+  provider: "openrouter"
+  # Empty picks the provider's default:
+  # perplexity/pplx-embed-v1-0.6b (1024 dims, 32k context) for openrouter,
+  # nomic-embed-text for ollama.
+  model: "perplexity/pplx-embed-v1-0.6b"
 
 github:
   token: "${GITHUB_TOKEN}"

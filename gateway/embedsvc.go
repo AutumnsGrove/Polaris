@@ -435,3 +435,27 @@ func (v *embedService) Coverage() map[string]store.EmbeddingCoverage {
 	}
 	return out
 }
+
+// embeddingIndexStatus reports the settings panel's semantic-index row.
+// Zero-valued (Configured false) when no service exists, so a deployment
+// with embeddings off shows no row at all.
+func (s *Server) embeddingIndexStatus() EmbeddingIndexStatus {
+	if s.embeds == nil {
+		return EmbeddingIndexStatus{}
+	}
+	out := EmbeddingIndexStatus{Configured: true, Model: s.embeds.Model()}
+	cov := s.embeds.Coverage()
+	for kind, dst := range map[string]*EmbeddingKindProgress{
+		store.EmbeddingKindMessage: &out.Messages,
+		store.EmbeddingKindStar:    &out.Stars,
+	} {
+		c, ok := cov[kind]
+		if !ok {
+			continue
+		}
+		dst.Indexed = c.Indexed
+		dst.Eligible = c.Eligible
+		dst.StaleModel = c.StaleModel
+	}
+	return out
+}

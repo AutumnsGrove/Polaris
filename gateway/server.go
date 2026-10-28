@@ -185,7 +185,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		brave:             brave.NewClient(cfg.Brave.APIKey),
 		parallel:          parallel.NewClient(cfg.Parallel.APIKey),
 		decisions:         decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
-		embed:             embed.NewOllama(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
+		embed:             cfg.NewEmbedClient(),
 		stt:               voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		tts:               voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
 		mux:               http.NewServeMux(),
@@ -648,6 +648,9 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/constellation/weaver-threads", s.handleListWeaverThreads)
 	s.mux.HandleFunc("GET /api/constellation/map", s.handleGetConstellationMap)
 	s.mux.HandleFunc("POST /api/constellation/backfill", s.handleConstellationBackfill)
+	s.mux.HandleFunc("GET /api/embeddings/status", s.handleEmbeddingsStatus)
+	s.mux.HandleFunc("POST /api/embeddings/backfill", s.handleEmbeddingsBackfill)
+	s.mux.HandleFunc("POST /api/embeddings/reindex", s.handleEmbeddingsReindex)
 	s.mux.HandleFunc("GET /api/comet/config", s.handleGetCometConfig)
 	s.mux.HandleFunc("PUT /api/comet/config", s.handleUpdateCometConfig)
 	s.mux.HandleFunc("GET /api/comet/periods", s.handleListCometPeriods)

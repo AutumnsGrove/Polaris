@@ -204,12 +204,21 @@
 	function round2(n: number): number {
 		return Math.round(n * 100) / 100;
 	}
+	// Semantic-index status, from /api/stats' embedding_index. Undefined on an
+	// older backend, which hides the row rather than rendering zeros.
+	let indexing = $derived(appState.settings.usage?.embedding_index);
+	let staleEmbeddings = $derived(
+		indexing ? indexing.messages.stale_model + indexing.stars.stale_model : 0
+	);
+
 	let headlinePeriodCostUSD = $derived(
 		appState.settings.usage
 			? round2(appState.settings.usage.cost_by_source.polaris.period_cost_usd) +
 					round2(appState.settings.usage.cost_by_source.pulsar.period_cost_usd) +
 					round2(appState.settings.usage.cost_by_source.daily.period_cost_usd) +
-					round2(appState.settings.usage.cost_by_source.constellation.period_cost_usd)
+					round2(appState.settings.usage.cost_by_source.constellation.period_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.comet.period_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.embeddings?.period_cost_usd ?? 0)
 			: 0
 	);
 	let headlineTotalCostUSD = $derived(
@@ -217,7 +226,9 @@
 			? round2(appState.settings.usage.cost_by_source.polaris.total_cost_usd) +
 					round2(appState.settings.usage.cost_by_source.pulsar.total_cost_usd) +
 					round2(appState.settings.usage.cost_by_source.daily.total_cost_usd) +
-					round2(appState.settings.usage.cost_by_source.constellation.total_cost_usd)
+					round2(appState.settings.usage.cost_by_source.constellation.total_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.comet.total_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.embeddings?.total_cost_usd ?? 0)
 			: 0
 	);
 
@@ -354,6 +365,19 @@
 							)}</span
 						>
 					</div>
+					{#if usage.cost_by_source.embeddings && usage.cost_by_source.embeddings.total_cost_usd > 0}
+						<!-- Index maintenance, not a content source — hidden until a
+						     backfill has actually spent something, so a fresh install
+						     doesn't show a permanent $0.00 row nobody can explain. -->
+						<div class="usage-stat-row">
+							<span class="label">Embeddings</span>
+							<span class="value"
+								>${usage.cost_by_source.embeddings.period_cost_usd.toFixed(4)} / ${usage.cost_by_source.embeddings.total_cost_usd.toFixed(
+									4
+								)}</span
+							>
+						</div>
+					{/if}
 				</div>
 
 				<div class="usage-section-label">Activity</div>
@@ -387,6 +411,31 @@
 							<span class="label">code_exec wall time</span>
 							<span class="value">{(appState.settings.usage.code_exec_wall_time_ms / 1000).toFixed(1)}s</span>
 						</div>
+					{/if}
+					{#if indexing && indexing.configured}
+						<!-- Semantic index coverage. Reported against the *eligible* count,
+						     not the raw row count: 21% of messages are excluded by design
+						     (ghost, internal, opted-out), so a raw denominator would show
+						     a permanent 79% that reads as a stuck indexer. -->
+						<div class="usage-stat-row">
+							<span class="label">Semantic index</span>
+							<span class="value"
+								>{Math.round(indexing.messages.indexed)} / {Math.round(indexing.messages.eligible)} messages,
+								{Math.round(indexing.stars.indexed)} / {Math.round(indexing.stars.eligible)} stars</span
+							>
+						</div>
+						{#if indexing.model}
+							<div class="usage-stat-row sub">
+								<span class="label">Embedding model</span>
+								<span class="value">{indexing.model}</span>
+							</div>
+						{/if}
+						{#if staleEmbeddings > 0}
+							<div class="usage-stat-row warn">
+								<span class="label">Needs reindex</span>
+								<span class="value">{staleEmbeddings} row(s) from another model</span>
+							</div>
+						{/if}
 					{/if}
 				</div>
 

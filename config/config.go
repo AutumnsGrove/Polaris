@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"polaris/backup"
+	"polaris/embed"
 	"polaris/logger"
 	"polaris/r2"
 )
@@ -148,17 +149,19 @@ type Config struct {
 	} `yaml:"tmdb"`
 
 	Ollama struct {
-		// BaseURL points at a local Ollama instance serving EmbedModel —
-		// used only for agent.Run's query-similarity stale-search signal
-		// (a third check alongside researchCheckInInterval/staleStreakThreshold,
-		// see agent/query_similarity.go), never for chat completions.
-		// Empty disables the signal entirely rather than failing turns —
-		// same "optional dependency, degrade don't break" shape as
-		// Foursquare/Tavily above. Each deployment talks to its OWN local
-		// Ollama (bare-metal: http://localhost:11434; Docker: the host's
-		// Ollama via host.docker.internal — docker-compose.yml's
-		// extra_hosts entry) — never a shared/remote instance, so there's
-		// no cross-host reachability to configure.
+		// BaseURL points at a local Ollama instance. Historically this was
+		// the only way to get embeddings at all (agent.Run's
+		// query-similarity stale-search signal); it still is, when
+		// `embeddings.provider` is empty or "ollama", and it remains the
+		// back-compat path for a config written before the `embeddings`
+		// block existed. Never used for chat completions.
+		//
+		// Empty (with no `embeddings` provider) disables embeddings
+		// entirely rather than failing turns — same "optional dependency,
+		// degrade don't break" shape as Foursquare/Tavily above. Each
+		// deployment talks to its OWN local Ollama (bare-metal:
+		// http://localhost:11434; Docker: the host's Ollama via
+		// host.docker.internal — docker-compose.yml's extra_hosts entry).
 		//
 		// Docker specifically needs Ollama itself rebound to 0.0.0.0 (its
 		// default is 127.0.0.1-only, which REFUSES a container's
@@ -170,9 +173,36 @@ type Config struct {
 		// fuller warning before doing this on a host with untrusted local
 		// network users.
 		BaseURL string `yaml:"base_url"`
-		// EmbedModel defaults to "nomic-embed-text" (see NewClient) if empty.
+		// EmbedModel defaults to "nomic-embed-text" (see NewOllama) if empty.
 		EmbedModel string `yaml:"embed_model"`
 	} `yaml:"ollama"`
+
+	// Embeddings selects which backend computes every embedding in Polaris —
+	// the persisted semantic index over chats and stars
+	// (docs/plans/embeddings.md) and agent's query-similarity signal. See
+	// NewEmbedClient for the resolution order.
+	Embeddings struct {
+		// Provider is "openrouter" (a hosted model, which is the default
+		// recommendation because the production target is a low-power SBC),
+		// "ollama" (local), or "" to disable the semantic index and fall
+		// back to pre-subsystem behavior (local Ollama if ollama.base_url is
+		// set, otherwise no embeddings at all).
+		Provider string `yaml:"provider"`
+		// Model is the provider's own model id. Empty picks the provider's
+		// default: perplexity/pplx-embed-v1-0.6b for openrouter (1024 dims,
+		// 32k context, $0.004/M tokens) or nomic-embed-text for ollama.
+		//
+		// Changing this invalidates every stored vector: they are tagged
+		// with the model that produced them, so semantic retrieval fails
+		// closed (FTS keeps working) until `polaris embeddings reindex`
+		// runs. That's deliberate — auto-reindexing on boot would mean a
+		// surprise API spend and a load spike at startup.
+		Model string `yaml:"model"`
+		// BaseURL overrides the provider's endpoint. Empty uses
+		// openrouter.base_url for the openrouter provider, and
+		// ollama.base_url for the ollama provider.
+		BaseURL string `yaml:"base_url"`
+	} `yaml:"embeddings"`
 
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
@@ -733,4 +763,44 @@ func (c *Config) DefaultModelOrFirst() string {
 		return c.Models[0].ID
 	}
 	return ""
+}
+
+// NewEmbedClient builds the embedding client the config selects, or nil
+// when no backend is configured — every caller treats nil as "embeddings
+// unavailable, degrade to keyword search", so this never fails the way
+// NewEmbedClient's chat-side counterparts in config do.
+//
+// Resolution order:
+//   - embeddings.provider "openrouter": hosted model via OpenRouter, reusing
+//     openrouter.api_key (no extra secret). embeddings.base_url overrides
+//     openrouter.base_url.
+//   - embeddings.provider "ollama": local instance at
+//     embeddings.base_url, else ollama.base_url.
+//   - embeddings.provider "" (unset): the pre-subsystem behavior — Ollama if
+//     ollama.base_url is set, otherwise nil. A config written before the
+//     `embeddings` block existed therefore keeps working exactly as it did.
+//
+// An explicit embeddings.model always wins; otherwise each provider applies
+// its own default (see config.Config's Embeddings field doc comment).
+func (c *Config) NewEmbedClient() *embed.Client {
+	switch c.Embeddings.Provider {
+	case "openrouter":
+		baseURL := c.Embeddings.BaseURL
+		if baseURL == "" {
+			baseURL = c.OpenRouter.BaseURL
+		}
+		return embed.NewOpenRouter(c.OpenRouter.APIKey, baseURL, c.Embeddings.Model)
+	case "ollama":
+		baseURL := c.Embeddings.BaseURL
+		if baseURL == "" {
+			baseURL = c.Ollama.BaseURL
+		}
+		if c.Embeddings.Model != "" {
+			return embed.NewOllama(baseURL, c.Embeddings.Model)
+		}
+		return embed.NewOllama(baseURL, c.Ollama.EmbedModel)
+	default:
+		// Unset provider: legacy behavior, including nomic's own default.
+		return embed.NewOllama(c.Ollama.BaseURL, c.Ollama.EmbedModel)
+	}
 }
