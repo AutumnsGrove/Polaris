@@ -209,6 +209,13 @@ export class SettingsState {
 	timezone = $state('');
 	serverTimezone = $state('');
 
+	// Temporary A/B switch between the Nova agent loop and Polaris's original one
+	// (gateway/settings.go's settingAgentHarness) for telling a Nova bug from a
+	// Polaris one. Takes effect from the next turn. agentHarnessLocked means
+	// POLARIS_NOVA_LOOP is set on the server and the pick is being ignored.
+	agentHarness = $state<'nova' | 'polaris'>('nova');
+	agentHarnessLocked = $state(false);
+
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
 	// address/city, client-side only (a cookie, not /api/settings), since
@@ -308,6 +315,8 @@ export class SettingsState {
 		this.personPronouns = data.person_pronouns ?? '';
 		this.timezone = data.timezone ?? '';
 		this.serverTimezone = data.server_timezone ?? '';
+		this.agentHarness = data.agent_harness === 'polaris' ? 'polaris' : 'nova';
+		this.agentHarnessLocked = data.agent_harness_locked ?? false;
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
 		this.loaded = true;
@@ -373,6 +382,11 @@ export class SettingsState {
 	async setOracleGhostEnabled(enabled: boolean) {
 		this.oracleGhostEnabled = enabled;
 		await this.put({ oracle_ghost_enabled: enabled });
+	}
+
+	async setAgentHarness(harness: 'nova' | 'polaris') {
+		this.agentHarness = harness;
+		await this.put({ agent_harness: harness });
 	}
 
 	async setVisuals(mode: VisualsMode) {

@@ -97,7 +97,46 @@ const (
 	// before this setting existed. Mirrored into the tz package on save and at
 	// startup (ApplyTimezoneFromStore) so no consumer needs a DB handle.
 	settingTimezone = "timezone"
+	// settingAgentHarness is the temporary Nova-vs-bespoke A/B switch
+	// (docs/plans/nova-loop.md): "nova" or "polaris" forces that agent loop for
+	// every subsequent turn; unset/anything else defers to config.yaml's
+	// nova_loop. Exists to answer "is this misbehavior Nova's or Polaris's?"
+	// without editing config.yaml; remove with the bespoke loop (#188).
+	settingAgentHarness = "agent_harness"
 )
+
+// Values of settingAgentHarness.
+const (
+	harnessNova    = "nova"
+	harnessPolaris = "polaris"
+)
+
+// NovaLoopFromStore resolves which agent loop should run: the settings-panel
+// pick if there is one, otherwise cfgDefault (config.Config.NovaLoopEnabled).
+// POLARIS_NOVA_LOOP still beats both inside agent.Run, as the environment's
+// kill switch. A nil db or read error falls back to cfgDefault, same fail-open
+// shape as the other FromStore readers.
+func NovaLoopFromStore(db *store.Store, cfgDefault bool) bool {
+	if db == nil {
+		return cfgDefault
+	}
+	switch val, _ := db.GetSetting(settingAgentHarness); val {
+	case harnessNova:
+		return true
+	case harnessPolaris:
+		return false
+	}
+	return cfgDefault
+}
+
+// AgentHarnessFromStore is the picker's current value: the stored pick, or
+// whichever loop config.yaml currently selects when nothing is stored.
+func AgentHarnessFromStore(db *store.Store, cfgDefault bool) string {
+	if NovaLoopFromStore(db, cfgDefault) {
+		return harnessNova
+	}
+	return harnessPolaris
+}
 
 // maxPersonNameChars/maxPersonPronounsChars mirror the settings-panel
 // inputs' own maxlength (see SettingsPanel.svelte) — generous for a name
@@ -409,6 +448,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		// instead of showing a blank.
 		"timezone":        all[settingTimezone],
 		"server_timezone": serverTimezoneName(),
+		// The loop that will run the next turn, and whether POLARIS_NOVA_LOOP
+		// is pinning it (making the picker inert, so the UI says so).
+		"agent_harness":        AgentHarnessFromStore(s.db, cfg.NovaLoopEnabled()),
+		"agent_harness_locked": agent.NovaLoopEnvOverridden(),
 	})
 }
 
@@ -428,6 +471,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		PersonName         *string   `json:"person_name"`
 		PersonPronouns     *string   `json:"person_pronouns"`
 		Timezone           *string   `json:"timezone"`
+		AgentHarness       *string   `json:"agent_harness"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -632,6 +676,22 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		tz.Set(*req.Timezone)
 		s.db.LogEvent("", "info", "settings", "timezone changed", map[string]interface{}{"timezone": *req.Timezone}, "")
+	}
+	if req.AgentHarness != nil {
+		if *req.AgentHarness != harnessNova && *req.AgentHarness != harnessPolaris {
+			http.Error(w, "agent_harness must be 'nova' or 'polaris'", http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingAgentHarness, *req.AgentHarness); err != nil {
+			log.Warn("saving agent_harness setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving agent_harness setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Applied now rather than at the next liveConfig reload; a turn already
+		// in flight keeps the loop it started on (agent.Run reads it once).
+		agent.SetNovaLoop(NovaLoopFromStore(s.db, s.liveConfig().NovaLoopEnabled()))
+		s.db.LogEvent("", "info", "settings", "agent harness changed", map[string]interface{}{"agent_harness": *req.AgentHarness}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)
