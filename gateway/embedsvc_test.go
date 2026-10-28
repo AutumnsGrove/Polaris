@@ -335,3 +335,63 @@ func TestEmbedIndexer_CoverageReportsEligibleNotRaw(t *testing.T) {
 		t.Errorf("coverage = %+v, want 1 eligible and 1 indexed — the raw count (2) would show a permanent 50%%", cov)
 	}
 }
+
+// TestBackfill_KindFilterTouchesOnlyThatKind is a regression test: IndexOnce
+// always embedded both kinds, so a kind-filtered Backfill silently embedded
+// the other one too — which made `--kind message` report a count that didn't
+// match the corpus (1,198 of 1,598 on real history).
+func TestBackfill_KindFilterTouchesOnlyThatKind(t *testing.T) {
+	db := newEmbedTestStore(t)
+	addThreadMessage(t, db, "t1", "alpha one")
+	if _, err := db.CreateStar(store.Star{Title: "T", Summary: "s", Body: "b", Status: "auto", Category: "c"}); err != nil {
+		t.Fatalf("CreateStar: %v", err)
+	}
+
+	svc := newEmbedService(db, embed.NewOpenRouter("k", fakeEmbedServer(t, 0.0001).URL, "test-model"))
+	progress, err := svc.Backfill(context.Background(), store.EmbeddingKindMessage, 0, nil)
+	if err != nil {
+		t.Fatalf("Backfill: %v", err)
+	}
+	if progress.Messages != 1 {
+		t.Errorf("messages = %d, want 1", progress.Messages)
+	}
+	if progress.Stars != 0 {
+		t.Errorf("stars = %d, want 0 — a message-only backfill must not embed stars", progress.Stars)
+	}
+
+	starCount, err := db.CountEmbeddings(store.EmbeddingKindStar)
+	if err != nil {
+		t.Fatalf("CountEmbeddings: %v", err)
+	}
+	if starCount != 0 {
+		t.Errorf("%d star embeddings written by a message-only backfill, want 0", starCount)
+	}
+
+	// And the reverse direction.
+	progress, err = svc.Backfill(context.Background(), store.EmbeddingKindStar, 0, nil)
+	if err != nil {
+		t.Fatalf("Backfill(star): %v", err)
+	}
+	if progress.Stars != 1 || progress.Messages != 0 {
+		t.Errorf("progress = %+v, want 1 star and 0 messages", progress)
+	}
+}
+
+// TestBackfill_ReportsCost pins that a backfill's reported spend is the sum
+// of what the provider charged, since that number is what the CLI prints and
+// what lands in the settings panel.
+func TestBackfill_ReportsCost(t *testing.T) {
+	db := newEmbedTestStore(t)
+	for _, id := range []string{"a", "b"} {
+		addThreadMessage(t, db, id, "alpha "+id)
+	}
+	svc := newEmbedService(db, embed.NewOpenRouter("k", fakeEmbedServer(t, 0.0001).URL, "test-model"))
+
+	progress, err := svc.Backfill(context.Background(), store.EmbeddingKindMessage, 0, nil)
+	if err != nil {
+		t.Fatalf("Backfill: %v", err)
+	}
+	if progress.CostUSD != 0.0001 {
+		t.Errorf("CostUSD = %v, want the provider's 0.0001 (recorded once for the whole run, not per row)", progress.CostUSD)
+	}
+}

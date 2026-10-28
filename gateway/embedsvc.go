@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -193,8 +194,8 @@ type IndexProgress struct {
 	CostUSD float64
 }
 
-// IndexOnce runs one bounded sweep: embed whatever eligible rows are
-// missing, then purge rows that are no longer eligible.
+// IndexOnce runs one bounded sweep of both kinds: embed whatever eligible
+// rows are missing, then purge rows that are no longer eligible.
 //
 // Purge lives here rather than only at the point a rule changes because the
 // rules are spread across many writes (soft delete, Field opt-out, ghost
@@ -210,54 +211,16 @@ func (v *embedService) IndexOnce(ctx context.Context, budget int) (IndexProgress
 		budget = indexBudget
 	}
 
-	msgs, err := v.db.MessagesNeedingEmbedding(v.model, 0, budget)
+	msgs, msgCost, err := v.indexKind(ctx, store.EmbeddingKindMessage, budget)
 	if err != nil {
 		return p, err
 	}
-	if len(msgs) > 0 {
-		texts := make([]string, len(msgs))
-		for i, m := range msgs {
-			texts[i] = m.Text
-		}
-		res, err := v.client.EmbedBatch(ctx, texts)
-		if err != nil {
-			return p, err
-		}
-		for i, m := range msgs {
-			if err := v.db.UpsertEmbedding(store.EmbeddingKindMessage, m.ID, v.model,
-				res.Dims, embed.EncodeInt8(res.Vectors[i]), m.Text); err != nil {
-				return p, err
-			}
-		}
-		p.Messages = len(msgs)
-		p.CostUSD += res.CostUSD
-	}
-
-	// The remaining budget goes to stars, which are few and cheap; giving
-	// them a share of every sweep means a star merged by Weaver is
-	// searchable promptly instead of waiting behind a message backlog.
-	stars, err := v.db.StarsNeedingEmbedding(v.model)
+	stars, starCost, err := v.indexKind(ctx, store.EmbeddingKindStar, budget)
 	if err != nil {
 		return p, err
 	}
-	if len(stars) > 0 {
-		texts := make([]string, len(stars))
-		for i, s := range stars {
-			texts[i] = s.Text
-		}
-		res, err := v.client.EmbedBatch(ctx, texts)
-		if err != nil {
-			return p, err
-		}
-		for i, s := range stars {
-			if err := v.db.UpsertEmbedding(store.EmbeddingKindStar, s.ID, v.model,
-				res.Dims, embed.EncodeInt8(res.Vectors[i]), s.Text); err != nil {
-				return p, err
-			}
-		}
-		p.Stars = len(stars)
-		p.CostUSD += res.CostUSD
-	}
+	p.Messages, p.Stars = msgs, stars
+	p.CostUSD = msgCost + starCost
 
 	if p.Messages > 0 || p.Stars > 0 {
 		if p.CostUSD > 0 {
@@ -294,6 +257,65 @@ func (v *embedService) IndexOnce(ctx context.Context, budget int) (IndexProgress
 	return p, nil
 }
 
+// indexKind embeds everything outstanding of one kind, up to budget rows for
+// messages (stars are few enough that the budget doesn't apply — embedding a
+// couple hundred of them is one request), returning how many rows it wrote
+// and what the provider reported costing.
+//
+// Split out of IndexOnce so a kind-filtered Backfill genuinely only touches
+// that kind. It didn't at first: IndexOnce always did both, so
+// `polaris embeddings backfill --kind message` silently embedded stars too
+// and, worse, reported a message count that didn't match what was left to do.
+// The live check against the real history is what caught it (1,198 of 1,598).
+func (v *embedService) indexKind(ctx context.Context, kind string, budget int) (int, float64, error) {
+	switch kind {
+	case store.EmbeddingKindMessage:
+		msgs, err := v.db.MessagesNeedingEmbedding(v.model, 0, budget)
+		if err != nil || len(msgs) == 0 {
+			return 0, 0, err
+		}
+		texts := make([]string, len(msgs))
+		for i, m := range msgs {
+			texts[i] = m.Text
+		}
+		res, err := v.client.EmbedBatch(ctx, texts)
+		if err != nil {
+			return 0, 0, err
+		}
+		for i, m := range msgs {
+			if err := v.db.UpsertEmbedding(store.EmbeddingKindMessage, m.ID, v.model,
+				res.Dims, embed.EncodeInt8(res.Vectors[i]), m.Text); err != nil {
+				return 0, 0, err
+			}
+		}
+		return len(msgs), res.CostUSD, nil
+
+	case store.EmbeddingKindStar:
+		stars, err := v.db.StarsNeedingEmbedding(v.model)
+		if err != nil || len(stars) == 0 {
+			return 0, 0, err
+		}
+		texts := make([]string, len(stars))
+		for i, s := range stars {
+			texts[i] = s.Text
+		}
+		res, err := v.client.EmbedBatch(ctx, texts)
+		if err != nil {
+			return 0, 0, err
+		}
+		for i, s := range stars {
+			if err := v.db.UpsertEmbedding(store.EmbeddingKindStar, s.ID, v.model,
+				res.Dims, embed.EncodeInt8(res.Vectors[i]), s.Text); err != nil {
+				return 0, 0, err
+			}
+		}
+		return len(stars), res.CostUSD, nil
+
+	default:
+		return 0, 0, fmt.Errorf("embeddings: unknown kind %q", kind)
+	}
+}
+
 // Backfill embeds every eligible row of kind, in batches, calling progress
 // after each batch (may be nil). kind may be store.EmbeddingKindMessage,
 // store.EmbeddingKindStar, or "" / "all" for both.
@@ -307,45 +329,40 @@ func (v *embedService) Backfill(ctx context.Context, kind string, limit int, pro
 	if v == nil {
 		return total, errEmbeddingsUnavailable
 	}
-	doMessages := kind == "" || kind == "all" || kind == store.EmbeddingKindMessage
-	doStars := kind == "" || kind == "all" || kind == store.EmbeddingKindStar
-
-	step := func() error {
-		p, err := v.IndexOnce(ctx, indexBudget)
-		if err != nil {
-			return err
-		}
-		if !doMessages {
-			p.Messages = 0
-		}
-		if !doStars {
-			p.Stars = 0
-		}
-		total.Messages += p.Messages
-		total.Stars += p.Stars
-		total.CostUSD += p.CostUSD
-		if progress != nil {
-			progress(total)
-		}
-		if limit > 0 && total.Messages+total.Stars >= limit {
-			return nil
-		}
-		if p.Messages == 0 && p.Stars == 0 {
-			return errBackfillDone
-		}
-		return nil
+	kinds := []string{store.EmbeddingKindMessage, store.EmbeddingKindStar}
+	switch kind {
+	case store.EmbeddingKindMessage:
+		kinds = kinds[:1]
+	case store.EmbeddingKindStar:
+		kinds = kinds[1:]
+	case "", "all":
+	default:
+		return total, fmt.Errorf("embeddings: unknown kind %q", kind)
 	}
 
 	for {
-		err := step()
-		if err == errBackfillDone {
-			return total, nil
+		worked := 0
+		for _, k := range kinds {
+			n, cost, err := v.indexKind(ctx, k, indexBudget)
+			if err != nil {
+				return total, err
+			}
+			total.CostUSD += cost
+			if k == store.EmbeddingKindMessage {
+				total.Messages += n
+			} else {
+				total.Stars += n
+			}
+			worked += n
+			if limit > 0 && total.Messages+total.Stars >= limit {
+				break
+			}
 		}
-		if err != nil {
-			return total, err
+		if progress != nil {
+			progress(total)
 		}
-		if limit > 0 && total.Messages+total.Stars >= limit {
-			return total, nil
+		if worked == 0 || (limit > 0 && total.Messages+total.Stars >= limit) {
+			break
 		}
 		select {
 		case <-ctx.Done():
@@ -353,6 +370,24 @@ func (v *embedService) Backfill(ctx context.Context, kind string, limit int, pro
 		default:
 		}
 	}
+
+	// One purge + one cache refresh at the end, rather than per batch: a
+	// backfill has no readers to keep coherent mid-run, and the sweep inside
+	// IndexOnce would otherwise reload the whole cache on every 200 rows.
+	if _, err := v.db.PurgeIneligibleEmbeddings(); err != nil {
+		return total, err
+	}
+	if total.Messages > 0 || total.Stars > 0 {
+		if total.CostUSD > 0 {
+			if err := v.db.RecordAuxCost(store.AuxKindEmbedding, total.CostUSD); err != nil {
+				log.Warn("embeddings: recording spend failed", "err", err)
+			}
+		}
+		if err := v.Reload(); err != nil {
+			return total, err
+		}
+	}
+	return total, nil
 }
 
 var (

@@ -619,3 +619,17 @@ the potato — a hosted provider has no cold start for us, so warming it up was 
 *per turn*, for real money and zero benefit. That, plus `TestNewEmbedClient_ProviderSelection`
 covering the resolution order (unset provider must keep resolving to local Ollama, or every
 existing `config.yaml` silently loses embeddings), is the whole phase.
+
+### Another live-caught bug: the kind filter was cosmetic
+
+`Backfill`'s `--kind` flag didn't actually restrict what got embedded. `IndexOnce` always did both
+kinds, so `polaris embeddings backfill --kind message` also embedded every star, and — because the
+loop's "am I done" check looked at the *zeroed* per-kind counters — it stopped early and reported
+**1,198 of the real corpus's 1,598 messages**. Unit tests passed, because a small fixture either has
+both kinds outstanding or neither.
+
+Fixed by splitting `IndexOnce`'s body into `indexKind(ctx, kind, budget)`, which both call: the
+sweep calls it twice, `Backfill` calls only the kinds asked for and terminates on real work done.
+Re-running the live check on the same database then reported exactly 1,598, and the two calls'
+costs ($0.000178 for 220 stars + $0.002016 for 1,598 messages) reconcile with the earlier
+single-run total of $0.002194. `TestBackfill_KindFilterTouchesOnlyThatKind` is the regression test.

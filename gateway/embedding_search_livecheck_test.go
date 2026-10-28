@@ -66,6 +66,34 @@ func TestHybridStarsLiveCheck(t *testing.T) {
 		t.Errorf("indexed %d of %d eligible stars", cov.Indexed, cov.Eligible)
 	}
 
+	// Chat side, too: message-level fusion is the same helper, but on the
+	// surface with the most traffic, and the plan's measured FTS5 failures
+	// were all chat queries.
+	msgProgress, err := svc.Backfill(context.Background(), store.EmbeddingKindMessage, 0, nil)
+	if err != nil {
+		t.Fatalf("message backfill: %v", err)
+	}
+	t.Logf("indexed %d messages for $%.6f", msgProgress.Messages, msgProgress.CostUSD)
+
+	chatQueries := []string{
+		"computer less powerful than a raspberry pi that I deploy things on",
+		"how do astronauts use the bathroom in space",
+		"fiction about AI companions called AFs",
+		"astronauts",
+	}
+	for _, q := range chatQueries {
+		fts, err := db.SearchMessages(q, 3)
+		if err != nil {
+			t.Fatalf("FTS chat search %q: %v", q, err)
+		}
+		hybrid, err := svc.SearchChatsHybrid(context.Background(), q, 3)
+		if err != nil {
+			t.Fatalf("hybrid chat search %q: %v", q, err)
+		}
+		fmt.Printf("\nQ: %s\n  FTS (%d): %s\n  HYB (%d): %s\n",
+			q, len(fts), chatSummary(fts), len(hybrid), chatSummary(hybrid))
+	}
+
 	queries := []string{
 		"what do I like to drink in the morning",
 		"how does she keep her notes organized",
@@ -84,6 +112,26 @@ func TestHybridStarsLiveCheck(t *testing.T) {
 		}
 		fmt.Printf("\nQ: %s\n  FTS (%d): %s\n  HYB (%d): %s\n", q, len(fts), titlesOf(fts), len(hybrid), starTitlesOf(hybrid))
 	}
+}
+
+// chatSummary renders message hits as "thread title :: snippet prefix", long
+// enough to judge relevance at a glance.
+func chatSummary(results []store.MessageSearchResult) string {
+	if len(results) == 0 {
+		return "(no hits)"
+	}
+	out := ""
+	for i, r := range results {
+		if i > 0 {
+			out += " | "
+		}
+		snippet := r.Snippet
+		if len(snippet) > 60 {
+			snippet = snippet[:60]
+		}
+		out += fmt.Sprintf("%s :: %s", r.ThreadTitle, snippet)
+	}
+	return out
 }
 
 func titlesOf(stars []store.Star) string {
