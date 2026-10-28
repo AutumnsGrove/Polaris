@@ -245,7 +245,7 @@ func TestRun_DoesNotBlockOnEmbedWarmUp(t *testing.T) {
 		default:
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"embedding": []float32{0.1, 0.2}})
+		json.NewEncoder(w).Encode(map[string]interface{}{"embeddings": [][]float32{{0.1, 0.2}}})
 	}))
 	defer embedSrv.Close()
 
@@ -256,7 +256,7 @@ func TestRun_DoesNotBlockOnEmbedWarmUp(t *testing.T) {
 	}
 	rec := &recordingEmit{}
 	ctx := newTestContext(mock, rec, 5)
-	ctx.Embed = embed.NewClient(embedSrv.URL, "")
+	ctx.Embed = embed.NewOllama(embedSrv.URL, "")
 
 	start := time.Now()
 	if _, err := Run(context.Background(), ctx, nil, "hi"); err != nil {
@@ -813,7 +813,7 @@ func TestRun_InjectsQuerySimilarityWarningAfterRepeatedNearDuplicateQueries(t *t
 	// deterministically identical (cosine similarity 1.0).
 	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"embedding": []float32{0.9, 0.1, 0.1}})
+		json.NewEncoder(w).Encode(map[string]interface{}{"embeddings": [][]float32{{0.9, 0.1, 0.1}}})
 	}))
 	defer embedSrv.Close()
 
@@ -833,7 +833,7 @@ func TestRun_InjectsQuerySimilarityWarningAfterRepeatedNearDuplicateQueries(t *t
 	}
 	rec := &recordingEmit{}
 	ctx := newTestContext(mock, rec, 10)
-	ctx.Embed = embed.NewClient(embedSrv.URL, "")
+	ctx.Embed = embed.NewOllama(embedSrv.URL, "")
 
 	if _, err := Run(context.Background(), ctx, nil, "tell me about cats"); err != nil {
 		t.Fatalf("Run returned error: %v", err)

@@ -143,7 +143,7 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 	// querySimilarityThreshold/querySimilarityStreakThreshold (see
 	// agent/query_similarity.go) against real BrowseComp runs before
 	// trusting them as tightly as the citation-based signals.
-	embedClient := embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel)
+	embedClient := embed.NewOllama(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel)
 
 	// Deliberately NOT cfg.Database.Path — see the command's Long
 	// description. A separate DB file means gateway/stats.go's

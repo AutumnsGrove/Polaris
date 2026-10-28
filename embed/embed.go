@@ -1,102 +1,188 @@
-// Package embed wraps a local Ollama instance's embeddings endpoint —
-// used only by agent's query-similarity stale-search signal (see
-// agent/query_similarity.go), never for chat completions. Deliberately
-// narrow: one method, one purpose, no retry/fallback chain, since a
-// failure here should just disable that one signal for the turn, not
-// hold up the actual research loop.
+// Package embed turns text into vectors, through a provider that is
+// either this deployment's own local Ollama instance or a hosted model on
+// OpenRouter.
+//
+// The original version of this package wrapped Ollama's /api/embeddings
+// and nothing else, for one caller — agent's query-similarity stale-search
+// signal (see agent/query_similarity.go). It is now the shared entry point
+// for every embedding in Polaris, including the persisted semantic index
+// (see docs/plans/embeddings.md), so the shape here is deliberately
+// provider-shaped rather than endpoint-shaped: callers hand over text and
+// get back vectors plus what they cost, and never learn which backend
+// answered.
+//
+// Deliberately still narrow: text in, vectors out, no retry/fallback
+// chain. A failed embedding should disable one signal or skip one index
+// batch, never hold up a research loop or a turn.
 package embed
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
-	"strings"
 	"time"
 )
 
-// defaultModel is nomic-embed-text — small (274MB), fast, and already
-// pulled on both the dev machine and the potato at the time this was
-// written, so it's a safe default rather than requiring every deployment
-// to set config.yaml's ollama.embed_model explicitly.
-const defaultModel = "nomic-embed-text"
+// Default models. Both are "safe by default" rather than required config:
+// pplx-embed is cheap enough that a hosted default costs a fraction of a
+// cent for a full history backfill, and nomic-embed-text is what the
+// existing dev machine and the potato already have pulled.
+const (
+	// DefaultOpenRouterModel is perplexity/pplx-embed-v1-0.6b — 1024
+	// dims, 32k context, $0.004/M tokens (measured: a 1.0M-token full
+	// history backfill costs $0.004). Chosen over a local model because
+	// the production target is a Le Potato SBC: see
+	// docs/plans/embeddings.md's probe table for the measurements behind
+	// that call.
+	DefaultOpenRouterModel = "perplexity/pplx-embed-v1-0.6b"
 
-type Client struct {
-	baseURL string
-	model   string
-	http    *http.Client
+	// DefaultOllamaModel is nomic-embed-text — small (274MB), fast, and
+	// already pulled on both the dev machine and the potato. Note its
+	// 2048-token context: it silently truncates anything longer, which is
+	// one of the measured reasons the hosted model is the default for the
+	// persisted index (105 of 2344 real messages exceed it).
+	DefaultOllamaModel = "nomic-embed-text"
+
+	// DefaultOpenRouterBaseURL matches config.Config's own default.
+	DefaultOpenRouterBaseURL = "https://openrouter.ai/api/v1"
+)
+
+// MaxBatch is the largest number of inputs a single provider request
+// carries. Client.EmbedBatch chunks to this automatically so no caller
+// can trip a provider's per-request limit; 128 was verified against
+// OpenRouter with real messages at ~24k tokens per request (about 1.9s),
+// well inside the model's 32k window and the API's payload limit.
+const MaxBatch = 128
+
+// singleEmbedTimeout bounds Client.Embed's one-text path. That path is the
+// latency-critical one — every web_search call in a research turn waits on
+// it — so it gets a hard ceiling of its own even though a provider's HTTP
+// client is configured for much longer batches. A hung embedding must
+// degrade to "signal unavailable this call", never stall the loop.
+//
+// 5s is the timeout the previous Ollama-only client applied, kept
+// deliberately: phase 1 of docs/plans/embeddings.md is a behavior-preserving
+// refactor, and a hosted query embedding was measured at ~0.5s against real
+// history, so there's no case for loosening it.
+const singleEmbedTimeout = 5 * time.Second
+
+// Result is one provider call's vectors and what they cost.
+type Result struct {
+	// Vectors[i] is texts[i]'s embedding, always len(texts) entries each
+	// Dims long.
+	Vectors [][]float32
+	// Model/Dims describe what actually produced Vectors, and callers
+	// persist both alongside the vector: CosineSimilarity returns 0 on a
+	// length mismatch rather than erroring, so a model swap with no
+	// recorded provenance degrades to silently "nothing matches" instead
+	// of a detectable mismatch.
+	Model string
+	Dims  int
+	// CostUSD is the provider's own reported cost for this call. 0 for a
+	// local provider — a real answer, not an unknown one.
+	CostUSD float64
+	// PromptTokens is the provider's own token count for this call, when
+	// it reports one (0 when it doesn't, as local Ollama doesn't).
+	PromptTokens int
 }
 
-// NewClient returns nil if baseURL is empty — callers check for nil to
-// know whether the query-similarity signal is available at all, mirroring
-// tavily.NewClient/places.NewFoursquareClient's optional-dependency
-// pattern. model defaults to defaultModel when empty.
-func NewClient(baseURL, model string) *Client {
-	if baseURL == "" {
+// Provider is one embeddings backend.
+type Provider interface {
+	// Model is the provider's configured model identifier. This is the
+	// id the caller asked for, deliberately not whatever the API echoes
+	// back in its response: OpenRouter returns pplx-embed's response model
+	// as "pplx-embed-v1-0.6b" while the request id is
+	// "perplexity/pplx-embed-v1-0.6b", and storing the echo would make
+	// every startup look like a model change.
+	Model() string
+	// Embed embeds texts in one request. Callers should keep len(texts) at
+	// or under MaxBatch (Client.EmbedBatch does).
+	Embed(ctx context.Context, texts []string) (Result, error)
+}
+
+// Client is a Provider plus the single-text convenience the existing call
+// sites use, plus batching guarantees no caller has to remember.
+//
+// A nil *Client means "embeddings are unavailable", the same
+// optional-dependency shape as brave/parallel/tavily: every method except
+// Model is nil-safe-by-check at the call site, matching how
+// tools.Context.Embed's consumers already guard.
+type Client struct {
+	provider Provider
+}
+
+func newClient(p Provider) *Client {
+	if p == nil {
 		return nil
 	}
-	if model == "" {
-		model = defaultModel
+	return &Client{provider: p}
+}
+
+// Model reports the configured model id, or "" on a nil client.
+func (c *Client) Model() string {
+	if c == nil || c.provider == nil {
+		return ""
 	}
-	return &Client{
-		baseURL: strings.TrimSuffix(baseURL, "/"),
-		model:   model,
-		// Local-network embedding of a short search query — should return
-		// in well under a second on the hardware this runs on (a Mac or
-		// the potato's own CPU, no GPU needed for a 137M-parameter model).
-		// 5s is generous headroom before giving up and disabling the
-		// signal for this call rather than stalling the research loop.
-		http: &http.Client{Timeout: 5 * time.Second},
-	}
+	return c.provider.Model()
 }
 
-type embedRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-}
-
-type embedResponse struct {
-	Embedding []float32 `json:"embedding"`
-}
-
-// Embed returns text's embedding vector via Ollama's /api/embeddings.
+// Embed returns one text's vector.
 func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
-	body, err := json.Marshal(embedRequest{Model: c.model, Prompt: text})
+	res, err := c.embedBatch(ctx, []string{text}, singleEmbedTimeout)
 	if err != nil {
 		return nil, err
 	}
+	return res.Vectors[0], nil
+}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/embeddings", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
+// EmbedBatch embeds texts, chunking into MaxBatch-sized provider requests
+// and summing each chunk's reported cost and token count.
+func (c *Client) EmbedBatch(ctx context.Context, texts []string) (Result, error) {
+	return c.embedBatch(ctx, texts, 0)
+}
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("calling ollama: %w", err)
+// embedBatch is the one implementation behind both entry points. timeout
+// is applied only when non-zero, so the batch path is bounded by the
+// caller's context (a backfill wants minutes) while the single-text path
+// keeps its own hard ceiling.
+func (c *Client) embedBatch(ctx context.Context, texts []string, timeout time.Duration) (Result, error) {
+	if c == nil || c.provider == nil {
+		return Result{}, fmt.Errorf("embeddings are not configured")
 	}
-	defer resp.Body.Close()
+	if len(texts) == 0 {
+		return Result{}, fmt.Errorf("nothing to embed")
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	out := Result{Model: c.provider.Model()}
+	for start := 0; start < len(texts); start += MaxBatch {
+		end := min(start+MaxBatch, len(texts))
+		part, err := c.provider.Embed(ctx, texts[start:end])
+		if err != nil {
+			// Partial results are deliberately discarded rather than
+			// returned alongside the error: a caller that indexes what it
+			// got would silently leave a hole, and every caller here
+			// either retries the whole batch later (the indexer's sweep)
+			// or doesn't need it (the query path).
+			return Result{}, err
+		}
+		if len(part.Vectors) != end-start {
+			return Result{}, fmt.Errorf("embed: provider returned %d vectors for %d inputs", len(part.Vectors), end-start)
+		}
+		if out.Dims == 0 {
+			out.Dims = part.Dims
+		} else if part.Dims != out.Dims {
+			return Result{}, fmt.Errorf("embed: provider returned inconsistent dimensions (%d then %d) within one call", out.Dims, part.Dims)
+		}
+		out.Vectors = append(out.Vectors, part.Vectors...)
+		out.CostUSD += part.CostUSD
+		out.PromptTokens += part.PromptTokens
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var out embedResponse
-	if err := json.Unmarshal(respBody, &out); err != nil {
-		return nil, fmt.Errorf("decoding ollama response: %w", err)
-	}
-	if len(out.Embedding) == 0 {
-		return nil, fmt.Errorf("ollama returned an empty embedding")
-	}
-	return out.Embedding, nil
+	return out, nil
 }
 
 // CosineSimilarity returns a and b's cosine similarity, in [-1, 1] for

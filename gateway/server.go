@@ -184,7 +184,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		brave:             brave.NewClient(cfg.Brave.APIKey),
 		parallel:          parallel.NewClient(cfg.Parallel.APIKey),
 		decisions:         decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
-		embed:             embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
+		embed:             embed.NewOllama(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
 		stt:               voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		tts:               voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
 		mux:               http.NewServeMux(),

@@ -3,68 +3,169 @@ package embed
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
-func TestNewClient_EmptyBaseURLReturnsNil(t *testing.T) {
-	if c := NewClient("", ""); c != nil {
-		t.Errorf("NewClient(\"\", \"\") = %v, want nil", c)
+// fakeProvider is the Provider double the Client-level tests use — the
+// concrete providers have their own tests against real HTTP servers.
+type fakeProvider struct {
+	model string
+	dims  int
+	// calls records the size of each Embed request, so chunking is
+	// observable.
+	calls []int
+	// costPerCall is added to every Result.CostUSD.
+	costPerCall float64
+	err         error
+}
+
+func (f *fakeProvider) Model() string { return f.model }
+
+func (f *fakeProvider) Embed(_ context.Context, texts []string) (Result, error) {
+	f.calls = append(f.calls, len(texts))
+	if f.err != nil {
+		return Result{}, f.err
+	}
+	vecs := make([][]float32, len(texts))
+	for i := range texts {
+		vecs[i] = make([]float32, f.dims)
+		vecs[i][0] = float32(i)
+	}
+	return Result{Vectors: vecs, Model: f.model, Dims: f.dims, CostUSD: f.costPerCall, PromptTokens: len(texts)}, nil
+}
+
+func TestNewClients_NilWhenUnconfigured(t *testing.T) {
+	if c := NewOllama("", ""); c != nil {
+		t.Errorf("NewOllama(\"\", \"\") = %v, want nil", c)
+	}
+	if c := NewOpenRouter("", "", ""); c != nil {
+		t.Errorf("NewOpenRouter with no key = %v, want nil", c)
 	}
 }
 
-func TestNewClient_DefaultsModelWhenEmpty(t *testing.T) {
-	c := NewClient("http://localhost:11434", "")
-	if c.model != defaultModel {
-		t.Errorf("model = %q, want %q", c.model, defaultModel)
+func TestNewClients_DefaultModels(t *testing.T) {
+	if got := NewOllama("http://localhost:11434", "").Model(); got != DefaultOllamaModel {
+		t.Errorf("ollama default model = %q, want %q", got, DefaultOllamaModel)
+	}
+	if got := NewOpenRouter("key", "", "").Model(); got != DefaultOpenRouterModel {
+		t.Errorf("openrouter default model = %q, want %q", got, DefaultOpenRouterModel)
+	}
+	if got := NewOpenRouter("key", "", "custom/model").Model(); got != "custom/model" {
+		t.Errorf("openrouter explicit model = %q, want custom/model", got)
 	}
 }
 
-func TestEmbed_SendsModelAndPromptReturnsVector(t *testing.T) {
-	var gotReq embedRequest
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
-			t.Fatalf("decoding request: %v", err)
-		}
-		json.NewEncoder(w).Encode(embedResponse{Embedding: []float32{0.1, 0.2, 0.3}})
-	}))
-	defer srv.Close()
+func TestNilClient_IsSafe(t *testing.T) {
+	var c *Client
+	if c.Model() != "" {
+		t.Errorf("nil Client.Model() = %q, want empty", c.Model())
+	}
+	if _, err := c.Embed(context.Background(), "q"); err == nil {
+		t.Error("nil Client.Embed should error, got nil")
+	}
+	if _, err := c.EmbedBatch(context.Background(), []string{"q"}); err == nil {
+		t.Error("nil Client.EmbedBatch should error, got nil")
+	}
+}
 
-	c := NewClient(srv.URL, "custom-model")
-	vec, err := c.Embed(context.Background(), "test query")
+func TestEmbedBatch_ChunksAtMaxBatch(t *testing.T) {
+	p := &fakeProvider{model: "m", dims: 2}
+	c := newClient(p)
+
+	n := MaxBatch + 5
+	texts := make([]string, n)
+	for i := range texts {
+		texts[i] = fmt.Sprintf("text %d", i)
+	}
+	res, err := c.EmbedBatch(context.Background(), texts)
 	if err != nil {
-		t.Fatalf("Embed returned error: %v", err)
+		t.Fatalf("EmbedBatch: %v", err)
+	}
+	if len(res.Vectors) != n {
+		t.Fatalf("got %d vectors, want %d", len(res.Vectors), n)
+	}
+	if len(p.calls) != 2 || p.calls[0] != MaxBatch || p.calls[1] != 5 {
+		t.Errorf("provider calls = %v, want [%d 5]", p.calls, MaxBatch)
+	}
+	// Vectors must stay in input order across chunk boundaries — the
+	// indexer writes them positionally.
+	if res.Vectors[0][0] != 0 || res.Vectors[MaxBatch][0] != 0 {
+		t.Errorf("chunk boundary vectors = %v, %v; want per-chunk first-index 0", res.Vectors[0][0], res.Vectors[MaxBatch][0])
+	}
+}
+
+func TestEmbedBatch_SumsCostAcrossChunks(t *testing.T) {
+	p := &fakeProvider{model: "m", dims: 2, costPerCall: 0.0001}
+	c := newClient(p)
+	texts := make([]string, MaxBatch+1)
+	res, err := c.EmbedBatch(context.Background(), texts)
+	if err != nil {
+		t.Fatalf("EmbedBatch: %v", err)
+	}
+	if want := 0.0002; res.CostUSD < want-1e-12 || res.CostUSD > want+1e-12 {
+		t.Errorf("CostUSD = %v, want %v (two calls summed)", res.CostUSD, want)
+	}
+	if res.PromptTokens != len(texts) {
+		t.Errorf("PromptTokens = %d, want %d", res.PromptTokens, len(texts))
+	}
+}
+
+func TestEmbedBatch_ErrorDiscardsPartialResults(t *testing.T) {
+	p := &fakeProvider{model: "m", dims: 2, err: errors.New("boom")}
+	c := newClient(p)
+	res, err := c.EmbedBatch(context.Background(), []string{"a"})
+	if err == nil {
+		t.Fatal("want an error, got nil")
+	}
+	if len(res.Vectors) != 0 {
+		t.Errorf("Vectors = %v, want none on error", res.Vectors)
+	}
+}
+
+func TestEmbedBatch_RejectsEmptyInput(t *testing.T) {
+	c := newClient(&fakeProvider{model: "m", dims: 2})
+	if _, err := c.EmbedBatch(context.Background(), nil); err == nil {
+		t.Error("empty input should error, got nil")
+	}
+}
+
+func TestEmbedBatch_RejectsInconsistentDimsAcrossChunks(t *testing.T) {
+	// A provider that changes width between chunked requests would
+	// silently produce a store whose vectors can't be compared across the
+	// boundary; make it loud instead. (With-in one request is caught by the
+	// provider implementations themselves.)
+	c := newClient(&shiftingDimsProvider{})
+	texts := make([]string, MaxBatch+1)
+	if _, err := c.EmbedBatch(context.Background(), texts); err == nil {
+		t.Error("inconsistent dimensions should error, got nil")
+	}
+}
+
+type shiftingDimsProvider struct{ calls int32 }
+
+func (p *shiftingDimsProvider) Model() string { return "m" }
+func (p *shiftingDimsProvider) Embed(_ context.Context, texts []string) (Result, error) {
+	n := int(atomic.AddInt32(&p.calls, 1))
+	vecs := make([][]float32, len(texts))
+	for i := range texts {
+		vecs[i] = make([]float32, n+1)
+	}
+	return Result{Vectors: vecs, Model: "m", Dims: n + 1}, nil
+}
+
+func TestEmbed_SingleReturnsFirstVector(t *testing.T) {
+	c := newClient(&fakeProvider{model: "m", dims: 3})
+	vec, err := c.Embed(context.Background(), "one text")
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
 	}
 	if len(vec) != 3 {
-		t.Fatalf("vec = %v, want length 3", vec)
-	}
-	if gotReq.Model != "custom-model" || gotReq.Prompt != "test query" {
-		t.Errorf("request = %+v, want model=custom-model prompt=%q", gotReq, "test query")
-	}
-}
-
-func TestEmbed_EmptyEmbeddingIsAnError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(embedResponse{})
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "")
-	if _, err := c.Embed(context.Background(), "q"); err == nil {
-		t.Error("Embed with an empty response embedding should return an error, got nil")
-	}
-}
-
-func TestEmbed_NonOKStatusIsAnError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "")
-	if _, err := c.Embed(context.Background(), "q"); err == nil {
-		t.Error("Embed with a 500 response should return an error, got nil")
+		t.Errorf("vec = %v, want 3 components", vec)
 	}
 }
 
@@ -104,5 +205,60 @@ func TestCosineSimilarity_ZeroVectorIsZero(t *testing.T) {
 	b := []float32{1, 2, 3}
 	if sim := CosineSimilarity(a, b); sim != 0 {
 		t.Errorf("CosineSimilarity(zero vector) = %v, want 0", sim)
+	}
+}
+
+// TestOllama_SendsModelAndInputAndReturnsVectors covers the batch endpoint
+// shape: input array in, embeddings array out.
+func TestOllama_SendsModelAndInputAndReturnsVectors(t *testing.T) {
+	var got ollamaEmbedRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/embed" {
+			t.Errorf("path = %s, want /api/embed", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decoding request: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(ollamaEmbedResponse{
+			Embeddings: [][]float32{{0.1, 0.2}, {0.3, 0.4}},
+		})
+	}))
+	defer srv.Close()
+
+	res, err := NewOllama(srv.URL, "custom-model").EmbedBatch(context.Background(), []string{"a", "b"})
+	if err != nil {
+		t.Fatalf("EmbedBatch: %v", err)
+	}
+	if got.Model != "custom-model" || len(got.Input) != 2 || got.Input[1] != "b" {
+		t.Errorf("request = %+v, want model=custom-model input=[a b]", got)
+	}
+	if res.Dims != 2 || len(res.Vectors) != 2 {
+		t.Errorf("res = %+v, want 2 vectors of dims 2", res)
+	}
+	// A local model costs no money — 0 is the right answer, not "unknown".
+	if res.CostUSD != 0 {
+		t.Errorf("CostUSD = %v, want 0 for a local provider", res.CostUSD)
+	}
+}
+
+func TestOllama_CountMismatchIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(ollamaEmbedResponse{Embeddings: [][]float32{{0.1}}})
+	}))
+	defer srv.Close()
+
+	if _, err := NewOllama(srv.URL, "").EmbedBatch(context.Background(), []string{"a", "b"}); err == nil {
+		t.Error("one embedding for two inputs should error, got nil")
+	}
+}
+
+func TestOllama_NonOKStatusIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	if _, err := NewOllama(srv.URL, "").Embed(context.Background(), "q"); err == nil {
+		t.Error("a 500 response should error, got nil")
 	}
 }
