@@ -1463,3 +1463,29 @@ func TestRun_SkipsWarmUpForHostedProvider(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+// TestTrackSearchQuery_BillsHostedEmbeddingToTheTurn: a hosted provider
+// charges per query embedding, and trackSearchQuery fires on every
+// web_search. That spend must reach the turn's ExtraCostUSD, not vanish.
+func TestTrackSearchQuery_BillsHostedEmbeddingToTheTurn(t *testing.T) {
+	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data":  []map[string]interface{}{{"index": 0, "embedding": []float32{0.1, 0.2}}},
+			"usage": map[string]interface{}{"prompt_tokens": 3, "cost": 0.00002},
+		})
+	}))
+	defer embedSrv.Close()
+
+	ctx := newTestContext(&llmtest.MockClient{}, &recordingEmit{}, 5)
+	ctx.Embed = embed.NewOpenRouter("test-key", embedSrv.URL, "")
+	ctx.Ctx = context.Background() // Run normally sets this
+
+	var tracker searchQueryTracker
+	trackSearchQuery(ctx, &tracker, "first query")
+	trackSearchQuery(ctx, &tracker, "second query")
+
+	if got, want := ctx.ExtraCostUSD, 0.00004; got < want*0.99 || got > want*1.01 {
+		t.Errorf("ExtraCostUSD = %v, want ~%v (two billed query embeddings)", got, want)
+	}
+}

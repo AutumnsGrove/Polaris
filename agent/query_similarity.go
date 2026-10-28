@@ -121,11 +121,16 @@ func trackSearchQuery(ctx *tools.Context, tracker *searchQueryTracker, query str
 	if ctx.Embed == nil {
 		return "", false
 	}
-	vec, err := ctx.Embed.Embed(ctx.Ctx, query)
+	vec, cost, err := ctx.Embed.EmbedWithCost(ctx.Ctx, query)
 	if err != nil {
 		log.Warn("query-similarity: embedding failed, skipping this signal for this call", "query", query, "err", err)
 		return "", false
 	}
+	// A hosted provider charges per call (zero for local Ollama), and this
+	// fires on every web_search — billed to the turn so it lands in the same
+	// totals as the turn's other tool-side LLM spend instead of being the one
+	// paid call the stats never see.
+	ctx.AddCost(cost)
 	prev := tracker.lastEmbedding
 	tracker.lastEmbedding = vec
 	if prev == nil {

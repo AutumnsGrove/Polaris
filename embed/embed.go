@@ -143,11 +143,20 @@ func (c *Client) Local() bool {
 
 // Embed returns one text's vector.
 func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
+	vec, _, err := c.EmbedWithCost(ctx, text)
+	return vec, err
+}
+
+// EmbedWithCost is Embed plus the provider-reported spend for the call (0 for
+// a local provider). Same singleEmbedTimeout ceiling as Embed. Callers on a
+// turn's critical path use this so a hosted provider's per-query charge can
+// be billed to the turn rather than vanishing.
+func (c *Client) EmbedWithCost(ctx context.Context, text string) ([]float32, float64, error) {
 	res, err := c.embedBatch(ctx, []string{text}, singleEmbedTimeout)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return res.Vectors[0], nil
+	return res.Vectors[0], res.CostUSD, nil
 }
 
 // EmbedBatch embeds texts, chunking into MaxBatch-sized provider requests
