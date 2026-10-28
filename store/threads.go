@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type Thread struct {
 	ID      string  `json:"id"`
@@ -99,8 +102,44 @@ func (s *Store) PromoteGhostThread(id string) error {
 // untouched. Only call this after waiting out any goroutine that might
 // still be writing to this thread — see gateway/ws.go's connWG.
 func (s *Store) DeleteThreadPermanently(id string) error {
-	_, err := s.db.Exec(`DELETE FROM threads WHERE id = ? AND ghost = 1`, id)
-	return err
+	return s.deleteGhostThreads(`id = ?`, id)
+}
+
+// deleteGhostThreads hard-deletes the ghost threads matching where (with args),
+// removing the rows that reference threads *without* an ON DELETE CASCADE first.
+//
+// messages and events cascade on their own, but shooting_star_runs and
+// star_sources declare a plain REFERENCES threads(id), so a ghost thread that
+// Weaver had ever looked at could not be deleted at all: the whole statement
+// failed on a FOREIGN KEY constraint. Found live on 2026-10-28 — one incognito
+// thread had 12,800 shooting_star_runs rows (see
+// EligibleConstellationThreads' comment for how Weaver got hold of it), which
+// made every startup sweep in cmd/run.go log "sweeping leftover ghost threads
+// failed" and leave the thread behind, forever.
+//
+// Deleting those two tables' rows here rather than adding ON DELETE CASCADE to
+// them keeps this a leaf change: SQLite cannot alter a foreign key in place, so
+// a cascade would mean rebuilding both tables (and copying star_sources) for a
+// case that is now unreachable anyway — Weaver can no longer be pointed at a
+// ghost thread. This is the cleanup for the rows that already exist.
+func (s *Store) deleteGhostThreads(where string, args ...any) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	ghosts := `SELECT id FROM threads WHERE ghost = 1 AND ` + where
+	if _, err := tx.Exec(`DELETE FROM shooting_star_runs WHERE thread_id IN (`+ghosts+`)`, args...); err != nil {
+		return fmt.Errorf("deleting ghost threads' shooting star runs: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM star_sources WHERE thread_id IN (`+ghosts+`)`, args...); err != nil {
+		return fmt.Errorf("deleting ghost threads' star sources: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM threads WHERE ghost = 1 AND `+where, args...); err != nil {
+		return fmt.Errorf("deleting ghost threads: %w", err)
+	}
+	return tx.Commit()
 }
 
 // DeleteAllGhostThreads hard-deletes every thread still tagged ghost —
@@ -130,7 +169,11 @@ func (s *Store) DeleteAllGhostThreads() ([]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	if _, err := s.db.Exec(`DELETE FROM threads WHERE ghost = 1`); err != nil {
+	// Shares DeleteThreadPermanently's dependent-row cleanup: a ghost thread Weaver
+	// had touched holds shooting_star_runs/star_sources rows that do NOT cascade,
+	// and a bare DELETE here failed the whole sweep on a FOREIGN KEY constraint
+	// (a real, every-startup warning until 2026-10-28).
+	if err := s.deleteGhostThreads(`1 = 1`); err != nil {
 		return nil, err
 	}
 	return ids, nil
