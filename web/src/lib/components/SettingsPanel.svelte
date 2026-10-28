@@ -813,6 +813,34 @@
 						it generates and which model it uses are in the settings on Comet's own page.
 					{/snippet}
 				</SettingsRow>
+				<SettingsRow
+					icon={Wrench}
+					title="Agent harness"
+					desc={appState.settings.agentHarnessLocked
+						? 'Pinned by POLARIS_NOVA_LOOP on the server'
+						: 'Temporary: Nova or the original Polaris loop'}
+				>
+					{#snippet control()}
+						<div class="theme-toggle" role="group" aria-label="Agent harness">
+							{#each ['nova', 'polaris'] as const as harness (harness)}
+								<button
+									class:active={appState.settings.agentHarness === harness}
+									aria-pressed={appState.settings.agentHarness === harness}
+									disabled={appState.settings.agentHarnessLocked}
+									onclick={() => appState.settings.setAgentHarness(harness)}
+								>
+									{harness === 'nova' ? 'Nova' : 'Polaris'}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+					{#snippet details()}
+						A debugging switch for telling whether odd behavior comes from Nova (the library the agent loop
+						now runs on) or from Polaris itself. Applies from your next message; a reply already in progress
+						finishes on the loop it started with. Both loops share the same tools and prompts, so re-send
+						the same message under each and compare. This goes away once the original loop is removed.
+					{/snippet}
+				</SettingsRow>
 			</div>
 
 			<div class="settings-label usage-section-label">System</div>

@@ -19,7 +19,15 @@ var novaLoop atomic.Bool
 // SetNovaLoop selects the Nova-backed loop for every subsequent Run.
 func SetNovaLoop(on bool) { novaLoop.Store(on) }
 
-// novaLoopEnabled is the config value, with POLARIS_NOVA_LOOP as a full
+// NovaLoopEnvOverridden reports whether POLARIS_NOVA_LOOP is set, i.e. whether
+// the settings panel's harness pick is being ignored in favor of the environment.
+func NovaLoopEnvOverridden() bool {
+	_, ok := os.LookupEnv("POLARIS_NOVA_LOOP")
+	return ok
+}
+
+// novaLoopEnabled is the config value (or settings-panel pick, see
+// gateway.NovaLoopFromStore), with POLARIS_NOVA_LOOP as a full
 // override in both directions: "1"/"true" forces the Nova loop on for a
 // checkout that has it off, "0"/"false" forces the bespoke loop and is the
 // environment's kill switch (docs/plans/nova-loop.md §6 N10).

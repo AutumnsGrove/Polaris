@@ -1,12 +1,15 @@
 package gateway
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"polaris/agent"
 	"polaris/prompts"
 	"polaris/store"
 	"polaris/tz"
@@ -128,5 +131,76 @@ func TestPutSettingsTimezone(t *testing.T) {
 	}
 	if tz.Location() != time.Local {
 		t.Errorf("empty should revert to the server zone")
+	}
+}
+
+// TestNovaLoopFromStore pins the harness pick's precedence: a stored
+// "nova"/"polaris" beats config.yaml's default in both directions, and unset,
+// junk, or a nil store all defer to the default.
+func TestNovaLoopFromStore(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+
+	if !NovaLoopFromStore(nil, true) || NovaLoopFromStore(nil, false) {
+		t.Error("nil store must defer to the config default")
+	}
+	if !NovaLoopFromStore(db, true) || NovaLoopFromStore(db, false) {
+		t.Error("unset must defer to the config default")
+	}
+	for val, want := range map[string]bool{"polaris": false, "nova": true, "junk": true} {
+		if err := db.SetSetting(settingAgentHarness, val); err != nil {
+			t.Fatalf("SetSetting: %v", err)
+		}
+		// "junk" defers to the default (true here); the two real picks ignore it.
+		if got := NovaLoopFromStore(db, true); got != want {
+			t.Errorf("stored %q, config default true: got %v, want %v", val, got, want)
+		}
+	}
+	db.SetSetting(settingAgentHarness, "nova")
+	if !NovaLoopFromStore(db, false) {
+		t.Error("stored nova must beat a config default of false")
+	}
+}
+
+func TestHandlePutSettings_AgentHarnessRoundTrips(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	t.Cleanup(func() { agent.SetNovaLoop(false) })
+
+	put := func(v string) int {
+		body, _ := json.Marshal(map[string]interface{}{"agent_harness": v})
+		req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("PUT /api/settings: %v", err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	get := func() string {
+		resp, err := http.Get(h.url("/api/settings"))
+		if err != nil {
+			t.Fatalf("GET /api/settings: %v", err)
+		}
+		defer resp.Body.Close()
+		var settings map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&settings)
+		s, _ := settings["agent_harness"].(string)
+		return s
+	}
+
+	if got := get(); got != "nova" {
+		t.Errorf("default agent_harness = %q, want nova (the config default)", got)
+	}
+	if code := put("polaris"); code != http.StatusNoContent {
+		t.Fatalf("PUT polaris status = %d, want 204", code)
+	}
+	if got := get(); got != "polaris" {
+		t.Errorf("agent_harness after PUT polaris = %q", got)
+	}
+	if code := put("bogus"); code != http.StatusBadRequest {
+		t.Errorf("PUT bogus status = %d, want 400", code)
 	}
 }

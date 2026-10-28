@@ -111,6 +111,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 	gateway.ApplyTimezoneFromStore(db)
+	// The settings-panel harness pick beats config.yaml's nova_loop; applied
+	// here so it holds from the first turn, not only after a config reload.
+	agent.SetNovaLoop(gateway.NovaLoopFromStore(db, cfg.NovaLoopEnabled()))
 	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode}, "")
 
 	// Runs for the life of the process, roughly once a day (see

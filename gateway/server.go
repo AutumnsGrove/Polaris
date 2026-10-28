@@ -683,8 +683,9 @@ func (s *Server) liveConfig() *config.Config {
 		s.cfgMu.Unlock()
 		// Which agent loop runs is a hot-reloadable config value (see
 		// config.Config.NovaLoopEnabled); agent.Run reads it once per call, so a
-		// turn already in flight keeps the loop it started on.
-		agent.SetNovaLoop(fresh.NovaLoopEnabled())
+		// turn already in flight keeps the loop it started on. The settings-panel
+		// pick (gateway/settings.go's settingAgentHarness) overrides the file.
+		agent.SetNovaLoop(NovaLoopFromStore(s.db, fresh.NovaLoopEnabled()))
 	}
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()

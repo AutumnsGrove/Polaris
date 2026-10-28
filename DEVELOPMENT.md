@@ -41,7 +41,8 @@ latest image from GHCR and hand off to a host-side watcher (`gateway/docker_upda
 `agent.Run` has two implementations behind one signature: Polaris's own loop (`agent/driver.go`) and
 one built on [Nova](https://github.com/AutumnsGrove/nova) (`agent/nova_*.go`). **Nova is the
 default**; `nova_loop: false` in `config.yaml` (hot-reloaded) or `POLARIS_NOVA_LOOP=0` is the kill
-switch kept for one release. Run `POLARIS_NOVA_LOOP=0 go test ./...` to exercise the bespoke loop —
+switch kept for one release. For A/B debugging, Settings → "Agent harness" flips the loop live (next
+turn onward; stored as the `agent_harness` setting, which beats `nova_loop` but not `POLARIS_NOVA_LOOP`). Run `POLARIS_NOVA_LOOP=0 go test ./...` to exercise the bespoke loop —
 CI does both. The design, the parity harness (`agent/nova_parity_test.go`) and the known differences
 are in `docs/plans/nova-loop.md`.
 
