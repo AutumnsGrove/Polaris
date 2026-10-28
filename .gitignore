@@ -21,6 +21,13 @@ dev/.stack/
 # personal usage data; it must never be committed.
 dev/fixtures/
 
+# Local scratch space for one-off probes — currently a copied production
+# polaris.db plus derived message/vector JSON extracts, used to measure
+# embedding cost and retrieval quality (see docs/plans/embeddings.md).
+# Same rule as dev/fixtures/ above: real chat history, never committed.
+# The .db file is already covered by *.db; the JSON extracts are not.
+.scratch/
+
 # Docker Compose install — real config/secrets, gitignored the same way
 # their bare-metal equivalents are (see compose/polaris/config.yaml.example).
 compose/polaris/config.yaml
