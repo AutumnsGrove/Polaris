@@ -124,7 +124,8 @@ func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 
 	if (args.CardIndex >= 1) == (args.Path != "") {
 		return emitToolError(ctx, "view_image", map[string]interface{}{"image_index": args.CardIndex, "path": args.Path},
-			"error: pass exactly one of image_index or path", callID)
+			"error: pass exactly one of image_index or path — view_image does not take a url; to look at an image from a page, "+
+				"fetch_url it into the workspace first and pass the saved filename as path", callID)
 	}
 
 	mode := args.Mode
