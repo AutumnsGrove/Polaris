@@ -10,7 +10,9 @@ package gateway
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -91,11 +93,13 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return fmt.Errorf("shooting star: %w", err)
 	}
 	if task == "" {
-		// Nothing new since the last run — the caller's eligibility gate
-		// (see gateway/constellation_scheduler.go) should already exclude
-		// this, but stay a harmless no-op rather than starting an empty
-		// run against Weaver.
-		warnOnErr("finishing no-op shooting star run", db.FinishShootingStarRun(runID, "nothing new since the last pass", "", false))
+		// Nothing to weave: no new messages since the last successful pass (the
+		// caller's eligibility gate should already exclude that), or the thread
+		// is one ReadThread refuses — a ghost/incognito thread or one deleted
+		// since the pass was scheduled. Finishing it as a clean run (needs_retry
+		// = 0) is what keeps either case from becoming a retry loop; the summary
+		// names both possibilities because this layer can't tell them apart.
+		warnOnErr("finishing no-op shooting star run", db.FinishShootingStarRun(runID, "nothing new since the last pass, or the thread is no longer readable", "", false))
 		return nil
 	}
 
@@ -234,6 +238,17 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 		// there's nothing to filter for — Weaver gets the thread's raw
 		// content directly, no filter pass.
 		read, err := db.ReadThread(effectiveID)
+		if errors.Is(err, sql.ErrNoRows) {
+			// The thread is deliberately unreadable — a ghost (incognito)
+			// thread, which ReadThread refuses by design, or one deleted out
+			// from under the pass. "Nothing to weave" is a finished run, not a
+			// failed one: returning the error here marked needs_retry = 1, and
+			// EligibleConstellationThreads re-selects any thread whose last run
+			// needs a retry, so one unreadable thread retried forever — found
+			// live on 2026-10-27 as 12,789 runs at one per minute (see that
+			// function's comment for the eligibility half of the fix).
+			return "", nil
+		}
 		if err != nil {
 			return "", err
 		}

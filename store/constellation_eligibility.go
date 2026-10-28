@@ -88,6 +88,7 @@ func (s *Store) EligibleConstellationThreadsForBackfill(limit int) ([]string, er
 //     downstream content-adjacent surface talking to itself, and letting a
 //     pulse thread back in as a shooting-star candidate would eventually
 //     feed Weaver's output back into Weaver.
+//   - ghost = 0 is required: an incognito thread is excluded outright — see the note below.
 //
 // Joins through root the same way SearchMessages does, and for the same
 // reason (see that function's doc comment) — an edited/regenerated
@@ -102,12 +103,28 @@ func (s *Store) EligibleConstellationThreadsForBackfill(limit int) ([]string, er
 // star_sources/shooting_star_runs should always track; t (whichever of
 // root or its currently-active variant EffectiveThreadID(root) would
 // resolve to) is only consulted here for its live message content/timing.
+//
+// Ghost threads are excluded (root.ghost = 0): an incognito session must never be woven into
+// Constellation. That is a privacy rule, not a performance one — Weaver's whole job is to
+// synthesize durable "stars" about the person from their conversations, so mining a thread the
+// person explicitly kept off the record would persist exactly what ghost mode exists to prevent.
+// Every other "is this a real conversation" query in the store already carries this filter
+// (liveThreadFilter in fields.go, Comet's two, message_search.go); this one was the one that didn't.
+//
+// Missing it did not leak, because store.ReadThread refuses ghost threads outright (see its own
+// comment) and RunShootingStar's first pass goes through it — but the refusal surfaced as a
+// retryable error, and the retry gate below re-selects any thread whose last run needs a retry, so
+// a single incognito thread looped forever: found live on 2026-10-27, one ghost thread had 12,789
+// failed runs at one per minute since 2026-10-19. Excluding ghosts here is the fix; RunShootingStar
+// also treats an unreadable thread as a terminal no-op (see its comment) so no future unreadable
+// thread can wedge the scheduler the same way.
 func (s *Store) EligibleConstellationThreads(pollIntervalMinutes int) ([]string, error) {
 	rows, err := s.db.Query(`
 		SELECT root.id
 		FROM threads t
 		JOIN threads root ON root.id = COALESCE(NULLIF(t.fork_root_id, ''), t.id)
 		WHERE root.disabled = 0
+		  AND root.ghost = 0
 		  AND root.source != 'pulsar'
 		  AND root.source != 'weaver'
 		  AND root.source != 'comet_approach'
