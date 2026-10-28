@@ -171,7 +171,12 @@ func handleFetchURL(argsJSON string, ctx *Context, callID string) string {
 	if args.URL != "" {
 		found := false
 		for _, cit := range ctx.CitationsSnapshot() {
-			if cit.URL == args.URL {
+			// A citation's ImageURL counts too: web_read prints it to the model as
+			// "[Page image: ...]", so refusing it here told the model about an image
+			// and then wouldn't let it download it (seen live: a Nikon Small World
+			// page, where every retry hit this error and the model never saw the
+			// photo).
+			if cit.URL == args.URL || (cit.ImageURL != "" && cit.ImageURL == args.URL) {
 				found = true
 				break
 			}
