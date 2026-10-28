@@ -576,3 +576,28 @@ The query embedding happens inside the service, which Weaver reaches only throug
 closure `weaverToolClosures` already took. Threading the service into
 `RunShootingStar`/`RunShootingStarRecovered`/`runConstellationTick`/`BackfillConstellation` as an
 explicit parameter (rather than a package-level hook) is the only signature change.
+
+## Implementation notes (phase 3 — hybrid chat search, 2026-10-28)
+
+`search_chats` (the tool, and Weaver's copy of it) is hybrid. Message-level fusion, same result
+shape — `store.MessageSearchResult` gained a `MessageID` field so the two rankings can be fused on
+the same key, which is additive to the JSON and invisible to existing consumers.
+
+**The sidebar's search box was deliberately left keyword-only.** It's a human typing short
+prefixes, where FTS5's prefix matching is already ideal and a ~0.5s query-embedding round trip per
+keystroke would be pure cost. Hybrid retrieval exists for the model's paraphrased questions, and
+that's also where every measured win is. If that call ever needs revisiting, this is the place it
+was made.
+
+**Keyword hits keep their highlight markers.** The first implementation re-fetched every fused row
+through `MessagesByIDs` (which builds a plain-text preview, since a semantic hit has no matched
+span) — which silently stripped `\x02…\x03` from every exact match.
+`TestSearchChatsHybrid_ExactMatchKeepsItsHighlight` caught it; the fix keeps FTS5's own snippet for
+rows the keyword tier returned and only builds a preview for semantic-only ones.
+
+**Semantic-only rows are re-fetched, not trusted from the cache.** `MessagesByIDs` applies the
+whole `searchableThreadWhere` predicate, so a stale vector for a since-hidden or hard-deleted
+thread can't surface through the fusion path even if it somehow survived in the in-memory cache.
+That's the retrieval-layer half of the ghost guarantee, tested directly by
+`TestSearchChatsHybrid_NeverSurfacesAGhost` (which force-inserts a vector for a ghost message and
+asserts it still can't be found).

@@ -84,3 +84,43 @@ func (s *Store) LibraryStarsByIDs(ids []int64) ([]Star, error) {
 	}
 	return results, nil
 }
+
+// MessagesByIDs fetches message-level search results for the semantic side
+// of chat search, applying exactly the eligibility SearchMessages applies
+// (searchableThreadWhere, which includes the ghost and Field opt-out rules).
+//
+// The snippet here is a plain prefix of the message, with no highlight
+// markers: a semantic hit has no matched term to mark. That's safe for both
+// consumers — search_chats strips the markers anyway, and the frontend's
+// snippetSegments splits on them, so a marker-free snippet renders as one
+// plain text node.
+func (s *Store) MessagesByIDs(ids []int64) ([]MessageSearchResult, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.Query(
+		`SELECT m.id, root.id, root.title, m.role, m.created_at, substr(m.content, 1, 200)
+		 FROM messages m`+searchableThreadJoin+`
+		 WHERE m.id IN (`+idPlaceholders(len(ids))+`)
+		   AND `+searchableThreadWhere,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fetching messages by id: %w", err)
+	}
+	defer rows.Close()
+
+	results := []MessageSearchResult{}
+	for rows.Next() {
+		var r MessageSearchResult
+		if err := rows.Scan(&r.MessageID, &r.ThreadID, &r.ThreadTitle, &r.Role, &r.CreatedAt, &r.Snippet); err != nil {
+			return nil, fmt.Errorf("fetching messages by id: %w", err)
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}

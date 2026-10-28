@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"polaris/embed"
@@ -335,6 +336,148 @@ func TestFuseRRF_StableAcrossCalls(t *testing.T) {
 			if first[j] != again[j] {
 				t.Fatalf("run %d = %v, first run = %v", i, again, first)
 			}
+		}
+	}
+}
+
+// chatFixture seeds threads whose messages split cleanly between "FTS finds
+// it" and "only meaning finds it".
+func chatFixture(t *testing.T) (db *store.Store, svc *embedService, morningMsgID, exactMsgID int64) {
+	t.Helper()
+	db = newEmbedTestStore(t)
+
+	if err := db.CreateThread("routine", "Morning routine", "m", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	var err error
+	morningMsgID, err = db.AddMessage("routine", "assistant",
+		"Anyway, the french press makes a nice cup before 7am.", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	if err := db.CreateThread("sqlite", "SQLite notes", "m", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	exactMsgID, err = db.AddMessage("sqlite", "user",
+		"what does sqlite do about busy_timeout", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	svc = newEmbedService(db, embed.NewOpenRouter("k", synonymEmbedServer(t).URL, "test-model"))
+	if _, err := svc.IndexOnce(context.Background(), 100); err != nil {
+		t.Fatalf("IndexOnce: %v", err)
+	}
+	return db, svc, morningMsgID, exactMsgID
+}
+
+// TestSearchChatsHybrid_SemanticOnlyHit is search_chats' version of the
+// star case: the query shares no wording with the message it should find.
+func TestSearchChatsHybrid_SemanticOnlyHit(t *testing.T) {
+	db, svc, morningMsgID, _ := chatFixture(t)
+
+	fts, err := db.SearchMessages("coffee", 30)
+	if err != nil {
+		t.Fatalf("SearchMessages: %v", err)
+	}
+	for _, r := range fts {
+		if r.MessageID == morningMsgID {
+			t.Skip("fixture is degenerate: FTS already matches this message")
+		}
+	}
+
+	results, err := svc.SearchChatsHybrid(context.Background(), "coffee", 10)
+	if err != nil {
+		t.Fatalf("SearchChatsHybrid: %v", err)
+	}
+	found := false
+	for _, r := range results {
+		if r.MessageID == morningMsgID {
+			found = true
+			// A semantic hit has no matched span, so its snippet must be
+			// plain text — no \x02/\x03 markers for a caller to render as
+			// highlights that don't exist.
+			if strings.ContainsAny(r.Snippet, "\x02\x03") {
+				t.Errorf("semantic snippet contains highlight markers: %q", r.Snippet)
+			}
+			if !strings.Contains(r.Snippet, "french press") {
+				t.Errorf("semantic snippet = %q, want a preview of the message", r.Snippet)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("results = %+v, want the french-press message %d", results, morningMsgID)
+	}
+}
+
+// TestSearchChatsHybrid_ExactMatchKeepsItsHighlight covers the other
+// direction: a keyword hit keeps its highlighted snippet and its position.
+func TestSearchChatsHybrid_ExactMatchKeepsItsHighlight(t *testing.T) {
+	_, svc, _, exactMsgID := chatFixture(t)
+
+	results, err := svc.SearchChatsHybrid(context.Background(), "busy_timeout", 10)
+	if err != nil {
+		t.Fatalf("SearchChatsHybrid: %v", err)
+	}
+	if len(results) == 0 || results[0].MessageID != exactMsgID {
+		t.Fatalf("top result = %+v, want the busy_timeout message %d", results, exactMsgID)
+	}
+	if !strings.ContainsAny(results[0].Snippet, "\x02") {
+		t.Errorf("keyword hit lost its highlight markers: %q", results[0].Snippet)
+	}
+}
+
+// TestSearchChatsHybrid_NeverSurfacesAGhost is the privacy check at the
+// retrieval layer: even with a vector somehow present for a ghost thread's
+// message, a search must not return it.
+func TestSearchChatsHybrid_NeverSurfacesAGhost(t *testing.T) {
+	db := newEmbedTestStore(t)
+	if err := db.CreateGhostThread("g", "incognito", "m", "web"); err != nil {
+		t.Fatalf("CreateGhostThread: %v", err)
+	}
+	id, err := db.AddMessage("g", "user", "espresso machine research", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	// Force the worst case: a vector for a ghost message.
+	if err := db.UpsertEmbedding(store.EmbeddingKindMessage, id, "test-model", 4, embed.EncodeInt8([]float32{1, 0, 0, 0.01}), "espresso machine research"); err != nil {
+		t.Fatalf("UpsertEmbedding: %v", err)
+	}
+
+	svc := newEmbedService(db, embed.NewOpenRouter("k", synonymEmbedServer(t).URL, "test-model"))
+	if err := svc.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	results, err := svc.SearchChatsHybrid(context.Background(), "espresso", 10)
+	if err != nil {
+		t.Fatalf("SearchChatsHybrid: %v", err)
+	}
+	for _, r := range results {
+		if r.MessageID == id {
+			t.Fatal("chat search returned a ghost thread's message")
+		}
+	}
+}
+
+// TestSearchChatsHybrid_NilServiceFallsBackToFTS pins the degradation path
+// for the tool that has the most traffic.
+func TestSearchChatsHybrid_NilServiceFallsBackToFTS(t *testing.T) {
+	db, _, _, _ := chatFixture(t)
+	want, err := db.SearchMessages("sqlite", 10)
+	if err != nil {
+		t.Fatalf("SearchMessages: %v", err)
+	}
+	got, err := searchChatsHybrid(nil, db, context.Background(), "sqlite", 10)
+	if err != nil {
+		t.Fatalf("searchChatsHybrid(nil): %v", err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d results, want the %d FTS-only ones", len(got), len(want))
+	}
+	for i := range got {
+		if got[i].MessageID != want[i].MessageID {
+			t.Errorf("result %d = %d, want %d", i, got[i].MessageID, want[i].MessageID)
 		}
 	}
 }

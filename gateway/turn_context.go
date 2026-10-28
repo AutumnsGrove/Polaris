@@ -173,7 +173,12 @@ func (t *turnRun) wirePersonalization() {
 		)
 		t.agentCtx.PersonName = PersonNameFromStore(t.s.db)
 		t.agentCtx.PersonPronouns = PersonPronounsFromStore(t.s.db)
-		t.agentCtx.SearchThreads = t.s.db.SearchMessages
+		// Hybrid for the model's own paraphrased questions (keyword +
+		// semantic, fused); the sidebar's search box stays keyword-only on
+		// purpose — see SearchChatsHybrid's doc comment.
+		t.agentCtx.SearchThreads = func(query string, limit int) ([]store.MessageSearchResult, error) {
+			return searchChatsHybrid(t.s.embeds, t.s.db, t.agentCtx.Ctx, query, limit)
+		}
 		t.agentCtx.ListRecentThreads = t.s.db.ListThreadsPage
 		t.agentCtx.ReadThread = t.s.db.ReadThread
 		// stars (issue #56) — the main assistant's own read-only search

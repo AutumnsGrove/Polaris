@@ -10,6 +10,11 @@ import (
 // wants to see where each hit actually landed (a thread can match more
 // than once), not just which threads contain a match somewhere.
 type MessageSearchResult struct {
+	// MessageID identifies the matched message row itself — needed by the
+	// hybrid path to fuse keyword and semantic rankings, which are both
+	// per-message. Additive to the JSON, so existing consumers are
+	// unaffected.
+	MessageID   int64  `json:"message_id"`
 	ThreadID    string `json:"thread_id"`
 	ThreadTitle string `json:"thread_title"`
 	Role        string `json:"role"`
@@ -108,7 +113,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 	}
 
 	rows, err := s.db.Query(
-		`SELECT root.id, root.title, m.role, m.created_at,
+		`SELECT m.id, root.id, root.title, m.role, m.created_at,
 			snippet(messages_fts, 0, char(2), char(3), '…', 12)
 		 FROM messages_fts
 		 JOIN messages m ON m.id = messages_fts.rowid`+searchableThreadJoin+`
@@ -125,7 +130,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 	results := []MessageSearchResult{}
 	for rows.Next() {
 		var r MessageSearchResult
-		if err := rows.Scan(&r.ThreadID, &r.ThreadTitle, &r.Role, &r.CreatedAt, &r.Snippet); err != nil {
+		if err := rows.Scan(&r.MessageID, &r.ThreadID, &r.ThreadTitle, &r.Role, &r.CreatedAt, &r.Snippet); err != nil {
 			return nil, err
 		}
 		results = append(results, r)

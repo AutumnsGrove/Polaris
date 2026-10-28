@@ -224,3 +224,87 @@ func searchLibraryStarsHybrid(svc *embedService, db *store.Store, ctx context.Co
 	}
 	return svc.SearchLibraryStarsHybrid(ctx, query, limit)
 }
+
+// SearchChatsHybrid backs the `search_chats` tool (and Weaver's copy of it):
+// keyword and semantic message hits fused, message-level, in the same result
+// shape the tool already renders.
+//
+// Deliberately NOT used by the sidebar's own search box
+// (gateway/threads.go's handleSearchThreads). That one is a human typing
+// short prefixes, where FTS5's prefix matching is exactly right and a
+// ~0.5s query-embedding round trip per keystroke would be pure cost. Hybrid
+// retrieval is for the model's paraphrased questions, which is where the
+// measured wins are.
+func (v *embedService) SearchChatsHybrid(ctx context.Context, query string, limit int) ([]store.MessageSearchResult, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+	fts, err := v.db.SearchMessages(query, hybridPoolSize)
+	if err != nil {
+		return nil, err
+	}
+	ftsIDs := make([]int64, len(fts))
+	for i, r := range fts {
+		ftsIDs[i] = r.MessageID
+	}
+
+	var semIDs []int64
+	if v.CachedCount(store.EmbeddingKindMessage) > 0 {
+		if vec := v.embedQuery(ctx, query); vec != nil {
+			for _, h := range v.Search(store.EmbeddingKindMessage, vec, hybridPoolSize) {
+				semIDs = append(semIDs, h.RefID)
+			}
+		}
+	}
+
+	ids := fuseRRF(ftsIDs, semIDs)
+
+	// Keyword hits keep FTS5's own snippet, highlight markers included — only
+	// a row the keyword tier DIDN'T return needs the plain-text preview
+	// MessagesByIDs builds. Re-fetching everything would silently strip the
+	// highlights from every exact match, which is what the first version of
+	// this did (TestSearchChatsHybrid_ExactMatchKeepsItsHighlight caught it).
+	byID := make(map[int64]store.MessageSearchResult, len(ids))
+	for _, r := range fts {
+		byID[r.MessageID] = r
+	}
+	var semanticOnly []int64
+	for _, id := range ids {
+		if _, ok := byID[id]; !ok {
+			semanticOnly = append(semanticOnly, id)
+		}
+	}
+	if len(semanticOnly) > 0 {
+		// Fetched by id through MessagesByIDs rather than trusted from the
+		// vector cache: that re-applies the full eligibility predicate, so a
+		// stale vector for a since-hidden or hard-deleted thread can't
+		// surface here.
+		rows, err := v.db.MessagesByIDs(semanticOnly)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			byID[r.MessageID] = r
+		}
+	}
+
+	ordered := make([]store.MessageSearchResult, 0, len(byID))
+	for _, id := range ids {
+		if r, ok := byID[id]; ok {
+			ordered = append(ordered, r)
+		}
+	}
+	if len(ordered) > limit {
+		ordered = ordered[:limit]
+	}
+	return ordered, nil
+}
+
+// searchChatsHybrid is the nil-safe entry point, same shape as
+// searchStarsHybrid: FTS-only when no embedding service exists.
+func searchChatsHybrid(svc *embedService, db *store.Store, ctx context.Context, query string, limit int) ([]store.MessageSearchResult, error) {
+	if svc == nil {
+		return db.SearchMessages(query, limit)
+	}
+	return svc.SearchChatsHybrid(ctx, query, limit)
+}

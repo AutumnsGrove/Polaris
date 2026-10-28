@@ -529,7 +529,9 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 		// together-or-not-at-all way gateway/turn.go does for the main
 		// assistant (offered()'s "chat_search" case is gated on
 		// SearchThreads != nil alone, same reasoning as memory_store).
-		SearchThreads:     db.SearchMessages,
+		SearchThreads: func(query string, limit int) ([]store.MessageSearchResult, error) {
+			return searchChatsHybrid(embeds, db, reqCtx, query, limit)
+		},
 		ListRecentThreads: db.ListThreadsPage,
 		ReadThread:        db.ReadThread,
 
