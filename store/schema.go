@@ -975,10 +975,11 @@ END;
 -- Deliberately NOT a child of any row via FOREIGN KEY: ref_id points at
 -- either messages.id or stars.id depending on kind, so no single
 -- REFERENCES clause is valid. That means nothing cascades from a deleted
--- message or star, which is why Store.PurgeOrphanEmbeddings exists and
+-- message or star, which is why Store.PurgeIneligibleEmbeddings exists and
 -- runs on the indexer's sweep -- and why ghost threads, whose messages are
 -- hard-deleted on session end, must never be indexed at all (see
--- EmbeddableMessages' doc comment). An orphaned vector is recoverable
+-- MessagesNeedingEmbedding's doc comment, and deleteGhostThreads' in-tx
+-- purge as the second belt). An orphaned vector is recoverable
 -- text-adjacent data for a conversation someone asked to forget.
 --
 -- model+dims are stored per row rather than inferred from config: a model

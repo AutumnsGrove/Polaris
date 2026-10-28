@@ -47,30 +47,6 @@ func buildFTSQuery(query string) string {
 	return strings.Join(parts, " AND ")
 }
 
-// SearchMessages does a full-text search over every message's content via
-// messages_fts (kept in sync by triggers — see the schema comment),
-// ranked by FTS5's own bm25-based relevance.
-//
-// Deliberately not just ListThreads' filter copy-pasted: a message row
-// can live in a hidden variant thread (fork_root_id set — see
-// ForkThread's doc comment) that's currently the *effective* content of
-// its root, per EffectiveThreadID/active_variant_id. Filtering out every
-// fork_root_id-set thread (what ListThreads does, since it's only ever
-// listing roots) would make an edited/regenerated message's own current
-// content unsearchable while its now-superseded predecessor in the root
-// thread stayed findable — the opposite of what "search my chats" should
-// mean. The join against `root` below instead includes a message iff its
-// owning thread is exactly the one EffectiveThreadID(root) would resolve
-// to: the root itself when active_variant_id is unset, or that specific
-// variant when it's been swapped to. Every other check (disabled, Atlas
-// visibility) reads from `root`, not `t` — a forked thread's own
-// disabled/source/continued_in_assistant columns are just copied
-// defaults from ForkThread and never independently updated (DeleteThread
-// only ever flips the root's own row), so root's values are the ones
-// that are actually authoritative. ThreadID/ThreadTitle are root's too:
-// a forked thread's title is always ” (ForkThread never sets one) and
-// its own id isn't independently addressable by GetThread — only a root
-// id is, which is what clicking a result needs to open.
 // searchableThreadJoin resolves each message's owning thread and its root.
 // Shared by every read path over thread content so they agree on *which*
 // thread a message effectively belongs to — see SearchMessages' doc
@@ -103,6 +79,30 @@ var searchableThreadWhere = `
 		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
 		   AND ` + notInFieldWhere(`root.field_id`, `exclude_from_chat_search = 1`)
 
+// SearchMessages does a full-text search over every message's content via
+// messages_fts (kept in sync by triggers — see the schema comment),
+// ranked by FTS5's own bm25-based relevance.
+//
+// Deliberately not just ListThreads' filter copy-pasted: a message row
+// can live in a hidden variant thread (fork_root_id set — see
+// ForkThread's doc comment) that's currently the *effective* content of
+// its root, per EffectiveThreadID/active_variant_id. Filtering out every
+// fork_root_id-set thread (what ListThreads does, since it's only ever
+// listing roots) would make an edited/regenerated message's own current
+// content unsearchable while its now-superseded predecessor in the root
+// thread stayed findable — the opposite of what "search my chats" should
+// mean. The join against `root` below instead includes a message iff its
+// owning thread is exactly the one EffectiveThreadID(root) would resolve
+// to: the root itself when active_variant_id is unset, or that specific
+// variant when it's been swapped to. Every other check (disabled, Atlas
+// visibility) reads from `root`, not `t` — a forked thread's own
+// disabled/source/continued_in_assistant columns are just copied
+// defaults from ForkThread and never independently updated (DeleteThread
+// only ever flips the root's own row), so root's values are the ones
+// that are actually authoritative. ThreadID/ThreadTitle are root's too:
+// a forked thread's title is always ” (ForkThread never sets one) and
+// its own id isn't independently addressable by GetThread — only a root
+// id is, which is what clicking a result needs to open.
 func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, error) {
 	if limit <= 0 {
 		limit = 30

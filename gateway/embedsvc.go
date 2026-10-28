@@ -211,26 +211,21 @@ func (v *embedService) IndexOnce(ctx context.Context, budget int) (IndexProgress
 		budget = indexBudget
 	}
 
+	// Recorded per sweep, not per row (the settings panel wants the total, and
+	// one row per tick keeps aux_usage from growing a line per message
+	// forever) — but deferred, so the messages half still lands in the ledger
+	// when the stars half fails. The provider has already billed it either way.
+	defer func() { v.recordSpend(p.CostUSD) }()
+
 	msgs, msgCost, err := v.indexKind(ctx, store.EmbeddingKindMessage, budget)
+	p.Messages, p.CostUSD = msgs, msgCost
 	if err != nil {
 		return p, err
 	}
 	stars, starCost, err := v.indexKind(ctx, store.EmbeddingKindStar, budget)
+	p.Stars, p.CostUSD = stars, msgCost+starCost
 	if err != nil {
 		return p, err
-	}
-	p.Messages, p.Stars = msgs, stars
-	p.CostUSD = msgCost + starCost
-
-	if p.Messages > 0 || p.Stars > 0 {
-		if p.CostUSD > 0 {
-			// Recorded per sweep, not per row: the settings panel wants the
-			// total, and one row per tick keeps aux_usage from growing a
-			// line per message forever.
-			if err := v.db.RecordAuxCost(store.AuxKindEmbedding, p.CostUSD); err != nil {
-				log.Warn("embeddings: recording spend failed", "err", err)
-			}
-		}
 	}
 
 	// Purge runs even when nothing was embedded — it's the only thing that
@@ -285,7 +280,8 @@ func (v *embedService) indexKind(ctx context.Context, kind string, budget int) (
 		for i, m := range msgs {
 			if err := v.db.UpsertEmbedding(store.EmbeddingKindMessage, m.ID, v.model,
 				res.Dims, embed.EncodeInt8(res.Vectors[i]), m.Text); err != nil {
-				return 0, 0, err
+				// Cost still returned: the batch was already paid for.
+				return i, res.CostUSD, err
 			}
 		}
 		return len(msgs), res.CostUSD, nil
@@ -306,7 +302,7 @@ func (v *embedService) indexKind(ctx context.Context, kind string, budget int) (
 		for i, s := range stars {
 			if err := v.db.UpsertEmbedding(store.EmbeddingKindStar, s.ID, v.model,
 				res.Dims, embed.EncodeInt8(res.Vectors[i]), s.Text); err != nil {
-				return 0, 0, err
+				return i, res.CostUSD, err
 			}
 		}
 		return len(stars), res.CostUSD, nil
@@ -329,6 +325,9 @@ func (v *embedService) Backfill(ctx context.Context, kind string, limit int, pro
 	if v == nil {
 		return total, errEmbeddingsUnavailable
 	}
+	// Deferred so a backfill that dies at batch 7 of 8 (timeout, provider
+	// error, cancelled CLI) still books what the first six cost.
+	defer func() { v.recordSpend(total.CostUSD) }()
 	kinds := []string{store.EmbeddingKindMessage, store.EmbeddingKindStar}
 	switch kind {
 	case store.EmbeddingKindMessage:
@@ -344,14 +343,14 @@ func (v *embedService) Backfill(ctx context.Context, kind string, limit int, pro
 		worked := 0
 		for _, k := range kinds {
 			n, cost, err := v.indexKind(ctx, k, indexBudget)
-			if err != nil {
-				return total, err
-			}
 			total.CostUSD += cost
 			if k == store.EmbeddingKindMessage {
 				total.Messages += n
 			} else {
 				total.Stars += n
+			}
+			if err != nil {
+				return total, err
 			}
 			worked += n
 			if limit > 0 && total.Messages+total.Stars >= limit {
@@ -378,11 +377,6 @@ func (v *embedService) Backfill(ctx context.Context, kind string, limit int, pro
 		return total, err
 	}
 	if total.Messages > 0 || total.Stars > 0 {
-		if total.CostUSD > 0 {
-			if err := v.db.RecordAuxCost(store.AuxKindEmbedding, total.CostUSD); err != nil {
-				log.Warn("embeddings: recording spend failed", "err", err)
-			}
-		}
 		if err := v.Reload(); err != nil {
 			return total, err
 		}
@@ -390,10 +384,18 @@ func (v *embedService) Backfill(ctx context.Context, kind string, limit int, pro
 	return total, nil
 }
 
-var (
-	errEmbeddingsUnavailable = errors.New("embeddings are not configured")
-	errBackfillDone          = errors.New("backfill complete")
-)
+// recordSpend books provider-reported embedding spend to the aux ledger.
+// No-op for zero (a local Ollama reports no cost).
+func (v *embedService) recordSpend(costUSD float64) {
+	if costUSD <= 0 {
+		return
+	}
+	if err := v.db.RecordAuxCost(store.AuxKindEmbedding, costUSD); err != nil {
+		log.Warn("embeddings: recording spend failed", "err", err)
+	}
+}
+
+var errEmbeddingsUnavailable = errors.New("embeddings are not configured")
 
 // SimilarityHit is one semantic search result: which row, and how close.
 type SimilarityHit struct {

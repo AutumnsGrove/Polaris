@@ -63,7 +63,7 @@ type Server struct {
 	brave      *brave.Client            // nil if not configured
 	parallel   *parallel.Client         // nil if not configured
 	decisions  *decisions.Client        // nil if openrouter.api_key isn't set — disables compare_sources only
-	embed      *embed.Client            // nil if ollama.base_url isn't set — disables agent's query-similarity signal only
+	embed      *embed.Client            // nil if no embeddings backend is configured (see config.NewEmbedClient) — disables query-similarity and the semantic index
 	embeds     *embedService            // nil whenever embed is — the persisted semantic index (gateway/embedsvc.go)
 	stt        *voice.STTClient
 	tts        *voice.TTSClient

@@ -3,9 +3,11 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -393,5 +395,48 @@ func TestBackfill_ReportsCost(t *testing.T) {
 	}
 	if progress.CostUSD != 0.0001 {
 		t.Errorf("CostUSD = %v, want the provider's 0.0001 (recorded once for the whole run, not per row)", progress.CostUSD)
+	}
+}
+
+// A backfill that fails partway still owes the ledger for the batches the
+// provider already billed. Reverting the deferred recordSpend in Backfill
+// makes this fail with a zero ledger.
+func TestBackfill_FailedRunStillRecordsSpend(t *testing.T) {
+	db := newEmbedTestStore(t)
+	for i := 0; i < indexBudget+1; i++ {
+		addThreadMessage(t, db, "t"+strconv.Itoa(i), "alpha "+strconv.Itoa(i))
+	}
+	good := fakeEmbedServer(t, 0.0001)
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		// indexBudget (200) rows chunk into two provider requests (MaxBatch is
+		// 128), so the first successful batch is calls 1-2; the 201st row's
+		// request is call 3.
+		if calls > 2 {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		// Replay the first request against the well-behaved fake.
+		resp, err := http.Post(good.URL+r.URL.Path, "application/json", r.Body)
+		if err != nil {
+			t.Errorf("proxying to fake: %v", err)
+			return
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(w, resp.Body)
+	}))
+	t.Cleanup(srv.Close)
+	svc := newEmbedService(db, embed.NewOpenRouter("k", srv.URL, "test-model"))
+
+	if _, err := svc.Backfill(context.Background(), store.EmbeddingKindMessage, 0, nil); err == nil {
+		t.Fatal("Backfill: want the second batch's error, got nil")
+	}
+	spent, err := db.AuxCostByKind(store.AuxKindEmbedding)
+	if err != nil {
+		t.Fatalf("AuxCostByKind: %v", err)
+	}
+	if spent < 0.00019 || spent > 0.00021 {
+		t.Errorf("recorded spend = %v, want ~0.0002 for the two requests that succeeded", spent)
 	}
 }
