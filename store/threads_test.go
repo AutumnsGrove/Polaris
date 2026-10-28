@@ -353,6 +353,75 @@ func TestDeleteThreadPermanently_OnlyDeletesIfStillGhost(t *testing.T) {
 	}
 }
 
+// TestDeleteGhostThreads_RemovesRowsThatDoNotCascade is the regression test for
+// a real, every-startup failure found on 2026-10-28: shooting_star_runs and
+// star_sources reference threads(id) without ON DELETE CASCADE (unlike messages
+// and events), so a ghost thread Weaver had touched could not be deleted at all
+// — `DELETE FROM threads WHERE ghost = 1` failed on a FOREIGN KEY constraint, so
+// cmd/run.go's startup sweep logged "sweeping leftover ghost threads failed" and
+// left the thread behind on every boot. The ghost thread that triggered it had
+// 12,800 shooting star runs (it was also the retry loop fixed alongside this).
+func TestDeleteGhostThreads_RemovesRowsThatDoNotCascade(t *testing.T) {
+	s := openTestStore(t)
+
+	for _, id := range []string{"ghost-run", "ghost-star"} {
+		if err := s.CreateGhostThread(id, "q", "m", "web"); err != nil {
+			t.Fatalf("CreateGhostThread(%s): %v", id, err)
+		}
+		if _, err := s.AddMessage(id, "user", "q", "[]", "[]", 0, ""); err != nil {
+			t.Fatalf("AddMessage(%s): %v", id, err)
+		}
+	}
+	// A run row (the live case): one attempt Weaver made against the ghost thread.
+	if _, err := s.StartShootingStarRun("ghost-run", 1); err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+	// A star_sources row (the other no-cascade reference), plus its star.
+	starID, err := s.CreateStar(Star{Title: "t", Category: "c", Summary: "s", Body: "b", Status: "auto", Confidence: "obvious"})
+	if err != nil {
+		t.Fatalf("CreateStar: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO star_sources (star_id, thread_id) VALUES (?, ?)`, starID, "ghost-star"); err != nil {
+		t.Fatalf("inserting star_sources: %v", err)
+	}
+
+	// The startup sweep: must succeed, not fail on the FK.
+	ids, err := s.DeleteAllGhostThreads()
+	if err != nil {
+		t.Fatalf("DeleteAllGhostThreads: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Errorf("DeleteAllGhostThreads returned %v, want both ghost ids", ids)
+	}
+	for _, id := range []string{"ghost-run", "ghost-star"} {
+		if _, err := s.GetThreadRaw(id); !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("GetThreadRaw(%s) err = %v, want sql.ErrNoRows", id, err)
+		}
+	}
+	var runs int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM shooting_star_runs`).Scan(&runs); err != nil {
+		t.Fatalf("counting runs: %v", err)
+	}
+	if runs != 0 {
+		t.Errorf("shooting_star_runs still has %d row(s), want 0", runs)
+	}
+
+	// The per-thread path (gateway/ws.go's disconnect sweep) has to clean up the
+	// same dependent rows, not just the bulk one.
+	if err := s.CreateGhostThread("ghost-single", "q", "m", "web"); err != nil {
+		t.Fatalf("CreateGhostThread: %v", err)
+	}
+	if _, err := s.AddMessage("ghost-single", "user", "q", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if _, err := s.StartShootingStarRun("ghost-single", 1); err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+	if err := s.DeleteThreadPermanently("ghost-single"); err != nil {
+		t.Fatalf("DeleteThreadPermanently: %v", err)
+	}
+}
+
 // TestDeleteAllGhostThreads_SweepsOnlyGhostThreadsAndReturnsTheirIDs is
 // cmd/run.go's startup-crash-sweep path — the belt-and-suspenders
 // counterpart to gateway/ws.go's graceful disconnect cleanup, for a ghost
