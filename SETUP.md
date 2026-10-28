@@ -44,11 +44,25 @@ GHCR, updated by a host-side watcher. There's no other install path.
   `PATH` (the Docker image already has it; for local dev, `pip install "yt-dlp[default]"` plus Node.js on `PATH` — skip the
   apt/Alpine package, it drags in ffmpeg, +276MB, for functionality this tool doesn't use). Without it,
   `youtube_transcript` returns a clear "yt-dlp is not installed" error; every other tool still works
-- Optional: a local [Ollama](https://ollama.com) instance serving `nomic-embed-text`, for a
+- Optional: semantic search over your own chat history and Constellation stars, plus a
   research-loop signal that catches consecutive `web_search` queries rephrasing the same thing.
-  Without it, that one signal is just disabled. Under Docker this needs Ollama rebound beyond
-  `127.0.0.1` and a compose route to the host — see `compose/polaris/config.yaml.example`'s
-  `ollama` section
+  Configured under `embeddings:` in `config.yaml`; **no extra key needed** — `provider: openrouter`
+  reuses the OpenRouter key above. Left unset, Polaris falls back to a local
+  [Ollama](https://ollama.com) instance if `ollama.base_url` is set, and otherwise simply runs
+  keyword-only. Either way, search still works without it; semantic retrieval is an extra tier
+  fused with keyword results, never a dependency.
+
+  A hosted model is the recommended default because the index is built off-device: the real
+  2,344-message history used to design this cost **$0.002** to embed and about 80 seconds. Run
+  `polaris embeddings backfill` once after enabling it to load history that predates the setting,
+  and `polaris embeddings reindex --yes` after changing `embeddings.model` (vectors from different
+  models aren't comparable, so semantic retrieval stays off until they're recomputed — keyword
+  search is unaffected throughout). `polaris embeddings status` shows coverage and spend.
+
+  Choosing `provider: ollama` instead keeps everything local, at the cost of CPU time on this
+  host and a smaller context window (nomic truncates at 2,048 tokens, so long answers get cut).
+  Under Docker that also needs Ollama rebound beyond `127.0.0.1` and a compose route to the host —
+  see `compose/polaris/config.yaml.example`'s `ollama` section
 
 ### SearXNG's JSON API
 

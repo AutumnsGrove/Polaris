@@ -68,7 +68,9 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **PDF paging** — search or page through an attached PDF beyond its initial preview, with an
   optional instruction to extract just what's needed from a page.
 - **Search your own chats** — finds and rereads a past conversation ("what did we decide about
-  X") instead of starting over from scratch.
+  X") instead of starting over from scratch. Keyword and meaning-based results are fused, so a
+  question phrased differently from how you asked it still finds the thread (see "Semantic index"
+  under Beyond chat).
 - **Memory** — remembers durable facts and preferences across threads, saved unprompted from an
   explicit correction or stated preference. The Settings Memory panel lists, edits, or forgets
   anything, including via a plain-English instruction ("forget the one about my old job").
@@ -153,6 +155,14 @@ of the day, on-this-day, a quote, picture of the day, headlines, trending/local/
 any custom blocks you define. Each section generates independently, and a second pass drops
 anything unchanged since yesterday so a quiet news day makes a shorter page. A Top Story gets
 deeper elaboration. Generates on schedule or on demand via Settings.
+
+**Semantic index** — chat search and the star library both search by meaning as well as by
+keyword, which is what lets "what do I like to drink in the morning" find the green-tea note that
+never uses the word "drink". Built from a hosted embedding model by default (an optional local
+model is supported), it fills itself in as you use Polaris; `polaris embeddings backfill` loads an
+older history and `polaris embeddings status` shows coverage and cost, which is also a row in the
+Usage panel. Ghost threads are never indexed. Turning it off changes nothing else — keyword search
+works exactly as it always did.
 
 **Constellation** (`/constellation`) — an auto-generated personal library, not a chat feature: a
 background agent ("Weaver") reads your recent threads and extracts durable facts about *you* into

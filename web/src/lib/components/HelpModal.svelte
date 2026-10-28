@@ -91,6 +91,13 @@
 			name: 'Memory',
 			means: 'Things it remembers',
 			detail: 'Short facts and preferences carried between conversations. Editable in Settings.'
+		},
+		{
+			name: 'Semantic index',
+			means: 'Search by meaning',
+			detail:
+				'Chat and star search understand what you meant, not just the words you typed. Built automatically; ' +
+				'incognito threads are never included.'
 		}
 	];
 </script>

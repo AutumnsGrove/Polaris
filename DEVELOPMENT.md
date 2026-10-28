@@ -171,7 +171,15 @@ polaris oracle-bench --models jev-1.13,jev-1.14               # compare decision
 polaris comet classify -n 5   # classify a handful of a period's threads into Comet trails, for testing
 polaris comet generate --period 2026-09   # assemble (or re-assemble) one month's Comet edition
 polaris comet backfill --from 2026-07      # classify + generate every month in a range
+polaris embeddings status                    # semantic-index coverage, model and spend (also in Settings > Usage)
+polaris embeddings backfill [--kind message|star|all]   # embed history that predates enabling embeddings
+polaris embeddings reindex --yes             # delete and rebuild every vector after changing embeddings.model
 ```
+
+`polaris embeddings` is the only admin surface for the semantic index; see
+[docs/plans/embeddings.md](docs/plans/embeddings.md) for the design and CLAUDE.md for the invariants
+that matter when touching it (ghost threads are never indexed, one shared eligibility predicate,
+and the in-memory cache is invalidated by a store-level epoch).
 
 ### Oracle benchmark
 
