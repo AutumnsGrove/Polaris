@@ -1428,3 +1428,38 @@ func TestCurrentContextPreamble_DateOnly(t *testing.T) {
 		t.Fatalf("preamble is missing today's date:\n%s", p)
 	}
 }
+
+// TestRun_SkipsWarmUpForHostedProvider covers the provider-dependent half of
+// warmUpEmbedClient: a hosted model has no cold start, so warming it up
+// would be one wasted API call (real money) per turn.
+func TestRun_SkipsWarmUpForHostedProvider(t *testing.T) {
+	requestArrived := make(chan struct{}, 1)
+	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requestArrived <- struct{}{}:
+		default:
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"embeddings": [][]float32{{0.1, 0.2}}})
+	}))
+	defer embedSrv.Close()
+
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: "answer"}, Chunks: []string{"answer"}},
+		},
+	}
+	ctx := newTestContext(mock, &recordingEmit{}, 5)
+	// An OpenRouter-shaped client pointing at the fake server: Local() is
+	// false, so no warm-up request should ever reach it.
+	ctx.Embed = embed.NewOpenRouter("test-key", embedSrv.URL, "")
+
+	if _, err := Run(context.Background(), ctx, nil, "hi"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	select {
+	case <-requestArrived:
+		t.Error("a hosted provider was warmed up; that's a wasted API call per turn")
+	case <-time.After(300 * time.Millisecond):
+	}
+}

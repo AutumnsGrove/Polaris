@@ -57,6 +57,10 @@ func NewOpenRouter(apiKey, baseURL, model string) *Client {
 
 func (p *openRouterProvider) Model() string { return p.model }
 
+// Local is false: the model runs on the provider's hardware, so there's no
+// cold start to warm up — see Provider.Local.
+func (p *openRouterProvider) Local() bool { return false }
+
 // openRouterEmbedRequest is the subset of OpenRouter's request schema this
 // package uses. encoding_format is pinned to "float" explicitly rather
 // than left to the server default: the response type is `number[] |

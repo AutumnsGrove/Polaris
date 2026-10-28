@@ -21,10 +21,14 @@ type fakeProvider struct {
 	calls []int
 	// costPerCall is added to every Result.CostUSD.
 	costPerCall float64
-	err         error
+	// local mirrors Provider.Local.
+	local bool
+	err   error
 }
 
 func (f *fakeProvider) Model() string { return f.model }
+
+func (f *fakeProvider) Local() bool { return f.local }
 
 func (f *fakeProvider) Embed(_ context.Context, texts []string) (Result, error) {
 	f.calls = append(f.calls, len(texts))
@@ -149,6 +153,8 @@ func TestEmbedBatch_RejectsInconsistentDimsAcrossChunks(t *testing.T) {
 type shiftingDimsProvider struct{ calls int32 }
 
 func (p *shiftingDimsProvider) Model() string { return "m" }
+
+func (p *shiftingDimsProvider) Local() bool { return true }
 func (p *shiftingDimsProvider) Embed(_ context.Context, texts []string) (Result, error) {
 	n := int(atomic.AddInt32(&p.calls, 1))
 	vecs := make([][]float32, len(texts))
@@ -260,5 +266,21 @@ func TestOllama_NonOKStatusIsAnError(t *testing.T) {
 
 	if _, err := NewOllama(srv.URL, "").Embed(context.Background(), "q"); err == nil {
 		t.Error("a 500 response should error, got nil")
+	}
+}
+
+// TestLocal_ReflectsProvider pins the one decision Provider.Local exists
+// for: whether agent's per-turn embedding warm-up is worth making. Warming
+// up a hosted provider is a wasted API call per turn.
+func TestLocal_ReflectsProvider(t *testing.T) {
+	if !NewOllama("http://localhost:11434", "").Local() {
+		t.Error("Local() = false for Ollama, want true — a local model does cold-start")
+	}
+	if NewOpenRouter("k", "", "").Local() {
+		t.Error("Local() = true for OpenRouter, want false — there's no remote cold start to hide")
+	}
+	var c *Client
+	if c.Local() {
+		t.Error("nil Client.Local() = true, want false")
 	}
 }

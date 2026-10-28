@@ -98,6 +98,12 @@ type Provider interface {
 	// Embed embeds texts in one request. Callers should keep len(texts) at
 	// or under MaxBatch (Client.EmbedBatch does).
 	Embed(ctx context.Context, texts []string) (Result, error)
+	// Local reports whether this provider runs on the same machine as
+	// Polaris. It exists for one decision — whether a warm-up call is worth
+	// making (agent's query-similarity signal warms up a local model to hide
+	// a cold-start load; a hosted provider has no such load, so warming it up
+	// is a wasted API call per turn).
+	Local() bool
 }
 
 // Client is a Provider plus the single-text convenience the existing call
@@ -124,6 +130,15 @@ func (c *Client) Model() string {
 		return ""
 	}
 	return c.provider.Model()
+}
+
+// Local reports whether the provider runs on this machine, or false on a nil
+// client (nothing to warm up when embeddings aren't configured).
+func (c *Client) Local() bool {
+	if c == nil || c.provider == nil {
+		return false
+	}
+	return c.provider.Local()
 }
 
 // Embed returns one text's vector.

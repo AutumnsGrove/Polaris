@@ -601,3 +601,21 @@ thread can't surface through the fusion path even if it somehow survived in the 
 That's the retrieval-layer half of the ghost guarantee, tested directly by
 `TestSearchChatsHybrid_NeverSurfacesAGhost` (which force-inserts a vector for a ghost message and
 asserts it still can't be found).
+
+## Implementation notes (phase 4 — query-similarity on the shared provider, 2026-10-28)
+
+Mostly a no-op by construction: `agent/query_similarity.go` already read through
+`tools.Context.Embed`, which phase 1a turned into the provider abstraction and phase 1c wired to
+`config.NewEmbedClient()`. So the research loop's stale-search signal now uses whatever
+`embeddings.provider` selects — no code change in `agent/` at all. The behavior, thresholds and
+5s ceiling are untouched; that signal's own thresholds are still the untuned starting points its
+comment says they are, and widening its comparison window (the plan's "compare against every query
+in the turn" idea) is deliberately **not** done here. Changing how often a nudging signal fires is
+a live-tuning decision, not a refactor, and it deserves its own measurement pass.
+
+One real change fell out of the provider switch: `warmUpEmbedClient` now skips providers that
+aren't local (`embed.Client.Local`). The warm-up exists to hide a ~14s cold-start model load on
+the potato — a hosted provider has no cold start for us, so warming it up was one wasted API call
+*per turn*, for real money and zero benefit. That, plus `TestNewEmbedClient_ProviderSelection`
+covering the resolution order (unset provider must keep resolving to local Ollama, or every
+existing `config.yaml` silently loses embeddings), is the whole phase.

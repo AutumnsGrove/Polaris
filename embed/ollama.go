@@ -59,6 +59,10 @@ func NewOllama(baseURL, model string) *Client {
 
 func (p *ollamaProvider) Model() string { return p.model }
 
+// Local is true: Ollama runs beside Polaris (that's the whole point of this
+// provider), so a cold-start warm-up is worth doing.
+func (p *ollamaProvider) Local() bool { return true }
+
 type ollamaEmbedRequest struct {
 	Model string   `json:"model"`
 	Input []string `json:"input"`

@@ -54,15 +54,21 @@ func querySimilarityMessage(streak int) string {
 }
 
 // warmUpEmbedClient fires a throwaway embedding request in the
-// background the instant a turn starts, so a cold Ollama has a head
-// start loading EmbedModel into memory before the model's first
-// web_search call actually needs trackSearchQuery's real embedding.
-// Confirmed live on the potato: Ollama unloads an idle model after ~5
-// minutes, and reloading it costs ~14s on that hardware — hiding that
-// behind the first LLM round-trip's own latency (which takes at least a
-// few seconds itself) means trackSearchQuery's real call usually lands
-// on an already-warm model instead of eating the cold-start cost
-// directly in web_search's critical path.
+// background the instant a turn starts, so a cold LOCAL model has a head
+// start loading into memory before the model's first web_search call
+// actually needs trackSearchQuery's real embedding. Confirmed live on the
+// potato: Ollama unloads an idle model after ~5 minutes, and reloading it
+// costs ~14s on that hardware — hiding that behind the first LLM
+// round-trip's own latency (which takes at least a few seconds itself)
+// means trackSearchQuery's real call usually lands on an already-warm
+// model instead of eating the cold-start cost directly in web_search's
+// critical path.
+//
+// Skipped entirely for a hosted provider (embed.Client.Local): the model
+// runs on the provider's hardware and is never "cold" for us, so a warm-up
+// there is a wasted API call — one per turn, costing real money for zero
+// latency benefit. That check is why this didn't stay a plain nil-check
+// after embeddings moved to OpenRouter.
 //
 // Fire-and-forget: any failure here is silently logged at Debug and
 // otherwise ignored — this is a pure latency optimization, never a
@@ -71,7 +77,7 @@ func querySimilarityMessage(streak int) string {
 // own call is unaffected either way — same behavior as if this function
 // didn't exist.
 func warmUpEmbedClient(ctx *tools.Context) {
-	if ctx.Embed == nil {
+	if ctx.Embed == nil || !ctx.Embed.Local() {
 		return
 	}
 	go func() {
