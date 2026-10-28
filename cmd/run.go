@@ -162,6 +162,14 @@ func runRun(cmd *cobra.Command, args []string) error {
 	defer close(constellationDone)
 	go srv.RunConstellationScheduler(constellationDone)
 
+	// The embedding indexer — loads the semantic-search cache, then sweeps
+	// for unembedded rows. No-op entirely (and Start returns immediately)
+	// when no embedding provider is configured, which is the default for a
+	// config.yaml with no embeddings section and no ollama.base_url.
+	embedDone := make(chan struct{})
+	defer close(embedDone)
+	go srv.RunEmbedIndexer(embedDone)
+
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 

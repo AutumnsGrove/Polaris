@@ -7,13 +7,31 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	_ "modernc.org/sqlite"
 )
 
 type Store struct {
 	db *sql.DB
+
+	// embeddingsEpoch increments on every mutation of the embeddings table
+	// (upsert, delete, purge — including the purge inside the ghost-delete
+	// transaction). gateway/embedsvc.go holds an in-memory copy of every
+	// vector, and this is how it notices that copy went stale without
+	// polling the whole table every tick: mutations happen from several
+	// places (the indexer, UpdateField's opt-out purge, DeleteThreadPermanently),
+	// so inferring "did anything change" from the indexer's own work was not
+	// enough — a purge with no writes left deleted vectors searchable.
+	embeddingsEpoch atomic.Uint64
 }
+
+// EmbeddingsEpoch reports the current mutation counter for the embeddings
+// table. Cheap (one atomic load); callers cache the last value they saw and
+// reload when it differs.
+func (s *Store) EmbeddingsEpoch() uint64 { return s.embeddingsEpoch.Load() }
+
+func (s *Store) bumpEmbeddingsEpoch() { s.embeddingsEpoch.Add(1) }
 
 func Open(path string) (*Store, error) {
 	// _busy_timeout: SQLite allows only one writer at a time; without this,

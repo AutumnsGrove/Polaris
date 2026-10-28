@@ -133,6 +133,24 @@ func (s *Store) LogCompareDecisionsCost(costUSD float64) error {
 	return err
 }
 
+// AuxKindEmbedding is the aux_usage kind for embedding spend — the
+// indexer's sweeps and backfills (see gateway/embedsvc.go). One kind for
+// all of it, deliberately without the model in it: the model is already
+// recorded per row in the embeddings table, and a per-model kind would
+// leave stats accumulating a permanent bucket for every model ever tried.
+const AuxKindEmbedding = "embedding"
+
+// AuxCostByKind returns total aux_usage spend recorded under one kind —
+// used by stats' Embeddings bucket and by tests asserting that a provider's
+// reported cost actually landed in the ledger.
+func (s *Store) AuxCostByKind(kind string) (float64, error) {
+	var total float64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind = ?`, kind).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 // RecordAuxCost appends one row for real assistant-side LLM spend that no
 // turn owns — see aux_usage's schema comment. Called only after a call
 // actually completed and reported its cost, same convention as

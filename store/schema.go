@@ -967,6 +967,49 @@ CREATE TRIGGER IF NOT EXISTS stars_fts_au AFTER UPDATE ON stars BEGIN
 	INSERT INTO stars_fts(rowid, title, summary) VALUES (new.id, new.title, new.summary);
 END;
 
+-- embeddings is the persisted semantic index over messages and stars (see
+-- docs/plans/embeddings.md). One polymorphic table rather than one per
+-- kind, so adding a kind later needs no new table and no new backfill
+-- path.
+--
+-- Deliberately NOT a child of any row via FOREIGN KEY: ref_id points at
+-- either messages.id or stars.id depending on kind, so no single
+-- REFERENCES clause is valid. That means nothing cascades from a deleted
+-- message or star, which is why Store.PurgeOrphanEmbeddings exists and
+-- runs on the indexer's sweep -- and why ghost threads, whose messages are
+-- hard-deleted on session end, must never be indexed at all (see
+-- EmbeddableMessages' doc comment). An orphaned vector is recoverable
+-- text-adjacent data for a conversation someone asked to forget.
+--
+-- model+dims are stored per row rather than inferred from config: a model
+-- swap with no recorded provenance degrades to "nothing matches" (see
+-- embed.CosineSimilarity on length mismatch) instead of a detectable
+-- mismatch.
+--
+-- vec is int8-quantized (embed.EncodeInt8) -- 1KB per 1024-dim vector.
+-- content_hash is sha256 of the exact text embedded, and exists for stars
+-- specifically: message content is immutable (only ever INSERTed), but a
+-- star's title/summary/body is merged and edited over time, so a star has
+-- to be re-embedded when its text actually changes rather than on every
+-- write.
+CREATE TABLE IF NOT EXISTS embeddings (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	kind         TEXT NOT NULL,
+	ref_id       INTEGER NOT NULL,
+	model        TEXT NOT NULL,
+	dims         INTEGER NOT NULL,
+	vec          BLOB NOT NULL,
+	content_hash TEXT NOT NULL,
+	created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE (kind, ref_id)
+);
+
+-- Scoped to (model, kind) because every read is "the vectors for this kind
+-- under the model currently configured" -- a partial index would serve a
+-- model-mismatch cleanup pass just as well, but there's exactly one model
+-- at a time in practice.
+CREATE INDEX IF NOT EXISTS embeddings_by_model ON embeddings(model, kind);
+
 -- star_sources backs the "Linked articles" list on Star detail -- a real
 -- table, not a JSON blob, because a thread can contribute to the same star
 -- more than once over time (see "Revisiting a thread" in the plan doc);

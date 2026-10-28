@@ -130,6 +130,17 @@ func (s *Store) deleteGhostThreads(where string, args ...any) error {
 	defer tx.Rollback()
 
 	ghosts := `SELECT id FROM threads WHERE ghost = 1 AND ` + where
+	// Embeddings first, and inside this same transaction, because they are
+	// the one thing that does NOT cascade with the messages they describe:
+	// the embeddings table is polymorphic (kind, ref_id) with no FOREIGN KEY
+	// it could cascade through. Leaving this to the periodic sweep would
+	// mean a window — up to a scheduler tick, and unbounded if the process
+	// died first — where a forgotten conversation's vectors were still on
+	// disk. See docs/plans/embeddings.md's "Privacy and eligibility".
+	embeddingsPurged, err := purgeEmbeddingsForThread(tx, ghosts, args...)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM shooting_star_runs WHERE thread_id IN (`+ghosts+`)`, args...); err != nil {
 		return fmt.Errorf("deleting ghost threads' shooting star runs: %w", err)
 	}
@@ -139,7 +150,15 @@ func (s *Store) deleteGhostThreads(where string, args ...any) error {
 	if _, err := tx.Exec(`DELETE FROM threads WHERE ghost = 1 AND `+where, args...); err != nil {
 		return fmt.Errorf("deleting ghost threads: %w", err)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Only after the commit: a rollback must not tell the in-memory vector
+	// cache to reload (see purgeEmbeddingsForThread's doc comment).
+	if embeddingsPurged > 0 {
+		s.bumpEmbeddingsEpoch()
+	}
+	return nil
 }
 
 // DeleteAllGhostThreads hard-deletes every thread still tagged ghost —

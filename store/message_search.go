@@ -66,6 +66,38 @@ func buildFTSQuery(query string) string {
 // a forked thread's title is always ” (ForkThread never sets one) and
 // its own id isn't independently addressable by GetThread — only a root
 // id is, which is what clicking a result needs to open.
+// searchableThreadJoin resolves each message's owning thread and its root.
+// Shared by every read path over thread content so they agree on *which*
+// thread a message effectively belongs to — see SearchMessages' doc
+// comment on hidden variant threads (fork_root_id/active_variant_id).
+const searchableThreadJoin = `
+		 JOIN threads t ON t.id = m.thread_id
+		 JOIN threads root ON root.id = COALESCE(NULLIF(t.fork_root_id, ''), t.id)`
+
+// searchableThreadWhere is the single eligibility predicate over thread
+// content: disabled, ghost, internal threads, Atlas visibility, active
+// variant resolution, and Field opt-out. Deliberately one shared value, not
+// a copy per caller, shared by the FTS path (SearchMessages), the semantic
+// candidate scan, and the embedding indexer's own "what may be indexed"
+// and "what is no longer eligible" queries.
+//
+// Two copies of a rule this subtle will drift, and every failure mode is
+// bad in a way that's hard to notice: a leak shows a ghost or opted-out
+// thread in results, and an omission silently under-indexes one.
+//
+// A var rather than a const only because notInFieldWhere is a function call;
+// treat it as immutable. Requires the searchableThreadJoin aliases (m, t,
+// root).
+var searchableThreadWhere = `
+		   root.disabled = 0
+		   AND root.ghost = 0
+		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
+		   AND root.source != 'pulsar'
+		   AND root.source != 'weaver'
+		   AND root.source != 'comet_approach'
+		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
+		   AND ` + notInFieldWhere(`root.field_id`, `exclude_from_chat_search = 1`)
+
 func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, error) {
 	if limit <= 0 {
 		limit = 30
@@ -79,18 +111,9 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 		`SELECT root.id, root.title, m.role, m.created_at,
 			snippet(messages_fts, 0, char(2), char(3), '…', 12)
 		 FROM messages_fts
-		 JOIN messages m ON m.id = messages_fts.rowid
-		 JOIN threads t ON t.id = m.thread_id
-		 JOIN threads root ON root.id = COALESCE(NULLIF(t.fork_root_id, ''), t.id)
+		 JOIN messages m ON m.id = messages_fts.rowid`+searchableThreadJoin+`
 		 WHERE messages_fts MATCH ?
-		   AND root.disabled = 0
-		   AND root.ghost = 0
-		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
-		   AND root.source != 'pulsar'
-		   AND root.source != 'weaver'
-		   AND root.source != 'comet_approach'
-		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
-		   AND `+notInFieldWhere(`root.field_id`, `exclude_from_chat_search = 1`)+`
+		   AND `+searchableThreadWhere+`
 		 ORDER BY rank LIMIT ?`,
 		ftsQuery, limit,
 	)

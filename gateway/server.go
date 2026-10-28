@@ -64,6 +64,7 @@ type Server struct {
 	parallel   *parallel.Client         // nil if not configured
 	decisions  *decisions.Client        // nil if openrouter.api_key isn't set — disables compare_sources only
 	embed      *embed.Client            // nil if ollama.base_url isn't set — disables agent's query-similarity signal only
+	embeds     *embedService            // nil whenever embed is — the persisted semantic index (gateway/embedsvc.go)
 	stt        *voice.STTClient
 	tts        *voice.TTSClient
 	mux        *http.ServeMux
@@ -194,9 +195,18 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		wizardSessions:    make(map[string]*wizardSession),
 		devMode:           staticFS == nil,
 	}
+	// Constructed after the literal because it needs the embed client the
+	// literal just built. Nil whenever that client is nil, so an
+	// unconfigured deployment gets no indexer, no cache, and no background
+	// sweep at all — see embedService's own doc comment.
+	s.embeds = newEmbedService(db, s.embed)
 	s.routes(staticFS)
 	return s
 }
+
+// RunEmbedIndexer runs the semantic index's background sweep until done is
+// closed. Delegates so cmd/run.go doesn't have to know about embedService.
+func (s *Server) RunEmbedIndexer(done <-chan struct{}) { s.embeds.RunEmbedIndexer(done) }
 
 func (s *Server) Handler() http.Handler { return gzipMiddleware(csrfProtect(s.mux, s.devMode)) }
 

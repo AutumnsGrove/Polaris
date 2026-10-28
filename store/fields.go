@@ -240,6 +240,17 @@ func (s *Store) UpdateField(id string, u FieldUpdate) (*Field, error) {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, ErrFieldNotFound
 	}
+	// Flipping a Field to "excluded from chat search" is a removal request,
+	// not a display preference, so its vectors must go rather than merely be
+	// filtered at query time. Best-effort on purpose: the read-path
+	// predicate (searchableThreadWhere) already hides this content the
+	// instant the column changes, so a failed purge costs nothing but disk —
+	// and PurgeIneligibleEmbeddings retries it on the next indexer tick,
+	// which is why this never needs to fail an otherwise-successful settings
+	// edit.
+	if u.ExcludeFromChatSearch != nil && *u.ExcludeFromChatSearch {
+		_, _ = s.PurgeIneligibleEmbeddings()
+	}
 	return s.GetField(id)
 }
 
