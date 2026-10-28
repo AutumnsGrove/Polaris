@@ -633,3 +633,41 @@ sweep calls it twice, `Backfill` calls only the kinds asked for and terminates o
 Re-running the live check on the same database then reported exactly 1,598, and the two calls'
 costs ($0.000178 for 220 stars + $0.002016 for 1,598 messages) reconcile with the earlier
 single-run total of $0.002194. `TestBackfill_KindFilterTouchesOnlyThatKind` is the regression test.
+
+## Implementation notes (post-review, 2026-10-28)
+
+### Similarity floor
+
+Fusion originally took the semantic tier's top 30 unconditionally, so a query with nothing
+related in the history still returned 30 nearest-but-irrelevant rows, and RRF ranked them like
+leads. `minMessageSimilarity` (0.32) and `minStarSimilarity` (0.20) in
+`gateway/embedding_search.go` now trim the semantic list only; keyword hits never see the floor.
+
+Measured with `perplexity/pplx-embed-v1-0.6b` against the real history (1,888 eligible-ish
+messages, 220 stars; 12 paraphrased on-topic queries with no lexical overlap, 10 off-topic or
+nonsense ones; total spend $0.0000007 for the queries):
+
+| | best hit, off-topic | best hit, on-topic | related-but-not-top hits |
+|---|---|---|---|
+| messages | 0.17–0.283 | 0.476–0.885 | 0.34–0.39 |
+| stars | 0.12–0.239 | 0.306–0.565 (one right answer at 0.210–0.233) | 0.25–0.35 |
+
+Messages separate cleanly; 0.32 is ~0.04 above the noise ceiling and below every related hit
+seen. Stars do not: the right star for "how I take my coffee" scored 0.233 while off-topic noise
+reached 0.239 (stars embed title+summary+body, so scores run lower). No floor is clean there, so
+0.20 only trims the long tail and accepts a stray weak lead over dropping a real one. These are
+properties of this model's score distribution: re-measure after any model swap.
+
+### Input cap
+
+`embed.MaxInputChars` (100k) bounds one text before it leaves the process. OpenRouter's model
+already truncates at 32,768 tokens on its own (a 300k-char input returned 200 with
+`prompt_tokens=32768`), so a long message was never a poison pill for the indexer; the cap bounds
+request size (128 x a pathological message) and keeps the original text intact for hashing.
+
+### Spend accounting after review
+
+Backfill/IndexOnce now book provider spend on every exit path (a failed run at batch 7 of 8 used
+to lose the first six batches' cost from `aux_usage`), and the query-similarity signal's
+per-`web_search` embedding is billed to the turn (`Client.EmbedWithCost` -> `ctx.AddCost`)
+instead of being the one paid call the stats never saw.

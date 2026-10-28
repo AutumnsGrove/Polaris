@@ -29,6 +29,45 @@ const rrfK = 60
 // what lets a row ranked 12th by FTS5 but 2nd semantically still surface.
 const hybridPoolSize = 30
 
+// Minimum cosine similarity for a semantic hit to enter fusion at all, per
+// kind. Without a floor the semantic tier always contributes its top
+// hybridPoolSize rows — so a query nothing in the history relates to still
+// returned 30 nearest-but-irrelevant messages, and RRF ranked them as if they
+// were leads. Keyword hits never pass through this; it only trims the
+// semantic list.
+//
+// Measured against the real history with pplx-embed-v1-0.6b (22 queries; see
+// docs/plans/embeddings.md "Similarity floor"):
+//   - messages: off-topic queries' *best* hit topped out at 0.283; on-topic
+//     queries' top hits were 0.47–0.89 and their genuinely related follow-ups
+//     0.34–0.39. 0.32 sits ~0.04 above the noise ceiling and below every
+//     related hit seen.
+//   - stars: embedded from title+summary+body, so scores run lower — the right
+//     star for "how I take my coffee" scored 0.233, while off-topic noise
+//     reached 0.239. The distributions overlap, so no floor is clean; 0.20
+//     only trims the long tail and accepts a stray weak lead rather than
+//     dropping a real one (the model judges star leads, it doesn't render
+//     them blind).
+//
+// Tuned for one model: a different embedding model has a different score
+// distribution, and `polaris embeddings reindex` after a model swap is the
+// moment to re-measure.
+const (
+	minMessageSimilarity = 0.32
+	minStarSimilarity    = 0.20
+)
+
+// aboveFloor returns the ids of hits scoring at least floor, in rank order.
+func aboveFloor(hits []SimilarityHit, floor float64) []int64 {
+	ids := make([]int64, 0, len(hits))
+	for _, h := range hits {
+		if h.Score >= floor {
+			ids = append(ids, h.RefID)
+		}
+	}
+	return ids
+}
+
 // queryEmbedTimeout bounds one search-time query embedding. Same 5s ceiling
 // embed.singleEmbedTimeout applies on the research loop's own critical path:
 // past that, keyword-only results are better than a stalled search.
@@ -174,12 +213,7 @@ func (v *embedService) semanticStarIDs(ctx context.Context, query string) []int6
 	if vec == nil {
 		return nil
 	}
-	hits := v.Search(store.EmbeddingKindStar, vec, hybridPoolSize)
-	ids := make([]int64, len(hits))
-	for i, h := range hits {
-		ids[i] = h.RefID
-	}
-	return ids
+	return aboveFloor(v.Search(store.EmbeddingKindStar, vec, hybridPoolSize), minStarSimilarity)
 }
 
 func idsOfStarLeads(leads []store.StarSearchResult) []int64 {
@@ -251,9 +285,7 @@ func (v *embedService) SearchChatsHybrid(ctx context.Context, query string, limi
 	var semIDs []int64
 	if v.CachedCount(store.EmbeddingKindMessage) > 0 {
 		if vec := v.embedQuery(ctx, query); vec != nil {
-			for _, h := range v.Search(store.EmbeddingKindMessage, vec, hybridPoolSize) {
-				semIDs = append(semIDs, h.RefID)
-			}
+			semIDs = aboveFloor(v.Search(store.EmbeddingKindMessage, vec, hybridPoolSize), minMessageSimilarity)
 		}
 	}
 

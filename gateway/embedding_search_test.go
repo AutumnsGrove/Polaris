@@ -481,3 +481,14 @@ func TestSearchChatsHybrid_NilServiceFallsBackToFTS(t *testing.T) {
 		}
 	}
 }
+
+func TestAboveFloor_DropsWeakHitsKeepsRankOrder(t *testing.T) {
+	hits := []SimilarityHit{{RefID: 7, Score: 0.9}, {RefID: 3, Score: 0.32}, {RefID: 5, Score: 0.319}, {RefID: 1, Score: 0.1}}
+	got := aboveFloor(hits, minMessageSimilarity)
+	if len(got) != 2 || got[0] != 7 || got[1] != 3 {
+		t.Errorf("aboveFloor = %v, want [7 3] (>= floor, rank order preserved)", got)
+	}
+	if got := aboveFloor(nil, minMessageSimilarity); got == nil || len(got) != 0 {
+		t.Errorf("aboveFloor(nil) = %v, want empty non-nil", got)
+	}
+}

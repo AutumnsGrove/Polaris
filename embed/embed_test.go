@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"unicode/utf8"
 )
 
 // fakeProvider is the Provider double the Client-level tests use — the
@@ -282,5 +284,38 @@ func TestLocal_ReflectsProvider(t *testing.T) {
 	var c *Client
 	if c.Local() {
 		t.Error("nil Client.Local() = true, want false")
+	}
+}
+
+func TestTruncateInput(t *testing.T) {
+	short := "hello"
+	if got := truncateInput(short); got != short {
+		t.Errorf("short text changed: %q", got)
+	}
+	// Multi-byte runes: 3 bytes each, so byte length exceeds the cap long
+	// before rune count does. A byte-based cut would split a rune.
+	multi := strings.Repeat("é", MaxInputChars+10)
+	got := truncateInput(multi)
+	if n := utf8.RuneCountInString(got); n != MaxInputChars {
+		t.Errorf("rune count = %d, want %d", n, MaxInputChars)
+	}
+	if !utf8.ValidString(got) {
+		t.Error("truncation produced invalid UTF-8")
+	}
+	exact := strings.Repeat("é", MaxInputChars)
+	if truncateInput(exact) != exact {
+		t.Error("text exactly at the cap was altered")
+	}
+}
+
+func TestEmbedBatch_DoesNotMutateCallersTexts(t *testing.T) {
+	c := newClient(&fakeProvider{model: "m", dims: 2})
+	long := strings.Repeat("x", MaxInputChars+5)
+	texts := []string{long}
+	if _, err := c.EmbedBatch(context.Background(), texts); err != nil {
+		t.Fatalf("EmbedBatch: %v", err)
+	}
+	if len(texts[0]) != MaxInputChars+5 {
+		t.Errorf("caller's slice was truncated in place (len %d); the indexer hashes the original", len(texts[0]))
 	}
 }

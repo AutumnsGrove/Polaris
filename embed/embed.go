@@ -66,6 +66,27 @@ const MaxBatch = 128
 // history, so there's no case for loosening it.
 const singleEmbedTimeout = 5 * time.Second
 
+// MaxInputChars caps one text before it leaves the process. Not a correctness
+// guard for OpenRouter's model — measured live, it truncates at its own 32,768
+// tokens and answers 200 for a 300k-character input — but a bound on request
+// size and on how long one pathological message (the real history's longest
+// is 54k chars) can slow a batch of 128. ~100k chars is roughly the model's
+// whole window, so nothing the provider would have kept is lost; for nomic's
+// 2,048-token window the provider truncates harder on its own either way.
+const MaxInputChars = 100_000
+
+// truncateInput cuts text to MaxInputChars runes without splitting a rune.
+func truncateInput(text string) string {
+	if len(text) <= MaxInputChars { // bytes >= runes, so this is a cheap fast path
+		return text
+	}
+	r := []rune(text)
+	if len(r) <= MaxInputChars {
+		return text
+	}
+	return string(r[:MaxInputChars])
+}
+
 // Result is one provider call's vectors and what they cost.
 type Result struct {
 	// Vectors[i] is texts[i]'s embedding, always len(texts) entries each
@@ -181,6 +202,14 @@ func (c *Client) embedBatch(ctx context.Context, texts []string, timeout time.Du
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
+
+	// Copied rather than truncated in place: texts is the caller's slice, and
+	// callers (the indexer) reuse the originals for the content hash.
+	capped := make([]string, len(texts))
+	for i, t := range texts {
+		capped[i] = truncateInput(t)
+	}
+	texts = capped
 
 	out := Result{Model: c.provider.Model()}
 	for start := 0; start < len(texts); start += MaxBatch {
