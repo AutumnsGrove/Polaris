@@ -629,5 +629,8 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   far past the 2.5s timeout and the bench's 5s budget. Skipped for good; the roster is complete.
 - `liquid/d1.1` (created 2026-10-27, successor to `liquid/d1`, same System One endpoint and price) was run the
   same day: 79.3, 421ms p50, 100% under 2.5s, $0.075 per 1,000 turns. A tie with d1 (78.5) and well below d1-ultra.
+- `baseten/joey-1` (created 2026-10-29, a 2B Base Labs model on Qwen3.5-2B, 16k context, $0.01/M prompt, no
+  question cap) was run 2026-10-30 after a 12-case smoke test: 55.6, 360ms p50, 100% under 2.5s, 0% errors,
+  $0.044 per 1,000 turns. Fast but 32 points behind Jev 1.14; negative on `locale` and `premise`. Not a candidate.
 - Deliberately not run: `~perplexity/pplx-decider-latest`, an alias for a Perplexity model already benchmarked
   by its versioned id (an alias moving would make a result uninterpretable).
