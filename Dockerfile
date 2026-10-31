@@ -32,7 +32,7 @@ RUN pnpm run build
 # correctness benefit. TARGETOS/TARGETARCH (buildx-provided build args
 # describing what we're actually compiling *for*) drive the
 # cross-compilation directly instead.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 WORKDIR /src
 
