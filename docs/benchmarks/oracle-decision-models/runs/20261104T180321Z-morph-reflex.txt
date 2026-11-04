@@ -1,0 +1,13 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model         score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50   p95   cost    
+1   morph/reflex  92.7   89.0-95.9  92.7       98%      97%    98%      95%    1%         0%   1.5s  1.7s  $0.869  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  morph/reflex  █████████░                      |         p50 1.5s   p95 1.7s  
+
+Tracks scoring 25+ points below the model's own headline:
+  morph/reflex: emotional 43

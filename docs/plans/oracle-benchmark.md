@@ -632,5 +632,17 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
 - `baseten/joey-1` (created 2026-10-29, a 2B Base Labs model on Qwen3.5-2B, 16k context, $0.01/M prompt, no
   question cap) was run 2026-10-30 after a 12-case smoke test: 55.6, 360ms p50, 100% under 2.5s, 0% errors,
   $0.044 per 1,000 turns. Fast but 32 points behind Jev 1.14; negative on `locale` and `premise`. Not a candidate.
+- `morph/reflex` (created 2026-11-03, Morph's decision model, 65k context, Choice/`noul`/`score` over the
+  Decisions API, no question cap, state prefix-cached across requests) was run 2026-11-04 after an 8-case smoke
+  test: **92.7, the highest score in the bank**, 1.5s p50 / 1.7s p95 / 2.29s max, 100% of calls under 2.5s, 0
+  errors, 0 refusals, $0.949 per 1,000 turns. It is the first model above Jev 1.14 by more than the noise floor
+  that never loses a call, so it is the new accuracy-first candidate; the open questions before any swap are
+  latency in front of the first token (10x Jev at the median), cost (4.5x Jev measured against the same
+  $0.042/M list price, so ~5x the tokens per call), focus actions (95% vs Jev's 98%), `emotional` (43, its only
+  weak family: it fired on the `em-airline-angry` and `em-font-stressed` hyperbole traps), and the 210ms of
+  headroom left on its slowest call. Not swapped: `jev.Model` is still `typesafe/jev-1.14`.
+- `cloudflare/clairic` (created 2026-10-29) is in the decisions catalog but lists only the
+  `/api/alpha/extractions` endpoint, not `/api/alpha/decisions`, so it probably cannot answer Choice questions
+  at all. Not run; probe it with `--n 8` first if Cloudflare ever makes it Choice-capable.
 - Deliberately not run: `~perplexity/pplx-decider-latest`, an alias for a Perplexity model already benchmarked
   by its versioned id (an alias moving would make a result uninterpretable).

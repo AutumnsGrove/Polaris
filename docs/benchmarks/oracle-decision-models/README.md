@@ -6,20 +6,29 @@ person?", "is the user asking for something deep?") and quietly adjusts how the 
 decision model sits in front of every message, so it has to be **fast, cheap, and right**, in that
 order.
 
-This page records a full run of `polaris oracle-bench` across twenty-six candidate models, and how to
+This page records a full run of `polaris oracle-bench` across twenty-seven candidate models, and how to
 repeat it.
 
-<p align="center"><img src="scorecard.svg" alt="Scorecard: twenty-six decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
+<p align="center"><img src="scorecard.svg" alt="Scorecard: twenty-seven decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
 
 ## The short version
 
 - **Nobody beats Jev 1.14 on the thing that matters most: speed.** Its median call takes 152ms and
   every call finished inside Oracle's real 2.5s timeout. No other model matches both.
-- **Perplexity's 27B decider v1.1 scored highest (91.4) but is no longer available:** on 2026-10-26 it returns
+- **Morph's Reflex is the new top score: 92.7, the first model to beat Jev 1.14 by more than the noise
+  floor while still finishing every call inside Oracle's 2.5s timeout.** It was released 2026-11-03, takes
+  Oracle's full 23-question call in one request with no cap, and returned no errors and no refusals in 885
+  calls. It is 4.9 points ahead of Jev (87.8), which is above the 2.5-point noise floor, and its slowest
+  call was 2.29s against the 2.5s cutoff. The costs are real: 1.5s at the median against Jev's 152ms (10x
+  slower, which is a different feel in front of the first token), $0.949 per 1,000 turns against $0.212
+  (4.5x: measured billing, not list price, so treat the catalog's $0.042/M as about five times
+  optimistic for this question set), focus actions 95% against Jev's 98%, and `emotional` is its one bad
+  family (43). It is the strongest candidate yet, not an automatic swap.
+- **Perplexity's 27B decider v1.1 scored second (91.4) but is no longer available:** on 2026-10-26 it returns
   `HTTP 404 No endpoints found` and is gone from the catalog, so its row below is a record, not an option.
   Its lead over Jev 1.14 (87.8) was larger than the 2.5-point noise floor, but it took 2.0s at the median and
   about **1 in 9 calls would have missed Oracle's 2.5s cutoff** and silently turned Oracle off for that turn.
-  Of the models you can still call, Drex Max (91.3) is the most accurate.
+  Of the models you can still call, Drex Max (91.3) is the most accurate below Reflex.
 - **Perplexity's newer Decider v1.2 trades accuracy for speed:** 86.5, about 5 points below v1.1 (a
   statistical tie with Jev 1.14, not with v1.1), but 871ms at the median instead of 2.0s and about 7% of
   calls past the 2.5s cutoff instead of 11%. It is still far slower than Jev, and it is weak on
@@ -55,10 +64,9 @@ repeat it.
   (16). **Scaledown Classify 1 (75.4) and Upstage Solar
   Decide Flash (57.3) trail further.** Solar Flash is also the closest to a disqualifying 5% of
   dangerous false nudges (4%).
-- **Nace's Drex Max is the most interesting new result: 91.3, tied for the top score, with 482ms at the median
-  and 99.4% of calls under 2.5s.** That is 3.5 points above Jev 1.14, larger than the 2.5-point noise floor,
-  and the first model that is both clearly more accurate than Jev and almost never misses Oracle's cutoff
-  (p95 1.2s). The costs: it is about 3x slower than Jev at the median, 1.5x the price per turn ($0.317 vs
+- **Nace's Drex Max scores 91.3, with 482ms at the median and 99.4% of calls under 2.5s.** That is 3.5 points above Jev 1.14, larger than the 2.5-point noise floor,
+  and, until Reflex, the only model that was both clearly more accurate than Jev and almost never missed
+  Oracle's cutoff (p95 1.2s). The costs: it is about 3x slower than Jev at the median, 1.5x the price per turn ($0.317 vs
   $0.212 per 1,000), a little weaker on focus actions (95% vs 98%), weak on `contested` (66), and it only
   works here because the bench splits Oracle's 23 questions into two requests (Max rejects more than 16).
   Its siblings do worse: **Drex 1.5 scores 80.5** (293ms, no cap, no split) and **Drex 2.0 is disqualified**
@@ -89,43 +97,44 @@ Recommendation: **keep `typesafe/jev-1.14` pinned.** Details and caveats below.
 
 ## Results
 
-Runs of 2026-10-16, 2026-10-19, 2026-10-22, 2026-10-25, 2026-10-26, 2026-10-27 and 2026-10-30: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
+Runs of 2026-10-16, 2026-10-19, 2026-10-22, 2026-10-25, 2026-10-26, 2026-10-27, 2026-10-30 and 2026-11-04: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
 separately), 3 repeats each, 2 calls in flight, weights `a6cbc140bd53`. The raw leaderboards are saved in
-[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in thirteen
+[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in fourteen
 invocations with identical settings (except the Drex run, which used concurrency 1) (the first nine models, then Luna, then D1 Ultra, Classify 1 and
 Solar Flash, then on 2026-10-19 Perplexity's Decider v1.2 and Flash v1.2, then on 2026-10-22 Baseten's
 Mammoth 1 and, separately, Elephant 1, each paced at one call per 3.5s because they are `:free` models, then on 2026-10-25 Respan's
-Span-02, then on 2026-10-26 Nace's three Drex models and, separately, Together's Tev1 and Kev, Cloudflare's Clef Omni, and a re-run of Perplexity's Flash v1.2 after its first attempt hit upstream 429s, then on 2026-10-27 Liquid's D1.1, then on 2026-10-30 Baseten's Joey 1; see
+Span-02, then on 2026-10-26 Nace's three Drex models and, separately, Together's Tev1 and Kev, Cloudflare's Clef Omni, and a re-run of Perplexity's Flash v1.2 after its first attempt hit upstream 429s, then on 2026-10-27 Liquid's D1.1, then on 2026-10-30 Baseten's Joey 1, then on 2026-11-04 Morph's Reflex; see
 [Reproduce it](#reproduce-it)); the report command refuses to merge runs that differ in cases, repeats or
 weights, and in concurrency unless given `--allow-concurrency-mismatch`, which marks those models' rows (†). The two earlier files in `runs/` (2026-10-15) used an older, smaller case bank and weights, so
 they are not comparable to these runs.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
 |--:|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| 1 | `perplexity/pplx-decider-v1.1-27b` (retired) | **91.4** (87.7-94.4) | 97% | 98% | 95% | 0% | 1% | 2.0s | 3.7s | 88.9% | $0.115 |
-| 2 | `nace-ai/drex-max` † (split) | **91.3** (88.1-94.1) | 97% | 97% | 95% | 0% | 0% | 482ms | 1.2s | 99.4% | $0.317 |
-| 3 | `baseten/mammoth-1:free` | **90.1** (87.1-92.9) | 97% | 97% | 92% | 0% | 0% | 621ms | 1.1s | 99.4% | free |
-| 4 | `inception/mercury-decide:free` | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | free |
-| 5 | `liquid/d1-ultra` | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
-| 6 | `typesafe/jev-1.14` (pinned) | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
-| 7 | `microsoft/microsoft-decision-1` | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
-| 8 | `typesafe/jev-1.13` | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
-| 9 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.081 |
-| 10 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
-| 11 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
-| 12 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | free |
-| 13 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
-| 14 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
-| 15 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 16 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 17 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
-| 18 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 19 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
-| 20 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
-| 21 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
-| 22 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
-| 23 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
-| 24 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| 1 | `morph/reflex` | **92.7** (89.0-95.9) | 98% | 98% | 95% | 1% | 0% | 1.5s | 1.7s | 100.0% | $0.949 |
+| 2 | `perplexity/pplx-decider-v1.1-27b` (retired) | **91.4** (87.7-94.4) | 97% | 98% | 95% | 0% | 1% | 2.0s | 3.7s | 88.9% | $0.115 |
+| 3 | `nace-ai/drex-max` † (split) | **91.3** (88.1-94.1) | 97% | 97% | 95% | 0% | 0% | 482ms | 1.2s | 99.4% | $0.317 |
+| 4 | `baseten/mammoth-1:free` | **90.1** (87.1-92.9) | 97% | 97% | 92% | 0% | 0% | 621ms | 1.1s | 99.4% | free |
+| 5 | `inception/mercury-decide:free` | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | free |
+| 6 | `liquid/d1-ultra` | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
+| 7 | `typesafe/jev-1.14` (pinned) | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
+| 8 | `microsoft/microsoft-decision-1` | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
+| 9 | `typesafe/jev-1.13` | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
+| 10 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.081 |
+| 11 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
+| 12 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 13 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | free |
+| 14 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
+| 15 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
+| 16 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 17 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 18 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
+| 19 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 20 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 21 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
+| 22 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
+| 23 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
+| 24 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 25 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.173 |
 | x | `inception/mercury-decide` | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 
@@ -140,9 +149,9 @@ upstream `429 Model busy` responses (details in that section), which is why it i
 (`oracleTimeout` in `gateway/oracle.go`); a call over that is dropped and the turn runs without Oracle.
 *$/1k turns* is the decision-call cost for 1,000 Oracle turns (one call each). Trigger and focus
 describe what production's rules *did* with the answer, not just the raw answer. The whole run cost
-**$5.00** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
+**$5.87** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
 Perplexity's two new models, $0.01 each for Mammoth and Elephant, which are free and cost only their
-judging, $0.06 for Span-02, $0.58 for the three Drex models, $0.38 for Tev and Kev, and $0.72 for Clef Omni, $0.06 for the Flash re-run, $0.10 for D1.1, and $0.08 for Joey 1), of which about $0.37 was the judge.
+judging, $0.06 for Span-02, $0.58 for the three Drex models, $0.38 for Tev and Kev, and $0.72 for Clef Omni, $0.06 for the Flash re-run, $0.10 for D1.1, $0.08 for Joey 1, and $0.87 for Reflex), of which about $0.40 was the judge.
 
 ### Overall quality
 
@@ -151,7 +160,7 @@ The headline score on its own, with speed deliberately left out.
 <p align="center"><img src="overall-quality.svg" alt="Overall quality score by model with 95% intervals" width="860"></p>
 
 The intervals overlap heavily across the top seven. With 274 scored cases, a gap under about 2.5 points is
-noise, so the honest reading is four tiers: **Perplexity v1.1 (retired), Drex Max, Mammoth and Mercury free** at the top, **D1 Ultra, Jev 1.14,
+noise, so the honest reading is four tiers: **Reflex, Perplexity v1.1 (retired), Drex Max, Mammoth and Mercury free** at the top, **D1 Ultra, Jev 1.14,
 Microsoft, Jev 1.13, Perplexity v1.2 and Span-02** tied just behind, **Luna, Elephant, Drex 1.5, D1.1, D1, Clef, Flash v1.2 and Classify 1** clearly below, and **Clef Flash,
 Tev1, Clef Omni, Kev, Solar Flash and Joey 1** at the bottom (Drex 2.0 is disqualified for errors).
 
@@ -164,11 +173,16 @@ actually enforces.
 
 Only Jev 1.14, Jev 1.13, D1 and Microsoft are both fast and consistent: their 95th-percentile call
 finishes well under half a second. Perplexity (both versions) and Mercury free have a 95th-percentile call of
-3.7s to 4.3s; v1.1 and Mercury free score highest, but their slowest
+3.7s to 4.3s; v1.1 and Mercury free score near the top, but their slowest
 calls are exactly the ones Oracle throws away. Drex Max sits in between: at 482ms median and 1.2s p95 it is
 slower than that fast group but fits inside the cutoff on 99.4% of calls, while scoring with the top tier.
 Its latency was measured at concurrency 1 (†), so treat it as a best case; the other models ran with two
 calls in flight.
+
+Reflex is the outlier worth understanding: it is the top scorer *and* the only high-scoring model that
+never lost a call, but it does it from 1.5s at the median — 10x Jev — with a flat tail (p95 1.7s, slowest
+call 2.29s). So it is 210ms from the cutoff on its worst call of 885, where Jev has two seconds of
+headroom. A day of provider load like Mercury's 4.3s p95 would start dropping turns.
 
 <p align="center"><img src="latency.svg" alt="Median and 95th percentile latency per model" width="860"></p>
 
@@ -178,12 +192,14 @@ calls in flight.
 
 <p align="center"><img src="cost.svg" alt="Cost per 1000 Oracle turns, ranked" width="860"></p>
 
-Cost is a rounding error at this scale: even the priciest models (Clef Omni at $0.80, then Solar Flash and
-Luna at about $0.56 to $0.58 per 1,000 turns) cost cents in a heavy month. Note the bills run higher than the catalog's per-token prices
-suggest for several models (Classify 1 and Solar Flash especially), so compare the measured figures here, not
-the list prices. The frontier is only useful for the free-versus-paid question: Mercury
+Cost is a rounding error at this scale: even the priciest models (Reflex at $0.95, then Clef Omni at $0.80,
+then Solar Flash and Luna at about $0.56 to $0.58 per 1,000 turns) cost cents in a heavy month. Note the
+bills run higher than the catalog's per-token prices
+suggest for several models (Reflex, Classify 1 and Solar Flash especially), so compare the measured figures
+here, not the list prices. The frontier is only useful for the free-versus-paid question: Mercury
 free and Perplexity v1.1 (now retired) are the only models nothing beats on both price and score (v1.2 is cheaper than
-v1.1 at $0.081, but Mercury free beats it on both counts). Jev 1.14 is off the
+v1.1 at $0.081, but Mercury free beats it on both counts). Reflex is the new accuracy ceiling, so nothing
+beats it on score at all. Jev 1.14 is off the
 frontier on cost, which is the price of its speed.
 
 ### Refusals
@@ -211,7 +227,7 @@ actions, the contested-label cases, calibration, dangerous false nudges, and err
 
 <p align="center"><img src="metrics.svg" alt="Eight ranked panels, one per metric" width="860"></p>
 
-Two details worth knowing. Jev 1.14 is the **best of all fifteen scored models at focus actions (98%)**, which is the
+Two details worth knowing. Jev 1.14 is the **best of all twenty-seven models at focus actions (98%)**, which is the
 decision that changes what Oracle *does* rather than what it says. And every model but one keeps dangerous
 false nudges to about 1% or less. The exception is Solar Flash at 4% (14 of 391 opportunities), close to the 5%
 disqualification line.
@@ -226,6 +242,9 @@ Where a model is unusually weak (25+ points below its own overall score):
 
 - **Jev 1.14:** `locale` (61). Perplexity scores 97 and Mercury free 99 on the same family, so this is
   a real gap rather than a hard question; Jev 1.13, Microsoft, D1 and Clef sit at 60 to 62 too.
+- **Reflex:** `emotional` (43). It fires the nudge on both hyperbole traps — furious about a lost bag, and
+  "so stressed" about a wedding font — where the label is `no`. Every other family is 92 or better
+  (`clarify` 71 and `recall` 78 are its next weakest).
 - **Microsoft Decision 1:** `clarify` (43), `locale` (62) and `private_person` (62).
 - **Mercury free:** `clarify` (62) and `emotional` (43).
 - **Perplexity Decider v1.2:** `clarify` (50) and `emotional` (42).
@@ -253,42 +272,51 @@ Where a model is unusually weak (25+ points below its own overall score):
 
 Judged on the operator's stated priorities (speed first, then accuracy):
 
-1. **Keep Jev 1.14.** It is the fastest model tested, 100% inside the timeout, best at focus actions,
-   and tied on score with every model except Drex Max (and the retired Perplexity v1.1). The 1.14 over 1.13 gain (87.8 vs 86.5) is
-   inside the noise, so the decision to pin 1.14 stands but is not a strong claim.
-2. **If accuracy ever matters more than speed, try Drex Max.** It is the only model that is both clearly more
-   accurate than Jev (91.3 vs 87.8) and almost always inside the timeout (99.4%, p95 1.2s). It gives up about
+1. **Keep Jev 1.14 pinned for now.** It is still the fastest model tested, 100% inside
+   the timeout with two seconds of headroom, and the best at focus actions. It is no longer the most
+   accurate: Reflex (92.7) is 4.9 points ahead, above the noise floor, and the 1.14 over 1.13 gain (87.8 vs
+   86.5) is inside the noise, so the pin is a speed decision, not an accuracy one.
+2. **Reflex is the model to try if accuracy matters more than latency.** It is the top scorer (92.7), the
+   only model above Jev that never lost a call (100% under 2.5s on all 885 calls, slowest call 2.29s), with
+   no refusals and no errors, and it needs no question split. Against that: 1.5s median against Jev's
+   152ms, $0.949 per 1,000 turns (4.5x Jev, even though both list $0.042/M — the same question set bills
+   about five times the tokens, so compare measured cost, not list price), focus actions 95% vs 98%, a real
+   `emotional` weakness (43), and only 210ms of headroom under the cutoff on its worst call, so a slower
+   provider day would start dropping turns. Swap on a deliberate decision, and watch the under-2.5s share
+   after the swap.
+3. **Drex Max is the fallback accuracy pick, and now the third-placed score.** It is clearly more accurate
+   than Jev (91.3 vs 87.8) and almost always inside the timeout (99.4%, p95 1.2s). It gives up about
    330ms at the median, costs 1.5x per turn, and is weaker on focus actions (95% vs 98%) and `contested` (66).
    Its numbers also carry three caveats: it was scored under a two-request split, its latency was measured at
    concurrency 1, and its provider has not been load-tested the way Jev's has. Production would need
-   `WithMaxQuestions(16)` on Oracle's client. Worth a closer look, not a swap on this evidence alone.
-3. **If Jev ever needs replacing for speed reasons, try D1 Ultra first.** Same score, 100% inside the timeout, about 85ms
+   `WithMaxQuestions(16)` on Oracle's client.
+4. **If Jev ever needs replacing for speed reasons, try D1 Ultra first.** Same score, 100% inside the timeout, about 85ms
    slower at the median, about 12% cheaper, no weak question family, and it handles `locale` far better
    than Jev. The cost is focus actions (90% vs 98%). Microsoft Decision 1 is the next choice (same score,
    cheaper, but weak on `clarify`, `locale` and `private_person`).
-4. **Mammoth is the best free option, and a reasonable fallback, not a replacement.** It ties Jev on score
+5. **Mammoth is the best free option, and a reasonable fallback, not a replacement.** It ties Jev on score
    (90.1 vs 87.8), stays inside the 2.5s timeout on 99.4% of calls, and has no weak question family. It loses
    on speed (621ms against 152ms at the median) and on focus actions (92% vs 98%), and being a free tier it
    can be rate limited or withdrawn without notice. Elephant 1 is not worth considering: 81.2, weak on
    focus actions (80%) and `premise` (40).
-5. **Perplexity only wins if Oracle's timeout is raised.** v1.2 is the faster of the two (871ms median,
+6. **Perplexity only wins if Oracle's timeout is raised.** v1.2 is the faster of the two (871ms median,
    about 7% of calls past 2.5s) but gives up the accuracy lead: it ties Jev on score at 6x the median
    latency, so it has no reason to replace Jev. v1.1 was the accurate one, and to use it without dropping turns the
    2.5s cutoff would have had to rise to roughly 4s (at 2.5s it would have turned Oracle off for about 11% of
    turns); it has since been retired, so that option is gone. Not recommended.
-6. **Skip Span-02 at today's timeout.** It ties Jev on score and focus actions and is the cheapest paid model
+7. **Skip Span-02 at today's timeout.** It ties Jev on score and focus actions and is the cheapest paid model
    ($0.060 per 1,000 turns), but its median call is 2.3s and p95 is 2.6s, both right at Oracle's 2.5s
    cutoff, so about 14% of turns would run without Oracle. Even a 4s cutoff would not buy it an advantage over
    Jev, which is already as accurate and 15x faster.
-7. **Skip Luna.** Fast (243ms median) but 5.5 points behind Jev 1.14, about 2.6x the cost per turn,
+8. **Skip Luna.** Fast (243ms median) but 5.5 points behind Jev 1.14, about 2.6x the cost per turn,
    and it refuses the private-person questions Oracle most needs to classify.
-8. **Skip Drex 1.5 and 2.0.** 1.5 is fast (293ms) but at 80.5 it trails Jev by 7 points, mostly on focus
+9. **Skip Drex 1.5 and 2.0.** 1.5 is fast (293ms) but at 80.5 it trails Jev by 7 points, mostly on focus
    actions (82%), `premise` and `private_person`. 2.0 is disqualified (22% errors, traced to the provider's `429 Model busy`) and
    scored about 66 even in a 60-call re-sample with only 3% errors.
-9. **Skip Tev1, Kev and Joey 1.** All three are compatible (no question cap) but about 18, 29 and 32 points behind Jev.
+10. **Skip Tev1, Kev and Joey 1.** All three are compatible (no question cap) but about 18, 29 and 32 points behind Jev.
    Kev's focus actions are right only 55% of the time and Joey's 68%. Joey 1 is the fastest of the three (360ms
    median, 100% under 2.5s) and the cheapest, but a quick wrong answer is not worth having.
-10. **Skip D1, D1.1, the Clef models (Omni especially), Classify 1 and Solar Flash.** D1 and Clef are fast enough but lose 9 to 14
+11. **Skip D1, D1.1, the Clef models (Omni especially), Classify 1 and Solar Flash.** D1 and Clef are fast enough but lose 9 to 14
    points, mostly on focus actions; Classify 1 and Solar Flash lose 12 to 30 points, and Solar Flash also
    produces the most dangerous false nudges.
 
@@ -388,10 +416,10 @@ Mercury has two entries and neither is a clean result:
 - **Fixed load.** Models run one after another with 2 calls in flight, so every model is timed under
   the same load. Latency moves with provider load, so treat it as one day's measurement.
 - **Judge.** A separate chat model (`deepseek`) reads the disputed cases, near-misses, and a 10% random
-  spot-check of ordinary answers. Across the three runs' 477 spot-checks (318, 41 and 118) it disagreed with the hand label 3 times
-  (0.6%), which is the best available estimate of how wrong the bank is. It flagged
-  `dr-remote-work-relocation`, `fo-researcher-loan-vs-index`, `pr-followup-japan-crowds` and
-  `hs-first-ipo-trivia` for a human look.
+  spot-check of ordinary answers. Across the runs' 516 spot-checks (318, 41, 118 and 39) it disagreed with the hand label 5 times
+  (1.0%), which is the best available estimate of how wrong the bank is. It flagged
+  `dr-remote-work-relocation`, `fo-researcher-loan-vs-index`, `pr-followup-japan-crowds`,
+  `hs-first-ipo-trivia` and `cl-best-pizza` for a human look.
 - **Weights.** Scoring weights and the 5s latency budget live in
   [`oraclebench/weights.yaml`](../../../oraclebench/weights.yaml). The 5s budget is deliberately looser
   than the 2.5s production timeout, which is why the timeout share is reported separately.
@@ -422,6 +450,12 @@ polaris oracle-bench --repeats 3 --seed 1 --concurrency 2 --timeout 15s \
 # the Drex models ran later at --concurrency 1 (each call is two requests for the capped ones):
 #   polaris oracle-bench --models nace-ai/drex-v1.5,nace-ai/drex-v2.0,nace-ai/drex-max --concurrency 1
 # so merging them needs --allow-concurrency-mismatch on the report below
+
+# a newly released model is benchmarked in its own invocation with the same flags, e.g. 2026-11-04:
+#   polaris oracle-bench --models morph/reflex --repeats 3 --seed 1 --concurrency 2 --timeout 15s \
+#     --label "morph reflex"
+# (smoke it first with --n 8 --repeats 1 --no-judge --save-dir /tmp/... to confirm the catalog entry takes
+# Choice questions and to see what it costs per call before spending on 885 of them)
 
 # regenerate every chart and results.md from the saved leaderboard
 polaris oracle-bench report \
