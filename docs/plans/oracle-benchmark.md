@@ -635,14 +635,28 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
 - `morph/reflex` (created 2026-11-03, Morph's decision model, 65k context, Choice/`noul`/`score` over the
   Decisions API, no question cap, state prefix-cached across requests) was run 2026-11-04 after an 8-case smoke
   test: **92.7, the highest score in the bank**, 1.5s p50 / 1.7s p95 / 2.29s max, 100% of calls under 2.5s, 0
-  errors, 0 refusals, $0.949 per 1,000 turns. It is the first model above Jev 1.14 by more than the noise floor
-  that never loses a call, so it is the new accuracy-first candidate; the open questions before any swap are
-  latency in front of the first token (10x Jev at the median), cost (4.5x Jev measured against the same
-  $0.042/M list price, so ~5x the tokens per call), focus actions (95% vs Jev's 98%), `emotional` (43, its only
-  weak family: it fired on the `em-airline-angry` and `em-font-stressed` hyperbole traps), and the 210ms of
-  headroom left on its slowest call. Not swapped: `jev.Model` is still `typesafe/jev-1.14`.
-- `cloudflare/clairic` (created 2026-10-29) is in the decisions catalog but lists only the
-  `/api/alpha/extractions` endpoint, not `/api/alpha/decisions`, so it probably cannot answer Choice questions
-  at all. Not run; probe it with `--n 8` first if Cloudflare ever makes it Choice-capable.
+  errors, 0 refusals, about $1.03 per 1,000 turns. It is the first model above Jev 1.14 by more than the noise
+  floor that never loses a call, so it is the new accuracy-first candidate; the open questions before any swap
+  are latency in front of the first token (10x Jev at the median), cost, focus actions (95% vs Jev's 98%),
+  `emotional` (43, its only weak family: it fired on the `em-airline-angry` and `em-font-stressed` hyperbole
+  traps), and the 210ms of headroom left on its slowest call. Not swapped: `jev.Model` is still
+  `typesafe/jev-1.14`.
+- **Morph's prefix caching is real, but it is not what makes Reflex expensive.** A live probe (23 Choice
+  questions, 3,440-character state, sent three times) bills 32,683 input tokens on every call, of which 29,568
+  (90%) are already cached on a *new* state and 30,912 (95%) on repeats; `input_tokens_details.cached_tokens`
+  is in the response, so this is measured, not inferred. 30,912 x $0.008/M + 1,771 x $0.042/M reproduces the
+  reported cost to the cent. The cost comes from the tokenizer: ~6.4 tokens per character, so Oracle's real
+  question set bills roughly 17x what Jev bills for the same text, and a fivefold cached discount on a 17x
+  larger payload still nets ~5x the price. The full run agrees (repeat 2 was 12.6% cheaper than repeat 1,
+  while an uncached control model moved by $0), which means **the bench's `$ /1k turns` column flatters any
+  cache-capable model by ~8%**: production always sends a fresh state, so Reflex's honest figure is about
+  $1.03. Worth remembering before trusting that column for a future cache-capable candidate.
+- `cloudflare/clairic` (created 2026-10-29) is **not a decision model and is out of scope for this bench**, not
+  a candidate waiting for a probe. It appears in the `output_modalities=decisions` catalog filter but serves
+  only `/api/alpha/extractions`: you give it a schema of typed fields and it extracts/computes/forecasts values
+  into them, which is a different surface and a different response shape from the Choice questions Oracle
+  sends. Nothing here would score it, and a run would only fail. Recorded so a later catalog review does not
+  queue it again. (`output_modalities` is therefore not a reliable "can do Choice" filter on its own — the
+  `respan/span-01*` family is listed there too and rejects Choice.)
 - Deliberately not run: `~perplexity/pplx-decider-latest`, an alias for a Perplexity model already benchmarked
   by its versioned id (an alias moving would make a result uninterpretable).

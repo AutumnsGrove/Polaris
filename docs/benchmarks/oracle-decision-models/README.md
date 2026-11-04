@@ -20,9 +20,10 @@ repeat it.
   Oracle's full 23-question call in one request with no cap, and returned no errors and no refusals in 885
   calls. It is 4.9 points ahead of Jev (87.8), which is above the 2.5-point noise floor, and its slowest
   call was 2.29s against the 2.5s cutoff. The costs are real: 1.5s at the median against Jev's 152ms (10x
-  slower, which is a different feel in front of the first token), $0.949 per 1,000 turns against $0.212
-  (4.5x: measured billing, not list price, so treat the catalog's $0.042/M as about five times
-  optimistic for this question set), focus actions 95% against Jev's 98%, and `emotional` is its one bad
+  slower, which is a different feel in front of the first token), and about **$1.03 per 1,000 turns against
+  $0.212**. Its prefix cache works and works well (95% of its tokens bill at the cached rate, measured), but
+  the same questions bill roughly **17x the tokens** Jev sees, so a fivefold discount on a payload that size
+  still lands at 5x the price. Also focus actions 95% against Jev's 98%, and `emotional` is its one bad
   family (43). It is the strongest candidate yet, not an automatic swap.
 - **Perplexity's 27B decider v1.1 scored second (91.4) but is no longer available:** on 2026-10-26 it returns
   `HTTP 404 No endpoints found` and is gone from the catalog, so its row below is a record, not an option.
@@ -110,7 +111,7 @@ they are not comparable to these runs.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
 |--:|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| 1 | `morph/reflex` | **92.7** (89.0-95.9) | 98% | 98% | 95% | 1% | 0% | 1.5s | 1.7s | 100.0% | $0.949 |
+| 1 | `morph/reflex` ‡ | **92.7** (89.0-95.9) | 98% | 98% | 95% | 1% | 0% | 1.5s | 1.7s | 100.0% | $0.949 |
 | 2 | `perplexity/pplx-decider-v1.1-27b` (retired) | **91.4** (87.7-94.4) | 97% | 98% | 95% | 0% | 1% | 2.0s | 3.7s | 88.9% | $0.115 |
 | 3 | `nace-ai/drex-max` † (split) | **91.3** (88.1-94.1) | 97% | 97% | 95% | 0% | 0% | 482ms | 1.2s | 99.4% | $0.317 |
 | 4 | `baseten/mammoth-1:free` | **90.1** (87.1-92.9) | 97% | 97% | 92% | 0% | 0% | 621ms | 1.1s | 99.4% | free |
@@ -137,6 +138,10 @@ they are not comparable to these runs.
 | 25 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.173 |
 | x | `inception/mercury-decide` | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
+
+‡ Reflex's $/1k is averaged over the bench's 3 identical repeats, which hit its prefix cache on repeats 2 and
+3. Production always sends a fresh state, so its real per-turn cost is about **$1.03**; see
+[Why Reflex costs more than its list price](#why-reflex-costs-more-than-its-list-price).
 
 † The three Drex models ran at concurrency 1, not 2 like the rest, so their latency and under-2.5s share were
 measured under a lighter load (accuracy is unaffected). *(split)* means Oracle's 23 questions went out as two
@@ -192,15 +197,42 @@ headroom. A day of provider load like Mercury's 4.3s p95 would start dropping tu
 
 <p align="center"><img src="cost.svg" alt="Cost per 1000 Oracle turns, ranked" width="860"></p>
 
-Cost is a rounding error at this scale: even the priciest models (Reflex at $0.95, then Clef Omni at $0.80,
+Cost is a rounding error at this scale: even the priciest models (Reflex at about $1.03, then Clef Omni at $0.80,
 then Solar Flash and Luna at about $0.56 to $0.58 per 1,000 turns) cost cents in a heavy month. Note the
 bills run higher than the catalog's per-token prices
 suggest for several models (Reflex, Classify 1 and Solar Flash especially), so compare the measured figures
-here, not the list prices. The frontier is only useful for the free-versus-paid question: Mercury
+here, not the list prices. For Reflex that gap is fully explained below. The frontier is only useful for the free-versus-paid question: Mercury
 free and Perplexity v1.1 (now retired) are the only models nothing beats on both price and score (v1.2 is cheaper than
 v1.1 at $0.081, but Mercury free beats it on both counts). Reflex is the new accuracy ceiling, so nothing
 beats it on score at all. Jev 1.14 is off the
 frontier on cost, which is the price of its speed.
+
+### Why Reflex costs more than its list price
+
+Reflex lists the same $0.042/M input as Jev, so the catalog says they should cost the same. The measured
+figure is about 5x, and the reason is the token count, not the cache — Morph's prefix caching is real and
+generous. One live probe (23 Choice questions against a 3,440-character state, the same payload sent three
+times) came back with the whole accounting:
+
+| call | input tokens | of which cached | cost |
+|---|--:|--:|--:|
+| 1 (new state) | 32,683 | 29,568 (90%) | $0.000367 |
+| 2 (same state) | 32,683 | 30,912 (95%) | $0.000322 |
+| 3 (same state) | 32,683 | 30,912 (95%) | $0.000322 |
+
+Two things follow from the tokenizer. It bills about **6.4 tokens per character** — that 5,000-character
+payload costs 32,683 tokens, where Jev bills Oracle's much larger real question set at 4,788 — so the same
+work arrives roughly 17x bigger. And 95% of it bills at the cached rate, which is why the numbers are not 17x
+worse: 30,912 x $0.008/M plus 1,771 x $0.042/M reproduces the reported $0.000322 exactly. A generous
+discount on a much bigger bill still lands at 5x. Note also that call 1 is already 90% cached on a state
+nothing had sent before, so what the cache is hitting is the shared question preamble, not the state.
+
+The full run agrees with the probe: repeat 2 of each case cost **12.6% less** than repeat 1 (median across
+295 cases, ranging 0 to -13%), and an uncached control model run the same way (Joey 1) moved by exactly
+$0.00000000, so that is the cache and not price jitter. The consequence for the table: the $/1k column
+averages all three repeats, which flatters any cache-capable model by about 8%. **Production never repeats a
+state** — every turn is a new message — so the honest figure for Reflex is the repeat-1 cost, about $1.03
+per 1,000 turns, and that is what the recommendation quotes.
 
 ### Refusals
 
@@ -279,10 +311,10 @@ Judged on the operator's stated priorities (speed first, then accuracy):
 2. **Reflex is the model to try if accuracy matters more than latency.** It is the top scorer (92.7), the
    only model above Jev that never lost a call (100% under 2.5s on all 885 calls, slowest call 2.29s), with
    no refusals and no errors, and it needs no question split. Against that: 1.5s median against Jev's
-   152ms, $0.949 per 1,000 turns (4.5x Jev, even though both list $0.042/M — the same question set bills
-   about five times the tokens, so compare measured cost, not list price), focus actions 95% vs 98%, a real
-   `emotional` weakness (43), and only 210ms of headroom under the cutoff on its worst call, so a slower
-   provider day would start dropping turns. Swap on a deliberate decision, and watch the under-2.5s share
+   152ms, $1.03 per 1,000 turns (about 5x Jev, see [Why Reflex costs more than its list
+   price](#why-reflex-costs-more-than-its-list-price)), focus actions 95% vs 98%, a real `emotional`
+   weakness (43), and only 210ms of headroom under the cutoff on its worst call, so a slower provider day
+   would start dropping turns. Swap on a deliberate decision, and watch the under-2.5s share
    after the swap.
 3. **Drex Max is the fallback accuracy pick, and now the third-placed score.** It is clearly more accurate
    than Jev (91.3 vs 87.8) and almost always inside the timeout (99.4%, p95 1.2s). It gives up about
@@ -374,6 +406,13 @@ Read the split models with three caveats:
   calls succeeded at 10.0 to 12.1s each (median 10.7s, 4 to 5x Oracle's timeout and double the bench's 5s
   budget), with a smoke score of 98.1 on those 8 cases, so the model looks accurate and simply too slow. It was
   not run in full: there is no way for it to be usable here.
+- **`cloudflare/clairic`** is not a decision model at all, so there is nothing here to benchmark and no
+  version of this bench that would fit it. It shows up in the decisions catalog because that filter is on
+  `output_modalities`, but it serves only `/api/alpha/extractions`: you hand it a schema of typed fields and
+  it extracts, computes and forecasts values into them (Cloudflare's description: extraction over a text
+  state plus optional images). Oracle is 100% Choice questions - "pick one of these options" - which is a
+  different surface with a different response shape. Listed here only so a later catalog review does not
+  rediscover it and queue a pointless run.
 
 ### Perplexity Decider Flash v1.2
 
