@@ -366,3 +366,38 @@ func TestListDecisionModelsErrorStatusIsAnError(t *testing.T) {
 		t.Fatal("ListDecisionModels on 502 returned nil error")
 	}
 }
+
+// The cached-input split is what separates "expensive because it bills 17x the
+// tokens" from "expensive because its cache never fires" — morph/reflex is the
+// first, and both look identical in usage.cost alone. Providers that report no
+// split must decode cleanly as zero rather than erroring.
+func TestAskChoiceReadsTheCachedInputSplit(t *testing.T) {
+	var cap capture
+	srv := recordingServer(t, &cap, http.StatusOK,
+		`{"answers":{"q":{"choice":"yes","probabilities":{"yes":1},"confidence":1}},`+
+			`"usage":{"input_tokens":32683,"output_tokens":0,"cost":0.000321678,`+
+			`"input_tokens_details":{"cached_tokens":30912}}}`)
+	defer srv.Close()
+
+	resp, err := NewClient(srv.URL, "k").AskChoice(context.Background(), "s", oneQuestion())
+	if err != nil {
+		t.Fatalf("AskChoice: %v", err)
+	}
+	if resp.Usage.InputTokens != 32683 || resp.Usage.InputTokensDetails.CachedTokens != 30912 {
+		t.Errorf("usage = %d tokens, %d cached; want 32683 / 30912",
+			resp.Usage.InputTokens, resp.Usage.InputTokensDetails.CachedTokens)
+	}
+
+	// No input_tokens_details at all: zero, not an error.
+	srv2 := recordingServer(t, &cap, http.StatusOK, answerBody)
+	defer srv2.Close()
+	if resp, err = NewClient(srv2.URL, "k").AskChoice(context.Background(), "s", oneQuestion()); err != nil {
+		t.Fatalf("AskChoice without details: %v", err)
+	}
+	if got := resp.Usage.InputTokensDetails.CachedTokens; got != 0 {
+		t.Errorf("cached tokens without details = %d, want 0", got)
+	}
+	if resp.Usage.InputTokens != 7 {
+		t.Errorf("input tokens = %d, want the 7 the fixture reports", resp.Usage.InputTokens)
+	}
+}

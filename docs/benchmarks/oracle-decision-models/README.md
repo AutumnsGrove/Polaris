@@ -15,16 +15,17 @@ repeat it.
 
 - **Nobody beats Jev 1.14 on the thing that matters most: speed.** Its median call takes 152ms and
   every call finished inside Oracle's real 2.5s timeout. No other model matches both.
-- **Morph's Reflex is the new top score: 92.7, the first model to beat Jev 1.14 by more than the noise
-  floor while still finishing every call inside Oracle's 2.5s timeout.** It was released 2026-11-03, takes
-  Oracle's full 23-question call in one request with no cap, and returned no errors and no refusals in 885
-  calls. It is 4.9 points ahead of Jev (87.8), which is above the 2.5-point noise floor, and its slowest
-  call was 2.29s against the 2.5s cutoff. The costs are real: 1.5s at the median against Jev's 152ms (10x
-  slower, which is a different feel in front of the first token), and about **$1.03 per 1,000 turns against
-  $0.212**. Its prefix cache works and works well (95% of its tokens bill at the cached rate, measured), but
-  the same questions bill roughly **17x the tokens** Jev sees, so a fivefold discount on a payload that size
-  still lands at 5x the price. Also focus actions 95% against Jev's 98%, and `emotional` is its one bad
-  family (43). It is the strongest candidate yet, not an automatic swap.
+- **Morph's Reflex is the new top score: 92.7, the first model above Jev 1.14 by more than the noise floor
+  that is also fast enough to ship most of the time.** Released 2026-11-03, it takes Oracle's full
+  23-question call in one request with no cap, with no errors and no refusals in 885 calls, and it scored
+  92.7 twice in two separate runs (92.66 and 92.71, overlapping intervals). It is 4.9 points ahead of Jev
+  (87.8), above the 2.5-point noise floor. The costs are real: 1.5s at the median against Jev's 152ms (10x
+  slower, which is a different feel in front of the first token), about **$0.90 per 1,000 turns against
+  $0.212**, focus actions 95% against Jev's 98%, and `emotional` is its one bad family (43). Its tail is the
+  real risk: one run never passed 2.29s, the other crossed Oracle's 2.5s cutoff on 5 of 885 calls (worst
+  3.8s), so it is not *reliably* inside the timeout the way Jev is. Strongest candidate yet, not an
+  automatic swap. Its price is a tokenizer problem, not a cache problem — see
+  [Why Reflex costs more than its list price](#why-reflex-costs-more-than-its-list-price).
 - **Perplexity's 27B decider v1.1 scored second (91.4) but is no longer available:** on 2026-10-26 it returns
   `HTTP 404 No endpoints found` and is gone from the catalog, so its row below is a record, not an option.
   Its lead over Jev 1.14 (87.8) was larger than the 2.5-point noise floor, but it took 2.0s at the median and
@@ -98,49 +99,51 @@ Recommendation: **keep `typesafe/jev-1.14` pinned.** Details and caveats below.
 
 ## Results
 
-Runs of 2026-10-16, 2026-10-19, 2026-10-22, 2026-10-25, 2026-10-26, 2026-10-27, 2026-10-30 and 2026-11-04: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
+Runs of 2026-10-16, 2026-10-19, 2026-10-22, 2026-10-25, 2026-10-26, 2026-10-27, 2026-10-30 and 2026-11-04 (twice for Reflex): 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
 separately), 3 repeats each, 2 calls in flight, weights `a6cbc140bd53`. The raw leaderboards are saved in
-[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in fourteen
+[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in fifteen
 invocations with identical settings (except the Drex run, which used concurrency 1) (the first nine models, then Luna, then D1 Ultra, Classify 1 and
 Solar Flash, then on 2026-10-19 Perplexity's Decider v1.2 and Flash v1.2, then on 2026-10-22 Baseten's
 Mammoth 1 and, separately, Elephant 1, each paced at one call per 3.5s because they are `:free` models, then on 2026-10-25 Respan's
-Span-02, then on 2026-10-26 Nace's three Drex models and, separately, Together's Tev1 and Kev, Cloudflare's Clef Omni, and a re-run of Perplexity's Flash v1.2 after its first attempt hit upstream 429s, then on 2026-10-27 Liquid's D1.1, then on 2026-10-30 Baseten's Joey 1, then on 2026-11-04 Morph's Reflex; see
+Span-02, then on 2026-10-26 Nace's three Drex models and, separately, Together's Tev1 and Kev, Cloudflare's Clef Omni, and a re-run of Perplexity's Flash v1.2 after its first attempt hit upstream 429s, then on 2026-10-27 Liquid's D1.1, then on 2026-10-30 Baseten's Joey 1, then on 2026-11-04 Morph's Reflex — twice, the second run to capture per-call cost and token accounting, which is the row above; see
 [Reproduce it](#reproduce-it)); the report command refuses to merge runs that differ in cases, repeats or
 weights, and in concurrency unless given `--allow-concurrency-mismatch`, which marks those models' rows (†). The two earlier files in `runs/` (2026-10-15) used an older, smaller case bank and weights, so
 they are not comparable to these runs.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
 |--:|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| 1 | `morph/reflex` ‡ | **92.7** (89.0-95.9) | 98% | 98% | 95% | 1% | 0% | 1.5s | 1.7s | 100.0% | $0.949 |
-| 2 | `perplexity/pplx-decider-v1.1-27b` (retired) | **91.4** (87.7-94.4) | 97% | 98% | 95% | 0% | 1% | 2.0s | 3.7s | 88.9% | $0.115 |
+| 1 | `morph/reflex` | **92.7** (89.0-95.9) | 98% | 98% | 95% | 1% | 0% | 1.5s | 1.8s | 99.4% | $0.902 |
+| 2 | `perplexity/pplx-decider-v1.1-27b` (retired) § | **91.4** (87.7-94.4) | 97% | 98% | 95% | 0% | 1% | 2.0s | 3.7s | 88.9% | $0.115 |
 | 3 | `nace-ai/drex-max` † (split) | **91.3** (88.1-94.1) | 97% | 97% | 95% | 0% | 0% | 482ms | 1.2s | 99.4% | $0.317 |
-| 4 | `baseten/mammoth-1:free` | **90.1** (87.1-92.9) | 97% | 97% | 92% | 0% | 0% | 621ms | 1.1s | 99.4% | free |
-| 5 | `inception/mercury-decide:free` | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | free |
-| 6 | `liquid/d1-ultra` | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
-| 7 | `typesafe/jev-1.14` (pinned) | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
-| 8 | `microsoft/microsoft-decision-1` | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
-| 9 | `typesafe/jev-1.13` | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
-| 10 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.081 |
+| 4 | `baseten/mammoth-1:free` | **90.1** (87.1-92.9) | 97% | 97% | 92% | 0% | 0% | 621ms | 1.1s | 99.4% | $0.000 |
+| 5 | `inception/mercury-decide:free` § | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | $0.000 |
+| 6 | `liquid/d1-ultra` § | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
+| 7 | `typesafe/jev-1.14` § | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
+| 8 | `microsoft/microsoft-decision-1` § | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
+| 9 | `typesafe/jev-1.13` § | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
+| 10 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.080 |
 | 11 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
-| 12 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
-| 13 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | free |
+| 12 | `openai/gpt-6-luna-decisions` § | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 13 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | $0.000 |
 | 14 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
 | 15 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
-| 16 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 17 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 16 | `liquid/d1` § | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 17 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
 | 18 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
-| 19 | `scaledown/classify-1` | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 20 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 19 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 20 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
 | 21 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
 | 22 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
 | 23 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
-| 24 | `upstage/solar-decide-flash` | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 24 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
 | 25 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
-| x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.173 |
-| x | `inception/mercury-decide` | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
+| x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.175 |
+| x | `inception/mercury-decide` § | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 
-‡ Reflex's $/1k is averaged over the bench's 3 identical repeats, which hit its prefix cache on repeats 2 and
-3. Production always sends a fresh state, so its real per-turn cost is about **$1.03**; see
+§ the cost was averaged over the run's identical repeats rather than measured as one production turn,
+because that run predates per-call cost and token capture (2026-11-04). Where the raw log survived, the
+production figure was recovered from it (repeat 0 of each case); the rest need a re-run. A provider prefix
+cache makes repeats cheaper, so such a row can understate a cache-capable model — see
 [Why Reflex costs more than its list price](#why-reflex-costs-more-than-its-list-price).
 
 † The three Drex models ran at concurrency 1, not 2 like the rest, so their latency and under-2.5s share were
@@ -154,9 +157,9 @@ upstream `429 Model busy` responses (details in that section), which is why it i
 (`oracleTimeout` in `gateway/oracle.go`); a call over that is dropped and the turn runs without Oracle.
 *$/1k turns* is the decision-call cost for 1,000 Oracle turns (one call each). Trigger and focus
 describe what production's rules *did* with the answer, not just the raw answer. The whole run cost
-**$5.87** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
+**$6.67** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
 Perplexity's two new models, $0.01 each for Mammoth and Elephant, which are free and cost only their
-judging, $0.06 for Span-02, $0.58 for the three Drex models, $0.38 for Tev and Kev, and $0.72 for Clef Omni, $0.06 for the Flash re-run, $0.10 for D1.1, $0.08 for Joey 1, and $0.87 for Reflex), of which about $0.40 was the judge.
+judging, $0.06 for Span-02, $0.58 for the three Drex models, $0.38 for Tev and Kev, and $0.72 for Clef Omni, $0.06 for the Flash re-run, $0.10 for D1.1, $0.08 for Joey 1, and $1.69 for Reflex's two runs), of which about $0.43 was the judge.
 
 ### Overall quality
 
@@ -184,10 +187,12 @@ slower than that fast group but fits inside the cutoff on 99.4% of calls, while 
 Its latency was measured at concurrency 1 (†), so treat it as a best case; the other models ran with two
 calls in flight.
 
-Reflex is the outlier worth understanding: it is the top scorer *and* the only high-scoring model that
-never lost a call, but it does it from 1.5s at the median — 10x Jev — with a flat tail (p95 1.7s, slowest
-call 2.29s). So it is 210ms from the cutoff on its worst call of 885, where Jev has two seconds of
-headroom. A day of provider load like Mercury's 4.3s p95 would start dropping turns.
+Reflex is the outlier worth understanding: the top scorer, from 1.5s at the median (10x Jev) with a p95 of
+1.8s. What matters is its tail, and two runs of the same 885 calls disagree about it: the first never passed
+2.29s, the second put 5 calls over Oracle's 2.5s cutoff, the worst at 3.8s. So it is a model that normally
+arrives in time and occasionally does not, where Jev has two seconds of headroom on every call. That is the
+difference between "fast enough" and "fast enough on a good day", and it is why the row below reads 99.4%
+rather than 100%.
 
 <p align="center"><img src="latency.svg" alt="Median and 95th percentile latency per model" width="860"></p>
 
@@ -197,7 +202,7 @@ headroom. A day of provider load like Mercury's 4.3s p95 would start dropping tu
 
 <p align="center"><img src="cost.svg" alt="Cost per 1000 Oracle turns, ranked" width="860"></p>
 
-Cost is a rounding error at this scale: even the priciest models (Reflex at about $1.03, then Clef Omni at $0.80,
+Cost is a rounding error at this scale: even the priciest models (Reflex at about $0.90, then Clef Omni at $0.80,
 then Solar Flash and Luna at about $0.56 to $0.58 per 1,000 turns) cost cents in a heavy month. Note the
 bills run higher than the catalog's per-token prices
 suggest for several models (Reflex, Classify 1 and Solar Flash especially), so compare the measured figures
@@ -210,29 +215,33 @@ frontier on cost, which is the price of its speed.
 ### Why Reflex costs more than its list price
 
 Reflex lists the same $0.042/M input as Jev, so the catalog says they should cost the same. The measured
-figure is about 5x, and the reason is the token count, not the cache — Morph's prefix caching is real and
-generous. One live probe (23 Choice questions against a 3,440-character state, the same payload sent three
-times) came back with the whole accounting:
+figure is about 4.5x. The reason is the **token count, not the cache** — Morph's prefix caching is real,
+and 95% of the payload bills at the cached rate. Both runs now record the whole accounting per call:
 
-| call | input tokens | of which cached | cost |
-|---|--:|--:|--:|
-| 1 (new state) | 32,683 | 29,568 (90%) | $0.000367 |
-| 2 (same state) | 32,683 | 30,912 (95%) | $0.000322 |
-| 3 (same state) | 32,683 | 30,912 (95%) | $0.000322 |
+| measured on the real 23-question payload | Reflex | Jev 1.14 |
+|---|--:|--:|
+| input tokens per call | 92,564 | 4,788 |
+| of which billed as cache hits | 87,806 (94.9%) | — (not reported) |
+| cost per 1,000 turns | $0.902 | $0.212 |
 
-Two things follow from the tokenizer. It bills about **6.4 tokens per character** — that 5,000-character
-payload costs 32,683 tokens, where Jev bills Oracle's much larger real question set at 4,788 — so the same
-work arrives roughly 17x bigger. And 95% of it bills at the cached rate, which is why the numbers are not 17x
-worse: 30,912 x $0.008/M plus 1,771 x $0.042/M reproduces the reported $0.000322 exactly. A generous
-discount on a much bigger bill still lands at 5x. Note also that call 1 is already 90% cached on a state
-nothing had sent before, so what the cache is hitting is the shared question preamble, not the state.
+The arithmetic closes exactly: 87,806 cached tokens x $0.008/M plus 4,758 uncached x $0.042/M is
+$0.000902 per call, which is the measured $0.902 per 1,000. So the cache is doing its job and taking
+almost everything at a fifth of the input rate; the payload is simply **19x bigger** for the same question
+set (its tokenizer runs about 6.4 tokens per character, where ordinary text is nearer 0.25). A fivefold
+discount on a 19x bill still lands at 4.5x the price.
 
-The full run agrees with the probe: repeat 2 of each case cost **12.6% less** than repeat 1 (median across
-295 cases, ranging 0 to -13%), and an uncached control model run the same way (Joey 1) moved by exactly
-$0.00000000, so that is the cache and not price jitter. The consequence for the table: the $/1k column
-averages all three repeats, which flatters any cache-capable model by about 8%. **Production never repeats a
-state** — every turn is a new message — so the honest figure for Reflex is the repeat-1 cost, about $1.03
-per 1,000 turns, and that is what the recommendation quotes.
+One thing the cache does *not* buy: caching the **state** separately. Even a brand-new state is 90-95%
+cached on arrival, which means what the prefix covers is the shared question preamble — the same for every
+call either way — not the message being classified. That is also why repeats of one state add so little.
+
+**The $/1k column is the production basis now**, not an average over repeats. On the first Reflex run,
+repeats 2-3 billed 12.6% less than the first send of a state, so the old all-call average read $0.949 where
+a production turn cost $1.028. The rerun showed **no** repeat discount at all (0.0%, $0.902 either way),
+which says that 12.6% was the provider's cache warming up during that run rather than a systematic
+per-repeat saving. Two honest consequences: treat a single run's cost figure as one measurement (the two
+Reflex runs differ by 14% for identical calls), and treat a `§` in the table as "this row's cost is the
+old average over repeats, because that run predates per-call cost capture" — re-running it replaces the
+mark with the production figure.
 
 ### Refusals
 
@@ -308,14 +317,15 @@ Judged on the operator's stated priorities (speed first, then accuracy):
    the timeout with two seconds of headroom, and the best at focus actions. It is no longer the most
    accurate: Reflex (92.7) is 4.9 points ahead, above the noise floor, and the 1.14 over 1.13 gain (87.8 vs
    86.5) is inside the noise, so the pin is a speed decision, not an accuracy one.
-2. **Reflex is the model to try if accuracy matters more than latency.** It is the top scorer (92.7), the
-   only model above Jev that never lost a call (100% under 2.5s on all 885 calls, slowest call 2.29s), with
-   no refusals and no errors, and it needs no question split. Against that: 1.5s median against Jev's
-   152ms, $1.03 per 1,000 turns (about 5x Jev, see [Why Reflex costs more than its list
+2. **Reflex is the model to try if accuracy matters more than latency.** It is the top scorer (92.7), with
+   no refusals, no errors, and no question split needed. Against that: 1.5s median against Jev's 152ms,
+   $0.90 per 1,000 turns (about 4.5x Jev — a tokenizer billing 19x the tokens, not a cache that fails to
+   fire; see [Why Reflex costs more than its list
    price](#why-reflex-costs-more-than-its-list-price)), focus actions 95% vs 98%, a real `emotional`
-   weakness (43), and only 210ms of headroom under the cutoff on its worst call, so a slower provider day
-   would start dropping turns. Swap on a deliberate decision, and watch the under-2.5s share
-   after the swap.
+   weakness (43), and a tail that crossed the 2.5s cutoff on 5 of 885 calls in one run (worst 3.8s) while
+   the other run never did. Swap on a deliberate decision, and watch the under-2.5s share after the
+   swap: it is the one number that decides whether Reflex is usable here, and it moved between two runs
+   on the same day.
 3. **Drex Max is the fallback accuracy pick, and now the third-placed score.** It is clearly more accurate
    than Jev (91.3 vs 87.8) and almost always inside the timeout (99.4%, p95 1.2s). It gives up about
    330ms at the median, costs 1.5x per turn, and is weaker on focus actions (95% vs 98%) and `contested` (66).
@@ -451,12 +461,17 @@ Mercury has two entries and neither is a clean result:
   then delivered the right nudge or action, because a correct raw answer that does not clear its
   threshold changes nothing for the user, and a quiet option winning is not a delivered nudge.
 - **Repeats.** Each case is asked 3 times and the probabilities averaged, since they move by a few
-  hundredths from call to call.
+  hundredths from call to call. Repeats also hit a provider's prefix cache, so cost is reported for the
+  *first* send of each state — a production turn — and token counts and cache hits are recorded per call
+  since 2026-11-04 (`input_tokens`, `cached_tokens` in the raw log).
+- **Cost basis.** `$/1k turns` is one production turn. A row marked § predates per-call cost capture and
+  still carries the old all-repeat average, which can be a few percent low for a cache-capable model.
 - **Fixed load.** Models run one after another with 2 calls in flight, so every model is timed under
   the same load. Latency moves with provider load, so treat it as one day's measurement.
 - **Judge.** A separate chat model (`deepseek`) reads the disputed cases, near-misses, and a 10% random
-  spot-check of ordinary answers. Across the runs' 516 spot-checks (318, 41, 118 and 39) it disagreed with the hand label 5 times
-  (1.0%), which is the best available estimate of how wrong the bank is. It flagged
+  spot-check of ordinary answers. Across the runs' 555 spot-checks (318, 41, 118, and 39 for each Reflex
+  run) it disagreed with the hand label 6 times (1.1%), which is the best available estimate of how wrong
+  the bank is. It flagged
   `dr-remote-work-relocation`, `fo-researcher-loan-vs-index`, `pr-followup-japan-crowds`,
   `hs-first-ipo-trivia` and `cl-best-pizza` for a human look.
 - **Weights.** Scoring weights and the 5s latency budget live in

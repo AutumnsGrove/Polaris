@@ -131,6 +131,43 @@ func (l Leaderboard) Render(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprint(w, LatencyChart(l.Entries, l.Budget, 40))
 	renderTrackWeakSpots(w, l)
+	renderCostBasis(w, l)
+}
+
+// renderCostBasis explains a cost that is not what the repeats would suggest.
+//
+// A provider that prefix-caches bills repeats of an identical state cheaper, so
+// the run's all-call average understates what a production turn costs. The
+// leaderboard's cost column is the production basis (the first send of each
+// case), and this says so in the one place someone reads right after a run —
+// otherwise a model can look 10% cheaper than it is, which for a tie-break on
+// price is the whole difference. Silent when every repeat billed the same, or
+// when the provider reports no cache split at all.
+func renderCostBasis(w io.Writer, l Leaderboard) {
+	var lines []string
+	for _, e := range l.Entries {
+		s := e.Score
+		if s.FreshCalls == 0 || s.Calls <= s.FreshCalls {
+			continue
+		}
+		fresh := s.FreshCostUSD / float64(s.FreshCalls)
+		avg := s.CostUSD / float64(s.Calls)
+		if fresh <= 0 || avg >= fresh*0.97 {
+			continue
+		}
+		line := fmt.Sprintf("  %s: repeats cost %.0f%% less than the first send of a state (prefix cache), so $%.3f/1k turns is the production figure, not $%.3f",
+			e.Model, 100*(1-avg/fresh), fresh*1000, avg*1000)
+		if s.InputTokens > 0 && s.CachedTokens > 0 {
+			line += fmt.Sprintf("; %d of %d input tokens billed as cache hits", s.CachedTokens, s.InputTokens)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) > 0 {
+		fmt.Fprintln(w, "\nCost basis:")
+		for _, ln := range lines {
+			fmt.Fprintln(w, ln)
+		}
+	}
 }
 
 // LatencyChart ranks models by median latency, fastest first. The bar is p50

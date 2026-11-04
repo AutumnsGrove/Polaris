@@ -346,7 +346,9 @@ a fixed low concurrency — a p95 taken under different load is not comparable.
 
 1. `--out` JSONL: one line per (case, model) with the state, the raw `answers` per check
    (winner + probabilities), the deterministic sub-scores, the judge verdict if any, latency,
-   `resolved_model`, and `subject_cost_usd` / `judge_cost_usd`.
+   `resolved_model`, `subject_cost_usd` / `judge_cost_usd`, and (since 2026-11-04) the provider's
+   `input_tokens` / `cached_tokens` split, which is what lets a later reader tell an expensive tokenizer
+   apart from a cache that never fires.
 2. `--tracking-db`: `benchmark/tracking.go`'s convention — `run_index` plus one table per run,
    with columns for case id, track, composite, per-check JSON, costs, latency, error. Accumulates
    across runs so 1.13 vs 1.14 vs a new release can be compared later.
@@ -633,24 +635,39 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   question cap) was run 2026-10-30 after a 12-case smoke test: 55.6, 360ms p50, 100% under 2.5s, 0% errors,
   $0.044 per 1,000 turns. Fast but 32 points behind Jev 1.14; negative on `locale` and `premise`. Not a candidate.
 - `morph/reflex` (created 2026-11-03, Morph's decision model, 65k context, Choice/`noul`/`score` over the
-  Decisions API, no question cap, state prefix-cached across requests) was run 2026-11-04 after an 8-case smoke
-  test: **92.7, the highest score in the bank**, 1.5s p50 / 1.7s p95 / 2.29s max, 100% of calls under 2.5s, 0
-  errors, 0 refusals, about $1.03 per 1,000 turns. It is the first model above Jev 1.14 by more than the noise
-  floor that never loses a call, so it is the new accuracy-first candidate; the open questions before any swap
-  are latency in front of the first token (10x Jev at the median), cost, focus actions (95% vs Jev's 98%),
-  `emotional` (43, its only weak family: it fired on the `em-airline-angry` and `em-font-stressed` hyperbole
-  traps), and the 210ms of headroom left on its slowest call. Not swapped: `jev.Model` is still
-  `typesafe/jev-1.14`.
-- **Morph's prefix caching is real, but it is not what makes Reflex expensive.** A live probe (23 Choice
-  questions, 3,440-character state, sent three times) bills 32,683 input tokens on every call, of which 29,568
-  (90%) are already cached on a *new* state and 30,912 (95%) on repeats; `input_tokens_details.cached_tokens`
-  is in the response, so this is measured, not inferred. 30,912 x $0.008/M + 1,771 x $0.042/M reproduces the
-  reported cost to the cent. The cost comes from the tokenizer: ~6.4 tokens per character, so Oracle's real
-  question set bills roughly 17x what Jev bills for the same text, and a fivefold cached discount on a 17x
-  larger payload still nets ~5x the price. The full run agrees (repeat 2 was 12.6% cheaper than repeat 1,
-  while an uncached control model moved by $0), which means **the bench's `$ /1k turns` column flatters any
-  cache-capable model by ~8%**: production always sends a fresh state, so Reflex's honest figure is about
-  $1.03. Worth remembering before trusting that column for a future cache-capable candidate.
+  Decisions API, no question cap, state prefix-cached across requests) was run twice on 2026-11-04 after an
+  8-case smoke test: **92.7 both times, the highest score in the bank** (92.66 and 92.71, overlapping intervals),
+  1.5s p50, 0 errors, 0 refusals, no question split needed. It is the first model above Jev 1.14 by more
+  than the noise floor that is also fast enough almost always. The open questions before any swap are
+  latency in front of the first token (10x Jev at the median) and the tail (5 of 885 calls over 2.5s in the
+  second run), cost (see below), focus actions (95% vs Jev's 98%), and `emotional` (43, its only weak family:
+  it fired on the `em-airline-angry` and `em-font-stressed` hyperbole traps). Not swapped: `jev.Model` is
+  still `typesafe/jev-1.14`.
+- **Morph's prefix caching is real, but it is not what makes Reflex expensive.** Measured on the real
+  23-question payload (second full run, 2026-11-04): **92,564 input tokens per call, 87,806 of them (94.9%)
+  billed as cache hits**, $0.902 per 1,000 turns. The arithmetic closes exactly — 87,806 x $0.008/M +
+  4,758 x $0.042/M = $0.000902 — so the cache is doing its job; the payload is just 19x what Jev bills for
+  the same question set (its tokenizer runs ~6.4 tokens per character). A fivefold discount on a 19x bill
+  still lands at 4.5x the price. Even a brand-new state arrives 90-95% cached, which says what the prefix
+  covers is the shared question preamble, not the message being classified.
+- The first Reflex run's repeats 2-3 billed **12.6% less** than the first send of a state, which is why the
+  old all-repeat cost average read $0.949 where a production turn cost $1.028. **The rerun showed no repeat
+  discount at all** (0.0%, $0.902 either way), so that 12.6% was the provider's cache warming up during the
+  run, not a systematic per-repeat saving. Treat one run's cost as one measurement: the two Reflex runs
+  differ by 14% for identical calls.
+- **The two Reflex runs also disagree about the tail, which matters more than the cost.** Run 1 never passed
+  2.29s (0 of 885 calls over the 2.5s cutoff); run 2 put 5 of 885 over it, worst 3.8s (99.4% inside). So
+  "100% inside the timeout" was a one-day claim, and the honest summary is "usually in time, occasionally
+  not" — where Jev has two seconds of headroom on every call. This is the single number to watch if Reflex
+  is ever swapped in.
+- **Tooling added for exactly this** (2026-11-04): `decisions.Usage.InputTokensDetails.CachedTokens` is now
+  parsed, `gateway.OracleResult` carries `InputTokens`/`CachedTokens` for the bench (json:"-"), the raw call
+  log records both, and `ModelScore` gained `FreshCostUSD`/`FreshCalls` (the first send of each case's
+  state, i.e. a production turn) plus token totals. `polaris oracle-bench report` reports the production
+  basis and marks a row `§` when the run predates capture and only the all-repeat average exists; where the
+  raw log survives, `TallyCalls` recovers the production figure from repeat 0 without re-running the model.
+  Before this, explaining a model's cost needed a live probe of the Decisions API by hand, and the `$/1k`
+  column silently mixed the two bases.
 - `cloudflare/clairic` (created 2026-10-29) is **not a decision model and is out of scope for this bench**, not
   a candidate waiting for a probe. It appears in the `output_modalities=decisions` catalog filter but serves
   only `/api/alpha/extractions`: you give it a schema of typed fields and it extracts/computes/forecasts values

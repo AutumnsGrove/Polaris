@@ -222,6 +222,14 @@ type OracleResult struct {
 	ChipOutcomes []CheckOutcome `json:"-"`
 	// ResolvedModel is the model build that answered (decisions.Response.Model).
 	ResolvedModel string `json:"-"`
+	// InputTokens and CachedTokens are the call's token accounting, bench-only
+	// for the same reason as the rest: the benchmark has to explain what a model
+	// costs, and a cache hit is invisible in CostUSD alone. A model can be
+	// expensive because it bills 19x the tokens of its rivals while caching 95%
+	// of them (morph/reflex), which looks nothing like an expensive model that
+	// caches nothing until the split is recorded.
+	InputTokens  int `json:"-"`
+	CachedTokens int `json:"-"`
 }
 
 // uiCheckKey is the Prism check: would a visual block beat prose. Named once
@@ -361,7 +369,12 @@ func runOracle(ctx context.Context, client decisionsAskChoicer, in OracleInput, 
 		return OracleResult{}, err
 	}
 
-	result := OracleResult{CostUSD: resp.Usage.CostUSD, ResolvedModel: resp.Model}
+	result := OracleResult{
+		CostUSD:       resp.Usage.CostUSD,
+		ResolvedModel: resp.Model,
+		InputTokens:   resp.Usage.InputTokens,
+		CachedTokens:  resp.Usage.InputTokensDetails.CachedTokens,
+	}
 	resp.Answers = validAnswers(resp.Answers, offered)
 
 	// high_stakes is resolved first (independent of focus) since the

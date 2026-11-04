@@ -47,8 +47,8 @@ func ReportCharts(l Leaderboard, pinned string, shares map[string]CallStats) map
 		"tracks.svg":              trackTableSVG(ok, pinned),
 		"breakdown.svg":           breakdownTableSVG(ok, pinned),
 		"latency.svg":             latencySVG(ok, pinned),
-		"cost.svg":                costSVG(ok, pinned),
-		"cost-efficiency.svg":     efficiencySVG(ok, pinned),
+		"cost.svg":                costSVG(ok, pinned, shares),
+		"cost-efficiency.svg":     efficiencySVG(ok, pinned, shares),
 		"refusals.svg":            refusalsSVG(l, shares),
 	}
 }
@@ -183,7 +183,7 @@ func scorecardSVG(l Leaderboard, pinned string, shares map[string]CallStats) str
 		d.text(868, mid+5, 14, 400, refFill, "end", fmt.Sprintf("%.1f%%", 100*s.RefusalRate))
 		per1k := 0.0
 		if s.Calls > 0 {
-			per1k = s.CostUSD / float64(s.Calls) * 1000
+			per1k, _ = CostPer1k(e, shares)
 		}
 		d.text(956, mid+5, 14, 400, fill, "end", fmt.Sprintf("$%.2f", per1k))
 		d.line(24, y+rowH, 956, y+rowH, cGrid, 1, "")
@@ -405,12 +405,10 @@ func latencySVG(es []Entry, pinned string) string {
 		float64(ProductionTimeout.Milliseconds()), "Oracle's real timeout")
 }
 
-func costSVG(es []Entry, pinned string) string {
+func costSVG(es []Entry, pinned string, shares map[string]CallStats) string {
 	per1k := func(e Entry) float64 {
-		if e.Score.Calls == 0 {
-			return 0
-		}
-		return e.Score.CostUSD / float64(e.Score.Calls) * 1000
+		usd, _ := CostPer1k(e, shares)
+		return usd
 	}
 	rows := append([]Entry(nil), es...)
 	sort.SliceStable(rows, func(i, j int) bool { return per1k(rows[i]) < per1k(rows[j]) })
@@ -584,12 +582,10 @@ func (l *labeler) place(d *svgDoc, cx, cy float64, name string, bold bool, crowd
 // efficiencySVG plots quality against cost per 1,000 turns on a log axis and
 // draws the efficient frontier: the models no other model beats on both axes.
 // A model off the frontier has a cheaper-and-better alternative.
-func efficiencySVG(es []Entry, pinned string) string {
+func efficiencySVG(es []Entry, pinned string, shares map[string]CallStats) string {
 	per1k := func(e Entry) float64 {
-		if e.Score.Calls == 0 {
-			return 0
-		}
-		return e.Score.CostUSD / float64(e.Score.Calls) * 1000
+		usd, _ := CostPer1k(e, shares)
+		return usd
 	}
 	d := newSVG(920, 620, "Cost efficiency", "Score against decision cost per 1,000 Oracle turns, log scale. Up and to the left is better.")
 	const left, right, top, bottom = 64.0, 880.0, 100.0, 526.0

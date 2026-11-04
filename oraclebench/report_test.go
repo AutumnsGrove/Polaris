@@ -1,6 +1,7 @@
 package oraclebench
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,5 +125,64 @@ func TestMergeLeaderboardsConcurrencyMismatchIsOptInAndMarked(t *testing.T) {
 	}
 	if _, marked := got.RanAtConcurrency["m/slow"]; marked {
 		t.Errorf("m/slow was re-run at concurrency 2 but is still marked: %v", got.RanAtConcurrency)
+	}
+}
+
+// The raw log is the only place an older run's per-repeat costs survive, so the
+// tally is how a run made before fresh-cost capture gets the production-basis
+// figure without being re-run. Repeat 0 is the only call per case that sends a
+// fresh state.
+func TestTallyCalls_ProductionCostIsRepeatZeroOnly(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "calls.jsonl")
+	lines := `{"model":"a","repeat":0,"latency_ms":1500,"cost_usd":0.001,"input_tokens":3000,"cached_tokens":2000}
+{"model":"a","repeat":1,"latency_ms":1500,"cost_usd":0.0009,"input_tokens":3000,"cached_tokens":2900}
+{"model":"a","repeat":2,"latency_ms":1500,"cost_usd":0.0009,"input_tokens":3000,"cached_tokens":2900}
+{"model":"a","repeat":0,"latency_ms":1500,"cost_usd":0.001,"input_tokens":3000,"cached_tokens":2000}
+{"model":"b","repeat":0,"latency_ms":200,"cost_usd":0.0002}
+{"model":"b","repeat":1,"latency_ms":200,"cost_usd":0.0002}
+`
+	if err := os.WriteFile(p, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := TallyCalls([]string{p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := got["a"]
+	if a.FreshCalls != 2 || math.Abs(a.CostUSDFresh-0.002) > 1e-12 {
+		t.Errorf("a fresh = %.6f over %d, want 0.002 over 2 (one per case)", a.CostUSDFresh, a.FreshCalls)
+	}
+	// Four calls for a (two cases x repeats 0-2 and 0-1): tokens total across all
+	// of them, unlike the cost, which is the first call of each case only.
+	if a.InputTokens != 12000 || a.CachedTokens != 9800 {
+		t.Errorf("a tokens = %d/%d, want 12000/9800", a.InputTokens, a.CachedTokens)
+	}
+	// A log written before tokens were captured still yields a cost basis.
+	if b := got["b"]; b.FreshCalls != 1 || math.Abs(b.CostUSDFresh-0.0002) > 1e-12 || b.CachedTokens != 0 {
+		t.Errorf("b = %+v", b)
+	}
+}
+
+// CostPer1k must prefer the run's own fresh-cost figure, fall back to a
+// log-derived one, and only then to the repeat average — and say which it used,
+// because the report marks the fallback so two bases never share a column
+// silently.
+func TestCostPer1k_PrefersProductionBasisAndReportsWhenItCannot(t *testing.T) {
+	e := Entry{Model: "m", Score: ModelScore{Calls: 300, CostUSD: 0.30, FreshCalls: 100, FreshCostUSD: 0.12}}
+	if got, known := CostPer1k(e, nil); !known || math.Abs(got-1.2) > 1e-9 {
+		t.Errorf("with fresh data: %.4f known=%v, want 1.2 true", got, known)
+	}
+
+	// A pre-capture leaderboard, with the fact recovered from the raw log.
+	e = Entry{Model: "m", Score: ModelScore{Calls: 300, CostUSD: 0.30}}
+	shares := map[string]CallStats{"m": {FreshCalls: 100, CostUSDFresh: 0.15}}
+	if got, known := CostPer1k(e, shares); !known || math.Abs(got-1.5) > 1e-9 {
+		t.Errorf("from the tally: %.4f known=%v, want 1.5 true", got, known)
+	}
+
+	// Nothing but the repeat average: usable, but flagged as not known.
+	e = Entry{Model: "m", Score: ModelScore{Calls: 300, CostUSD: 0.30}}
+	if got, known := CostPer1k(e, nil); known || math.Abs(got-1.0) > 1e-9 {
+		t.Errorf("fallback: %.4f known=%v, want 1.0 false", got, known)
 	}
 }

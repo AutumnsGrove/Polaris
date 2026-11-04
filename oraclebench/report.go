@@ -29,14 +29,36 @@ type CallStats struct {
 
 	CallsByTrack   map[string]int `json:"calls_by_track,omitempty"`
 	RefusedByTrack map[string]int `json:"refused_by_track,omitempty"`
+
+	// CostUSDFresh and FreshCalls are the production cost basis recovered from
+	// the raw log: the first send of each case's state (repeat 0), not the
+	// average over repeats, which a provider's prefix cache makes cheaper and so
+	// understates. They exist because a leaderboard JSON written before
+	// fresh-cost capture has only the all-call total, while the raw log still
+	// holds the repeat index — this is how an older run gets the honest figure
+	// without being re-run. Only meaningful when a model's log is passed exactly
+	// once: the tally adds logs together, so two runs of one model would
+	// double-count (same rule as the other per-call tallies here).
+	CostUSDFresh float64 `json:"cost_usd_fresh,omitempty"`
+	FreshCalls   int     `json:"fresh_calls,omitempty"`
+	// InputTokens and CachedTokens total the provider-reported split, when the
+	// log has it (runs made after 2026-11-04 do).
+	InputTokens  int `json:"input_tokens,omitempty"`
+	CachedTokens int `json:"cached_tokens,omitempty"`
 }
 
 // callLine is the subset of a raw call record the tally needs.
 type callLine struct {
 	Model     string  `json:"model"`
 	Track     string  `json:"track"`
+	Repeat    int     `json:"repeat"`
 	LatencyMS int64   `json:"latency_ms"`
 	Err       ErrKind `json:"err"`
+	CostUSD   float64 `json:"cost_usd"`
+	// Tokens are absent from logs written before 2026-11-04, which is why they
+	// are optional and why the tally treats "no cache split" as unknown.
+	InputTokens  int `json:"input_tokens"`
+	CachedTokens int `json:"cached_tokens"`
 }
 
 // TallyCalls reads one or more raw calls JSONL files and counts, per model,
@@ -58,6 +80,14 @@ func TallyCalls(paths []string) (map[string]CallStats, error) {
 			}
 			s := out[c.Model]
 			s.Calls++
+			s.InputTokens += c.InputTokens
+			s.CachedTokens += c.CachedTokens
+			// Repeat 0 is the only call per case that sends a fresh state, so it is
+			// the one whose cost matches a production turn.
+			if c.Repeat == 0 {
+				s.CostUSDFresh += c.CostUSD
+				s.FreshCalls++
+			}
 			if s.CallsByTrack == nil {
 				s.CallsByTrack = map[string]int{}
 			}
@@ -85,6 +115,26 @@ func TallyCalls(paths []string) (map[string]CallStats, error) {
 		}
 	}
 	return out, nil
+}
+
+// CostPer1k answers "what does one Oracle turn cost in production?" — the
+// first send of a state, which is all production ever does. The average over
+// repeats understates any model whose provider prefix-caches, since repeats
+// 2..n of the identical state bill cheaper (morph/reflex bills ~11% less on a
+// repeat). known is false when neither the leaderboard nor the raw-log tally
+// has a fresh-cost figure, i.e. the run predates capturing it; callers mark
+// those rows so two bases never share a column silently.
+func CostPer1k(e Entry, shares map[string]CallStats) (usd float64, known bool) {
+	if s := e.Score; s.FreshCalls > 0 {
+		return s.FreshCostUSD / float64(s.FreshCalls) * 1000, true
+	}
+	if sh, ok := shares[e.Model]; ok && sh.FreshCalls > 0 {
+		return sh.CostUSDFresh / float64(sh.FreshCalls) * 1000, true
+	}
+	if s := e.Score; s.Calls > 0 {
+		return s.CostUSD / float64(s.Calls) * 1000, false
+	}
+	return 0, false
 }
 
 // MergeLeaderboards combines runs of different models into one leaderboard. The

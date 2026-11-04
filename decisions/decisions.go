@@ -196,6 +196,22 @@ type Usage struct {
 	InputTokens  int     `json:"input_tokens"`
 	OutputTokens int     `json:"output_tokens"`
 	CostUSD      float64 `json:"cost"`
+	// InputTokensDetails carries how much of InputTokens was billed at the
+	// provider's cached-input rate. Providers that don't cache omit it, so a
+	// zero here means "no cache credit reported", never "nothing was cached".
+	InputTokensDetails InputTokensDetails `json:"input_tokens_details"`
+}
+
+// InputTokensDetails is the cached-token split of a call's input.
+//
+// It exists because a high cost has two very different causes that look
+// identical in the dollar figure: a model whose cache never fires, and a model
+// that bills a huge token count while caching almost all of it. Morph's Reflex
+// is the second (~95% of its tokens cached, ~19x Jev's token count for the same
+// questions), and without this split there is no way to tell from the response
+// which one you are looking at.
+type InputTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 // Response is one call's full result.

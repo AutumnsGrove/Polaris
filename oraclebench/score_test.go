@@ -492,3 +492,39 @@ func TestLoadWeights_OverrideChangesHashAndValues(t *testing.T) {
 	got := ScoreCase(w, prompts.Get(), CaseRun{Case: c, Samples: []Sample{s}}, 0)
 	near(t, "penalty under overridden weights", got.Penalty, 9)
 }
+
+// A repeat of an identical state can bill cheaper (provider prefix caching), so
+// the run's all-call average is not what a production turn costs. FreshCostUSD
+// must be the first sample of each case only — miscounting here silently
+// understates exactly the cache-capable models this is meant to compare fairly
+// (morph/reflex bills ~11% less on a repeat).
+func TestSummarize_SeparatesProductionCostFromRepeatCost(t *testing.T) {
+	c := oneCase("a", map[string]Expectation{"high_stakes": {Answer: "medical"}})
+	first := sample(time.Second, nudged("high_stakes", "medical", map[string]float64{"medical": 1}))
+	first.Result.CostUSD = 0.001
+	first.Result.InputTokens, first.Result.CachedTokens = 3000, 2000
+	cached := sample(time.Second, nudged("high_stakes", "medical", map[string]float64{"medical": 1}))
+	cached.Result.CostUSD, cached.Result.InputTokens, cached.Result.CachedTokens = 0.0005, 3000, 2950
+
+	ms := Summarize(mustWeights(t), prompts.Get(), []CaseRun{{Case: c, Samples: []Sample{first, cached, cached}}})
+
+	if ms.FreshCalls != 1 || math.Abs(ms.FreshCostUSD-0.001) > 1e-12 {
+		t.Errorf("fresh cost = %.6f over %d calls, want the first call's 0.001 over 1", ms.FreshCostUSD, ms.FreshCalls)
+	}
+	for _, want := range []struct {
+		name      string
+		got, want float64
+	}{{"total cost", ms.CostUSD, 0.002}, {"calls", float64(ms.Calls), 3}} {
+		if math.Abs(want.got-want.want) > 1e-12 {
+			t.Errorf("%s = %v, want %v", want.name, want.got, want.want)
+		}
+	}
+	// Production basis is the first call (0.001/1k), and the repeat average is
+	// lower — the difference the report's footnote is about.
+	if fresh := ms.FreshCostUSD / float64(ms.FreshCalls) * 1000; math.Abs(fresh-1.0) > 1e-12 {
+		t.Errorf("production basis = %v, want 1.0/1k", fresh)
+	}
+	if ms.InputTokens != 9000 || ms.CachedTokens != 7900 {
+		t.Errorf("token totals = %d/%d, want 9000/7900", ms.InputTokens, ms.CachedTokens)
+	}
+}

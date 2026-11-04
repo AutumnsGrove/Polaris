@@ -28,9 +28,10 @@ var oracleBenchReportCmd = &cobra.Command{
 	Short: "Regenerate the oracle-bench charts and results table from a saved leaderboard",
 	Long: "Reads one saved leaderboard JSON (docs/benchmarks/oracle-decision-models/runs/*.json) and writes the\n" +
 		"SVG charts plus results.md (a markdown table) into --out.\n\n" +
-		"The share of calls inside production's 2.5s Oracle timeout, and where refusals landed, need the raw per-call log, which is\n" +
-		"gitignored. Pass it once with --calls (all runs' logs) and the tally is saved to call-stats.json beside the charts;\n" +
-		"later runs of this command reuse that file.",
+		"The share of calls inside production's 2.5s Oracle timeout, where refusals landed, and the production-basis cost of\n" +
+		"a run made before fresh-cost capture all need the raw per-call log, which is gitignored. Pass it once with --calls\n" +
+		"(all runs' logs) and the tally is saved to call-stats.json beside the charts; later runs of this command reuse\n" +
+		"that file. A row still without a production-basis cost is marked § so two cost bases never share a column silently.",
 	RunE: runOracleBenchReport,
 }
 
@@ -119,27 +120,41 @@ func resultsTable(b oraclebench.Leaderboard, shares map[string]oraclebench.CallS
 		if sh, ok := shares[e.Model]; ok && sh.Answered > 0 {
 			under = fmt.Sprintf("%.1f%%", 100*float64(sh.Under2_5s)/float64(s.Calls))
 		}
-		per1k := 0.0
-		if s.Calls > 0 {
-			per1k = s.CostUSD / float64(s.Calls) * 1000
-		}
+		per1k, fresh := oraclebench.CostPer1k(e, shares)
 		name := "`" + e.Model + "`"
 		if _, ok := b.RanAtConcurrency[e.Model]; ok {
 			name += " †"
+		}
+		// § marks a row whose cost is the average over identical repeats rather
+		// than the production basis, because the run predates fresh-cost
+		// capture. It understates a model whose provider prefix-caches, so the
+		// mark stays visible until that model is re-run.
+		if !fresh {
+			name += " §"
 		}
 		fmt.Fprintf(&sb, "| %s | %s | **%.1f** (%.1f-%.1f) | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %s | %s | %s | $%.3f |\n",
 			n, name, s.Headline, s.HeadlineLo, s.HeadlineHi, 100*s.Verdict, 100*s.Trigger, 100*s.Focus,
 			100*s.DangerousFPRate, 100*s.ErrorRate, dur(s.LatencyP50), dur(s.LatencyP95), under, per1k)
 	}
 	var marked []string
+	var staleCost []string
 	for _, e := range entries {
 		if c, ok := b.RanAtConcurrency[e.Model]; ok {
 			marked = append(marked, fmt.Sprintf("`%s` (%d)", e.Model, c))
+		}
+		if e.NA == "" {
+			if _, fresh := oraclebench.CostPer1k(e, shares); !fresh {
+				staleCost = append(staleCost, "`"+e.Model+"`")
+			}
 		}
 	}
 	if len(marked) > 0 {
 		fmt.Fprintf(&sb, "\n† ran at a different concurrency than the rest (%d): %s. Their latency and under-2.5s share were measured under a different load; accuracy is unaffected.\n",
 			b.Concurrency, strings.Join(marked, ", "))
+	}
+	if len(staleCost) > 0 {
+		fmt.Fprintf(&sb, "\n§ cost averaged over the run's identical repeats, not measured as a production turn (%s). A provider prefix cache makes repeats 2..n cheaper, so such a row can understate a cache-capable model by a few percent; re-run it to replace this with the fresh-state figure.\n",
+			strings.Join(staleCost, ", "))
 	}
 	for _, e := range entries {
 		for _, reason := range e.Score.Disqualified {

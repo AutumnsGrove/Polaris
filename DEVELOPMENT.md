@@ -201,8 +201,16 @@ Every finished run saves its leaderboard to `docs/benchmarks/oracle-decision-mod
 it); `polaris oracle-bench report --run <a.json>,<b.json> --calls '<calls.jsonl glob>'` regenerates
 that folder's charts and `results.md` from one or more leaderboards (several runs merge into one, but only
 if cases, repeats, concurrency and weights all match). The raw per-call log (needed once, for the share of
-calls inside Oracle's real 2.5s timeout and for refusals by question family) stays local in the gitignored
-`oraclebench/results/`; its tallies are saved as `call-stats.json`.
+calls inside Oracle's real 2.5s timeout, for refusals by question family, and for the per-call token split)
+stays local in the gitignored `oraclebench/results/`; its tallies are saved as `call-stats.json`.
+
+`$/1k turns` is one **production turn** — the first send of a state — not an average over the run's
+repeats: a provider that prefix-caches bills repeats cheaper, so averaging would understate a cache-capable
+model (morph/reflex, the first one). The run records `input_tokens`/`cached_tokens` per call and a
+`fresh_cost_usd` on each model exactly so this is answerable from the artifacts: a row still marked `§` in
+`results.md` predates that capture and needs a re-run, or its figure can be recovered from its surviving
+raw log. Two models can also be cache-capable in the same *product* while costing 19x differently per call,
+so check the token split, not just the dollar figure.
 
 Lessons that cost time:
 - **Rebase before you run, and do not touch the tree during a run.** `prompts.yaml` hot-reloads, so

@@ -472,6 +472,22 @@ type ModelScore struct {
 	CostUSD      float64 `json:"cost_usd"`
 	JudgeCostUSD float64 `json:"judge_cost_usd"`
 
+	// FreshCostUSD is what a production turn costs: the sum over cases of the
+	// *first* send of that case's state. CostUSD above averages every repeat,
+	// which understates any model whose provider prefix-caches, because the
+	// bench sends the identical state `--repeats` times and the repeats bill
+	// cheaper (morph/reflex bills ~11% less on a repeat; Joey 1, which doesn't
+	// cache, bills exactly the same). Production never repeats a state — every
+	// turn is a new message — so this is the honest number to compare models on.
+	// FreshCalls is how many first calls it is divided by.
+	FreshCostUSD float64 `json:"fresh_cost_usd"`
+	FreshCalls   int     `json:"fresh_calls"`
+	// InputTokens and CachedTokens are provider-reported totals for the whole
+	// run, so the report can say how much of a model's bill was cache hits.
+	// Zero for providers that report no cache split.
+	InputTokens  int `json:"input_tokens,omitempty"`
+	CachedTokens int `json:"cached_tokens,omitempty"`
+
 	// JudgeAudited and JudgeDisagreed measure the bank's own error rate: of
 	// the checks the judge read only as a spot check, how many it called
 	// differently from the deterministic verdict. ReviewCases lists the cases
@@ -651,9 +667,17 @@ func Summarize(w Weights, p *prompts.Set, runs []CaseRun) ModelScore {
 	var durations []time.Duration
 	failed, refused, inBudget := 0, 0, 0
 	for _, cr := range runs {
+		// The first sample is a fresh state; any later repeat may hit the
+		// provider's prefix cache, so only the first is a production-shaped call.
+		if len(cr.Samples) > 0 {
+			ms.FreshCostUSD += cr.Samples[0].Result.CostUSD
+			ms.FreshCalls++
+		}
 		for _, s := range cr.Samples {
 			ms.Calls++
 			ms.CostUSD += s.Result.CostUSD
+			ms.InputTokens += s.Result.InputTokens
+			ms.CachedTokens += s.Result.CachedTokens
 			if s.Err != ErrNone {
 				failed++
 				if s.Err == ErrRefusal {

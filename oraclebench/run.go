@@ -47,19 +47,27 @@ type CallEvent struct {
 // CallRecord is one call as written to --out (JSONL): enough to re-score it or
 // investigate a surprising result without re-spending the call.
 type CallRecord struct {
-	Model         string                 `json:"model"`
-	ResolvedModel string                 `json:"resolved_model,omitempty"`
-	CaseID        string                 `json:"case"`
-	Track         string                 `json:"track"`
-	Repeat        int                    `json:"repeat"`
-	LatencyMS     int64                  `json:"latency_ms"`
-	Err           ErrKind                `json:"err,omitempty"`
-	ErrText       string                 `json:"err_text,omitempty"`
-	CostUSD       float64                `json:"cost_usd,omitempty"`
-	Checks        []gateway.CheckOutcome `json:"checks,omitempty"`
-	ChipOutcomes  []gateway.CheckOutcome `json:"chip_outcomes,omitempty"`
-	FocusMode     string                 `json:"focus_mode,omitempty"`
-	FocusCleared  bool                   `json:"focus_cleared,omitempty"`
+	Model         string  `json:"model"`
+	ResolvedModel string  `json:"resolved_model,omitempty"`
+	CaseID        string  `json:"case"`
+	Track         string  `json:"track"`
+	Repeat        int     `json:"repeat"`
+	LatencyMS     int64   `json:"latency_ms"`
+	Err           ErrKind `json:"err,omitempty"`
+	ErrText       string  `json:"err_text,omitempty"`
+	CostUSD       float64 `json:"cost_usd,omitempty"`
+	// InputTokens and CachedTokens are what the provider billed and how much of
+	// it was a cache hit. Persisted so the cost of a future model can be
+	// explained from the log alone — whether it is expensive because it bills a
+	// huge payload or because its cache never fires (morph/reflex: ~95% cached
+	// and ~19x the tokens, which cost alone cannot distinguish). Zero for
+	// providers that report neither, and for runs made before this was captured.
+	InputTokens  int                    `json:"input_tokens,omitempty"`
+	CachedTokens int                    `json:"cached_tokens,omitempty"`
+	Checks       []gateway.CheckOutcome `json:"checks,omitempty"`
+	ChipOutcomes []gateway.CheckOutcome `json:"chip_outcomes,omitempty"`
+	FocusMode    string                 `json:"focus_mode,omitempty"`
+	FocusCleared bool                   `json:"focus_cleared,omitempty"`
 }
 
 // Record flattens the event. OracleResult's bench-only fields are json:"-" so
@@ -70,6 +78,7 @@ func (ev CallEvent) Record() CallRecord {
 	return CallRecord{
 		Model: ev.Model, ResolvedModel: r.ResolvedModel, CaseID: ev.CaseID, Track: ev.Track, Repeat: ev.Repeat,
 		LatencyMS: ev.Sample.Latency.Milliseconds(), Err: ev.Sample.Err, ErrText: ev.Sample.ErrText, CostUSD: r.CostUSD,
+		InputTokens: r.InputTokens, CachedTokens: r.CachedTokens,
 		Checks: r.Checks, ChipOutcomes: r.ChipOutcomes, FocusMode: r.FocusMode, FocusCleared: r.FocusCleared,
 	}
 }

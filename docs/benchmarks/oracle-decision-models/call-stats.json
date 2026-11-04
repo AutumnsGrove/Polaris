@@ -27,7 +27,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.0,
+    "fresh_calls": 295
   },
   "baseten/joey-1": {
     "calls": 885,
@@ -57,7 +59,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.01306303,
+    "fresh_calls": 295
   },
   "baseten/mammoth-1:free": {
     "calls": 885,
@@ -87,7 +91,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.0,
+    "fresh_calls": 295
   },
   "cloudflare/clef": {
     "calls": 885,
@@ -297,7 +303,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.02210348,
+    "fresh_calls": 295
   },
   "microsoft/microsoft-decision-1": {
     "calls": 885,
@@ -420,7 +428,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.09338226,
+    "fresh_calls": 295
   },
   "nace-ai/drex-v1.5": {
     "calls": 885,
@@ -450,7 +460,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.04335532,
+    "fresh_calls": 295
   },
   "nace-ai/drex-v2.0": {
     "calls": 885,
@@ -480,7 +492,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.05165502,
+    "fresh_calls": 295
   },
   "cloudflare/clef-omni": {
     "calls": 885,
@@ -510,7 +524,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.23666685,
+    "fresh_calls": 295
   },
   "jaredpalmer/kev-4b": {
     "calls": 885,
@@ -540,7 +556,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.045523086,
+    "fresh_calls": 295
   },
   "togethercomputer/tev1-4b-experimental": {
     "calls": 885,
@@ -570,7 +588,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.077009856,
+    "fresh_calls": 295
   },
   "respan/span-02": {
     "calls": 885,
@@ -600,7 +620,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.01767006,
+    "fresh_calls": 295
   },
   "scaledown/classify-1": {
     "calls": 885,
@@ -750,7 +772,9 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.0167987,
+    "fresh_calls": 295
   },
   "perplexity/pplx-decider-v1.2": {
     "calls": 885,
@@ -780,12 +804,14 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.02372396,
+    "fresh_calls": 295
   },
   "morph/reflex": {
     "calls": 885,
     "answered": 885,
-    "under_2_5s": 885,
+    "under_2_5s": 880,
     "under_5s": 885,
     "refused": 0,
     "failed": 0,
@@ -810,6 +836,10 @@
       "source_type": 60,
       "task": 33,
       "ui": 54
-    }
+    },
+    "cost_usd_fresh": 0.2661730360000001,
+    "fresh_calls": 295,
+    "input_tokens": 81918810,
+    "cached_tokens": 77707968
   }
 }
