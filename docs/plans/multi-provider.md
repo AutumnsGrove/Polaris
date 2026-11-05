@@ -2,12 +2,13 @@
 
 **Added 2026-11-04.**
 
-**Status: plan only, no code written, and the swap is on hold. Policy decisions are settled and the
-model scope is narrowed to `deepseek` (+ `mimo` as a follow-up) — see §12. The Nova prerequisite is
-[AutumnsGrove/nova#59](https://github.com/AutumnsGrove/nova/issues/59); its fixes have not landed
-yet, so Polaris is blocked on it. Polaris work starts once the `route` package and the `Usage`
-allowance fields exist, and Phase 2 cannot *finish* until the one-shot seam and meter reading land
-too (§9). Reviewed for internal consistency 2026-11-05.**
+**Status: plan only, no Polaris code written, and the swap is on hold. Policy decisions are
+settled and the model scope is narrowed to `deepseek` (+ `mimo` as a follow-up) — see §12. The Nova
+prerequisite, [AutumnsGrove/nova#59](https://github.com/AutumnsGrove/nova/issues/59), **landed in
+Nova v0.3.4 (2026-11-05)**, so the blocker is gone; Polaris is still pinned at v0.2.0 and nothing
+here has started. Re-checked against the shipped Nova API on 2026-11-05 — the wire, routing,
+money, meter, and catalog assumptions all moved at once. Sections carrying an "adjusted for
+v0.3.4" note are the ones that changed; §3's third column is the map.**
 
 The operator holds both an OpenRouter account (card on file, credits) and an OpenCode Go
 subscription (`$10/month`, includes DeepSeek V4.1 Flash, MiMo V2.6, Claude Haiku 5.5, GPT-6
@@ -32,7 +33,8 @@ registry and its money story.
 
 - **Nearly all of this deployment's traffic is one model.** The operator has run ~1 month of heavy
   DeepSeek use through OpenCode Go from inside pi and has consumed **35% of the monthly quota**
-  (read as 35% of DeepSeek's $100 limit; confirm against the meters in Phase 0, see §3),
+  (the meter is account-wide, so this is 35% of the plan-level window that DeepSeek's $100 dominates —
+  there is no per-model reading to confirm it against, §3),
   and essentially every turn Polaris makes is on `deepseek` too. So the payoff is not "move the
   app onto a subscription" — it is "the one model that already carries ~all of the spend starts
   billing against an allowance with $65 of headroom still in it".
@@ -47,36 +49,54 @@ registry and its money story.
 - Go is not a replacement for OpenRouter here: it has no decision models (`jev`), no audio, and no
   embeddings. Those stay exactly where they are.
 
-## 3. What was verified live (2026-11-04)
+## 3. What was verified live (2026-11-04; third column added 2026-11-05)
 
-Rows marked **(unverified)** were read from docs/catalog output or inferred, not observed against a
-real keyed call; Phase 0 (§9) exists to confirm them. Unmarked rows were observed directly.
+The single remaining **(unverified)** row was read from docs, not observed against a real keyed
+call. Unmarked rows were observed directly. The third column says what Nova v0.3.4 already
+settles, which retires most of the spike: these no
+longer need answering before Phase 2, only one live confirmation on our own account (§10).
 
-| Fact | Detail |
+| Fact | Detail | Settled by Nova v0.3.4? |
+|---|---|---|
+| Base URL | `https://opencode.ai/zen/go/v1` — one root serving `/chat/completions`, `/responses`, `/messages`. Native split also answers: `/inference/go/openai/v1`, `/inference/go/anthropic/v1`. | yes — `route.ProviderDecl{Kind, BaseURL}`; the preset owns the paths |
+| Auth | `Authorization: Bearer <key>` | yes |
+| **Required header** | `x-opencode-session`. **Verified: a request without it is `400 MissingSessionID`, not a degraded success.** | yes — `route` sets it from `Config.SessionID`, and `testkit`'s Go double refuses a request without it |
+| Model ids | Bare slugs (`deepseek-v4.1-flash`, `claude-haiku-5-5`, `mimo-v2.6-flash`, `gpt-6-luna`) — never OpenRouter's vendor-prefixed form. | yes — catalog ids are `opencode-go/<slug>`; `Attempt.Model` always carries the bare slug |
+| Catalog (public) | `GET https://opencode.ai/inference/go/v1/models` → 28 models with `capabilities` (tools, `reasoning.effort` tiers, `temperature`), `limit.context`, `cost` **and `cost.multipliers`** (DeepSeek bills ×2 on UTC 01:00–04:00 and 06:00–10:00, Mon–Fri). | partly — `provider.Model` carries `ReasoningEfforts`, `ToolChoice`, `PriceTiers`, `CostMultipliers`, `MonthlyLimitUSD` |
+| Dialect translation | `claude-haiku-5-5` is accepted on `chat/completions` (it reaches credential validation, not a model rejection), so **one dialect is enough** — no Anthropic client needed. | yes, and further: Nova dispatches on the catalog id across all three dialects, so Polaris never learns which one ran |
+| Reasoning stream | Many Go models send `delta.reasoning_content`; Polaris's `llm.Client` parses only `delta.reasoning`. | yes — `openaicompat` reads both, so the hazard dies with the client (§9 Phase 2) |
+| Billing metadata | `usage.opencode.allowance` (dollars of the plan this call consumed), `usage.opencode.list_cost`, `usage.opencode.billing_source`. Not `usage.cost`. | **yes, and it changes §6**: the vocabulary is `go`/`go-plus`/`balance`/`free`/`byok`, and it lands on `Usage.CostUSD` (allowance) plus `Usage.ListCostUSD` (retail), not on a field named after the wire |
+| Usage meters (undocumented, keyed) | `GET https://opencode.ai/console/api/go/status` → `access.meters.{fiveHour,week,month}` with `usedMicroCents`/`limitMicroCents`/`resetsAt`, plus `access.endsAt`. **Answered: there is no per-model breakdown.** Both meter endpoints report account-wide windows; the per-model limits are published but remaining allowance per model is not. §2's headroom figure is therefore account-wide, and §7.2's per-model tint has to be derived locally. | yes — `opencode.FetchMeters(client, server, key, orgID)` and `opencode.PeriodEnd(meters)`, with no Nova credential store required |
+| Limit shape | Per-model monthly dollars; 5h = 20% of it, weekly = 50%, monthly = 100%. | partly — the monthly figure per model is `provider.Model.MonthlyLimitUSD`; the derived windows are Polaris's to compute |
+| `stream_options.include_usage` | Assumed required for usage to appear at all. | moot — `openaicompat` always sends it |
+| Terms caveat | Go's docs frame it as "for OpenCode and other coding agents"; Polaris is not a validated client. Use an honest `User-Agent`, and treat any refusal as a fallback, never an outage. | yes — `route.Config.UserAgent` sends it; plan refusals arrive as classified HTTP errors (`EntitlementError` keeps its `Code`), and `OnLimitOrRefusal` spills on the refusal statuses (429/402/401/403/408/5xx). A `400 MissingSessionID` correctly does *not* spill — it is our own misconfiguration, and failing over would hide it |
+
+## 4. Boundary — what moved to Nova (landed in v0.3.4)
+
+Nova v0.2.0 shipped `provider/opencodego`, `mode/providers.Build` and `auth/opencode`, but the
+routing lived in `mode/`, which `scripts/importcheck`'s layer rules forbid a library consumer from
+importing. That was the blocker, and [nova#59](https://github.com/AutumnsGrove/nova/issues/59)
+closed it on 2026-11-05. What Polaris can now build on:
+
+| Nova API | What it settles |
 |---|---|
-| Base URL | `https://opencode.ai/zen/go/v1` — one root serving `/chat/completions`, `/responses`, `/messages`. Native split also answers: `/inference/go/openai/v1`, `/inference/go/anthropic/v1`. |
-| Auth | `Authorization: Bearer <key>` |
-| **Required header** | `x-opencode-session`. **Verified: a request without it is `400 MissingSessionID`, not a degraded success.** |
-| Model ids | Bare slugs (`deepseek-v4.1-flash`, `claude-haiku-5-5`, `mimo-v2.6-flash`, `gpt-6-luna`) — never OpenRouter's vendor-prefixed form. |
-| Catalog (public) | `GET https://opencode.ai/inference/go/v1/models` → 28 models with `capabilities` (tools, `reasoning.effort` tiers, `temperature`), `limit.context`, `cost` **and `cost.multipliers`** (DeepSeek bills ×2 on UTC 01:00–04:00 and 06:00–10:00, Mon–Fri). |
-| Dialect translation | `claude-haiku-5-5` is accepted on `chat/completions` (it reaches credential validation, not a model rejection), so **one dialect is enough** — no Anthropic client needed. |
-| Reasoning stream **(unverified for the two in scope)** | Many Go models send `delta.reasoning_content`; Polaris parses only `delta.reasoning`. |
-| Billing metadata **(unverified)** | `usage.opencode.allowance` (dollars of the plan this call consumed), `usage.opencode.list_cost`, `usage.opencode.billing_source`. Not `usage.cost`. |
-| Usage meters (undocumented, keyed) | `GET https://opencode.ai/console/api/go/status` → `access.meters.{fiveHour,week,month}` with `usedMicroCents`/`limitMicroCents`/`resetsAt`, plus `access.endsAt`. This removes the need to reconstruct allowance from our own ledger. **Open question:** the response shows one meter set, while limits are per-model — whether the meters break down per model is unknown until Phase 0. §2's headroom figure, §7's per-model "hot 5h window" tint, and §11 risk 4's headroom routing all assume they do; if they don't, those become a single account-wide meter. |
-| Limit shape | Per-model monthly dollars; 5h = 20% of it, weekly = 50%, monthly = 100%. |
-| `stream_options.include_usage` **(unverified)** | Believed required for usage to appear at all (§11 risk 2); confirm in Phase 0. |
-| Terms caveat | Go's docs frame it as "for OpenCode and other coding agents"; Polaris is not a validated client. Use an honest `User-Agent`, and treat any refusal as a fallback, never an outage. |
+| `provider/route` — `New(Config)`, `Resolve`, `Primary`, `Config.ForceProvider`, `Config.Unknown`, `Config.SessionID`, `Config.UserAgent` | Provider construction, per-catalog-id attempt chains, the session header, the honest UA, the kill switch |
+| `Route.FallbackOn` + `route.OnLimitOrRefusal`/`OnAnyError`, `Route.OnFallback` | The spill predicate and its visible event. `OnLimitOrRefusal` covers 429/402/401/403/408/5xx and in-band stream failures; a `bad_request` or a cancellation never spills |
+| `provider.Usage{AllowanceUSD, ListCostUSD, BillingSource}`, `CostSource: "allowance"` | The money split (§6) |
+| `provider.Response.Provider` | Which backend served the call — the transcript chip and `messages.provider` |
+| `provider/chat.Complete` | The one-shot seam: the 16 `llm.NewClient` sites collapse onto one call that routes exactly like a loop turn |
+| `opencode.FetchMeters` / `opencode.PeriodEnd` | The Go panel, with our key and no Nova config |
+| `provider.Model.{ReasoningEfforts, ToolChoice, PriceTiers, CostMultipliers, MonthlyLimitUSD}` | Picker badges and the per-model limit, with no Polaris-side table |
+| `usage.Ledger.Covered()` / `Real()` | The covered-vs-real split that Polaris's own ledger mirrors |
+| `testkit` Go double (requires the session header, emits `usage.opencode`, serves `/api/go/status`) | Failover and allowance tests with no key and no network |
 
-## 4. Boundary — what moves to Nova
+`mode/providers.Build` was refactored onto `provider/route`, so Nova's own TUI/`serve` path and
+Polaris run the same routing code and the same tests (upstream: RT01–RT14 for routing, and the
+`OAI72`/`MSG32`/`RSP32` allowance rows in the three dialect decoders — there are no `ALW` rows; the
+concern was absorbed into the per-dialect matrices). Its
+`Name()` became `"route"`; Polaris does not depend on it.
 
-Nova v0.2.0 already ships `provider/opencodego` (per-model dialect dispatch, session header,
-cache-marker policy), `mode/providers.Build` (routes a request to OpenRouter or Go by model), and
-`auth/opencode` (`FetchUsage`/`ParseStatus` for the meters). None of it is reachable from a
-library consumer: `mode/` is app shell, and `scripts/importcheck` forbids `examples/embed`-style
-consumers from importing `mode`, `config`, `session`, `tui`, `bundled`. That is the one blocker,
-and it is upstream — see nova#59.
-
-| Stays Polaris | Moves to Nova (nova#59) |
+| Stays Polaris | Moved to Nova |
 |---|---|
 | The model registry and its per-model tuning (`models/models.go`) | Provider construction, per-model provider choice, and failover |
 | Which backend a model prefers (`go_model`, `model_backends`) | Wire dialects, headers, session id, cache marker, reasoning field |
@@ -103,7 +123,7 @@ providers:
   opencode_go:
     api_key: "${OPENCODE_API_KEY}"
     base_url: "https://opencode.ai/zen/go/v1"
-    plan: go                 # go | go_plus — display and default-limit sourcing only
+    plan: go                 # go | go_plus — display only; the limit comes from the catalog (§8)
 
 routing:
   # auto: Go when the model has a go_model, Go is enabled, and the model's live
@@ -134,18 +154,76 @@ model_backends:              # per-model override, mirrors model_overrides
   `go_model`, else OpenRouter). Naming a `go_model`-less model under `opencode_go` in
   `model_backends` is a config-load error, not a silent fallback. That is a deliberate
   simplification: the operator picks a model and does not want a second switch per conversation.
-- `POLARIS_NOVA_LOOP=0` overrides all of the above to OpenRouter (§4).
+- `POLARIS_NOVA_LOOP=0` overrides all of the above via `ForceProvider = "openrouter"` (§4) — the
+  pin is the kill switch, not a routing mode.
 - Everything hot-reloads through `liveConfig`, like `nova_loop` and `max_agent_turns`.
+
+**Adjusted for v0.3.4 — the config above is a projection of `route.Config`, not a parallel policy
+layer.** The mapping is one-to-one and should be written once, in one function:
+
+| Polaris config | `route.Config` |
+|---|---|
+| `providers.*` (`api_key`, `base_url`) | `Providers: []ProviderDecl{{Name, Kind, BaseURL, APIKeyFunc}}` |
+| `go_model` present, `auto` | a two-attempt `Routes[<polaris model id>]` — `{opencode-go, go_model}` then `{openrouter, model}`, `FallbackOn: route.OnLimitOrRefusal`, `OnFallback` wired to the transcript chip |
+| `default_backend: openrouter` | build no Go routes at all (every id falls through to `DefaultProvider = "openrouter"` unrewritten) |
+| `default_backend: opencode_go` | **not** `ForceProvider`. A pin would send `go_model`-less ids to Go carrying an OpenRouter slug (`forced()` passes unknown ids through unrewritten). Instead: Go single-attempt routes for ids *with* a `go_model`, OpenRouter single-attempt routes for the rest |
+| `model_backends[m]: openrouter` | that id gets a single-attempt `{openrouter, model}` route regardless of `default_backend` |
+| `model_backends[m]: opencode_go` | that id gets a Go-first route; a config-load error if the id has no `go_model` (never a silent fallback) |
+| `failover: none` | omit the second attempt (there is no separate flag) |
+| `POLARIS_NOVA_LOOP=0` | `ForceProvider = "openrouter"` — the only use of the pin: the kill switch forces every call to OpenRouter (§4) |
+| the thread id | `Config.SessionID` — read fresh per call, exactly the header requirement in §3 |
+| the app version | `Config.UserAgent` |
+| (unused) | `Config.Unknown` stays nil: an unconfigured id falls through to `DefaultProvider` (`"openrouter"`) unrewritten, which is the RT08 behaviour the plan relies on |
+
+Two consequences that are implementation rules, not preferences:
+
+1. **`route.New` panics on a misconfigured policy** — no providers, an unknown kind, a duplicate
+   name, an attempt naming no provider or no model, a default or pin naming no provider. That is
+   the right behaviour from Nova (a silently misrouting router is worse than one that refuses to
+   build) but it means **`config.Load` must validate `providers`/`model_backends` itself**, or a
+   typo in `config.yaml` takes the server down at startup instead of reporting a config error.
+2. **Build the router per config generation, not per request.** `liveConfig` re-reads
+   `config.yaml` on every request; constructing a router inside a handler would both waste work and
+   turn a panic into a request-time crash. Cache it alongside the parsed config and rebuild only
+   when the config actually changes.
 
 ## 6. Money — two numbers, honestly
 
 Three distinct quantities, and conflating any two of them is how this feature would start lying:
 
-| Number | Meaning | Source |
+| Number | Meaning | Nova field (v0.3.4) |
 |---|---|---|
-| `list_cost_usd` | what the call would cost at list price (the number threads already show) | `usage.opencode.list_cost` on Go, `usage.cost` on OpenRouter |
-| `allowance_usd` | dollars of the Go plan the call consumed | `usage.opencode.allowance` |
-| `billed_source` | `subscription` (covered) or `balance` (real money) | `usage.opencode.billing_source` |
+| `list_cost_usd` | what the call would cost at list price (the number threads already show) | `Usage.ListCostUSD` on Go; on OpenRouter `Usage.CostUSD` already *is* list cost |
+| `allowance_usd` | dollars of the Go plan the call consumed | `Usage.AllowanceUSD`, and also `Usage.CostUSD` when `CostSource == "allowance"` |
+| `billed_source` | who paid: `go` / `go-plus` (covered), `balance` (real money), `free`, `byok` | `Usage.BillingSource` |
+
+**Adjusted for v0.3.4 — read this before writing the ledger code.** Nova inverts the field
+Polaris's earlier draft assumed: on a Go call, `Usage.CostUSD` is **allowance dollars**, not list
+price (`CostSource` is `"allowance"`), and the retail figure is `Usage.ListCostUSD`. So:
+
+- **`messages.cost_usd` ← `Usage.ListCostUSD + (Usage.CostUSD - Usage.AllowanceUSD)`.** That one
+  expression is correct in all three cases and is worth a named helper with a test, because the
+  failure mode of getting it wrong is a number that looks plausible:
+  - a single Go attempt: `CostUSD == AllowanceUSD`, so it reduces to `ListCostUSD` (retail);
+  - an OpenRouter attempt: both Go fields are zero, so it reduces to `CostUSD` (retail);
+  - **a spilled call: `Usage.Add` sums `CostUSD` across attempts**, so `CostUSD` is
+    allowance *plus* retail while `ListCostUSD` only covers the Go attempt — the subtraction is what
+    removes the allowance half. A plain `ctx.AddCost(resp.Usage.CostUSD)` records allowance as list
+    cost, **overstates by the peak multiplier (×2 in DeepSeek's weekday windows)**, and records `$0`
+    for a `billing_source: "free"` call that still has a real list price.
+- `provider_usage.allowance_usd` ← `Usage.AllowanceUSD`; `provider_usage.list_cost_usd` ← the same
+  list-cost expression above, so the panel's numbers are the same currency as the totals.
+- "covered" is `BillingSource` of `go`/`go-plus`, never a literal `"subscription"` — that value does
+  not exist. `free` is covered at $0 allowance; `balance` is real money (§6.6).
+- `Response.Provider` is the attempt that answered, so "this call spilled" is
+  `Response.Provider != route.Primary(modelID)` — the cheapest reliable signal for the transcript
+  chip. Ledger caveat: `Stream` returns **combined** usage across attempts (`spent.Add`), so on a
+  spilled call the failed Go attempt's tokens are folded into the row written under the serving
+  provider. That misattributes a few hundred tokens at most, only on the rare spill — acceptable,
+  but the row should carry `spilled = 1` so the panel can footnote it instead of presenting the
+  split as exact.
+- `Usage.Add` already sums everything across a spill, and `usage.Ledger.Covered()/Real()` is the
+  split to mirror rather than re-derive.
 
 Decisions (settled, §12):
 
@@ -163,7 +241,7 @@ Decisions (settled, §12):
    drives the transcript chip (§7.3). It is still blind to OpenRouter's own within-model provider
    fallback, same as `applied_model`.
 3. **`Stats` gains breakouts, never additive buckets**: `CoveredBySubscription` (sum of
-   **`list_cost_usd`** where `billing_source = 'subscription'` — list price, so it is the same
+   **`list_cost_usd`** where `billing_source IN ('go','go-plus')` — list price, so it is the same
    currency as the totals it sits inside) and `BilledToBalance`. Documented exactly like
    `VerificationCostUSD` — already counted once inside the normal totals, so adding them again
    would double-count. `allowance_usd` is a *different* quantity (plan dollars, including the peak
@@ -182,13 +260,20 @@ Decisions (settled, §12):
 
 ## 7. UI
 
-1. **Settings → Usage → "OpenCode Go"**: plan name, the three meters as bars with reset times,
-   `$used / $limit`, and "Polaris's share this month: $8.10 of $19.20" from `provider_usage`. Same
-   visual language and shortcut-row pattern as `ConstellationUsageModal`/`PulsarUsageModal`.
+1. **Settings → Usage → "OpenCode Go"**: plan name, the three meters as bars with reset times
+   (`opencode.PeriodEnd` for the monthly reset), `$used / $limit`, and "Polaris's share this month:
+   $8.10 of $19.20" from `provider_usage`. Same visual language and shortcut-row pattern as
+   `ConstellationUsageModal`/`PulsarUsageModal`. **The meters are account-wide** (§3) — the panel
+   must say so, because a number that silently includes pi and OpenCode usage looks wrong next to
+   Polaris's own ledger.
 2. **Model picker** (`ComposerMenu.svelte`, the `view === 'model'` list): a `Go` / `OpenRouter`
-   badge per row. With two Go-backed models this is a row annotation, not a redesign — the badge
-   that matters is on `deepseek`, the row selected essentially every time. A warning tint when its
-   5h window is hot, since that is the only window that can interrupt a working session.
+   badge per row, from `route.Primary(modelID)`. With two Go-backed models this is a row
+   annotation, not a redesign — the badge that matters is on `deepseek`, the row selected
+   essentially every time. A warning tint when a model is close to its monthly limit, derived
+   **locally** (`SUM(allowance_usd)` this period against `MonthlyLimitUSD`) and labelled as
+   Polaris-only: it undercounts the account, so it is a hint about our share, never a claim about
+   what is actually left. The authoritative "can I keep working" signal is the 5h meter, which is
+   account-wide and therefore conservative.
 3. **Turn and thread**: "covered by Go" alongside the list cost in `TurnInfoSheet`; a transcript
    chip when a failover fired (same "never silent" convention as `[via Brave]`).
 4. **Server surface**: `GET /api/providers/status` (both providers configured?, Go meters, current
@@ -222,6 +307,33 @@ The other five `go_model`-less entries are not "policy: OpenRouter"; they have n
 which is why `auto` needs no special case for the cheap-cap models. Adding one later is the same
 one-line change, plus a deliberate look at its limit.
 
+**Adjusted for v0.3.4 — where the limit comes from, and how the id reaches the router.**
+
+- The `$100`/`$60` column above is no longer a table Polaris maintains: it is
+  `provider.Model.MonthlyLimitUSD`, populated from the Go baseline in Nova's catalog. Two
+  consequences. `deepseek` is covered (`100`, with the peak multiplier and its effort tiers
+  alongside). **`mimo` is not in Nova's baseline** — it arrives through the `models.dev` discovery
+  overlay, which carries no allowance — so its `MonthlyLimitUSD` reads `0`. Either Polaris carries
+  the one number for `mimo` in config, or that is a tiny upstream follow-up when `mimo` flips. It
+  does not block phase 1, which is `deepseek`-only.
+- **The route is keyed by Polaris's own model id**, and two things must carry it or the router
+  silently falls through to OpenRouter:
+  1. `agent.Config.ModelID` must be set. Today `agent/nova_provider.go` passes
+     `novaModel{Name: s.Model}` (the wire slug) and nothing else, so a router would key on
+     `deepseek/deepseek-v4.1-flash-1017`, find no route, and use the default provider — the exact
+     bug Nova's changelog records for subagents. `llm.Settings` (or the replacement for it) must
+     carry the Polaris model id through to `agent.Config.ModelID` and `chat.Request.Model`.
+  2. `provider.RegisterModel` must be called for each registry entry (`ID: "deepseek"`,
+     `Slug: "deepseek/deepseek-v4.1-flash-1017"`), because `chat.Complete` resolves an id to its
+     wire slug through Nova's catalog and would otherwise send `"deepseek"` to the wire.
+  Doing both once at config load is cheap; discovering 1 the hard way costs a week of "why is
+  everything still billing OpenRouter".
+- **Two seams, not one.** `provider/chat.Complete` is for the non-streaming one-shot sites (titles,
+  suggestions, extraction — it returns the finalized response with no stream events). The turn
+  loop keeps streaming, so the `llm.Client` adapter must call `Router.Stream` directly and forward
+  `text_delta`/`thinking_delta` to the existing `onChunk`/`onReasoning` callbacks. An implementer
+  reaching for `Complete` in the turn path loses token streaming with no error.
+
 **Stays on OpenRouter regardless** (the explicit exceptions to §12's "every chat-shaped call"): `decisions` (Oracle, verification badge, `compare_sources`),
 voice STT/TTS, embeddings, and `cmd/benchmark` / `cmd/eval` / `oraclebench` (numbers must stay
 comparable, and results should record which backend produced them). Zen's `/zen/v1/systemone` +
@@ -230,28 +342,34 @@ but it is out of scope here and is not needed for the subscription to pay off.
 
 ## 9. Phases
 
-- **Phase 0 — spike (a few hours, nothing merged).** With the real key: capture a full SSE body
-  for `deepseek-v4.1-flash` first (`usage.opencode.*` field names, `reasoning_content`, tool calls,
-  parallel tool calls), then repeat for `mimo-v2.6-flash`; confirm `stream_options.include_usage`
-  is required; dump `/console/api/go/status` and check whether the meters break down per model;
-  produce a limit-reached error and record its status/body; confirm the slash-prefixed and native
-  base URLs behave identically.
-- **Phase 1 — Nova (nova#59).** Four deliverables: the router as a library package, `Usage`
-  allowance fields, meter reading for a supplied key, and the one-shot completion seam. Two unblock
-  Polaris *starting* ahead of the rest — the `route` package and the `Usage` allowance fields —
-  because the config block and the ledger are written against them. **Phase 2 cannot finish on
-  those two alone**: the `llm.Client` adapter needs the one-shot seam, and
-  `/api/providers/status` needs meter reading. Polaris work that can proceed early is limited to
-  the config block, `go_model`, and the ledger/schema.
-- **Phase 2 — Polaris plumbing, `deepseek` only.** `providers` config block + `go_model` +
-  `model_backends`; `llm.Client` becomes a thin adapter over Nova (then deleted once no caller
-  remains); `provider_usage` + `messages.provider` + `Stats` breakouts; `/api/providers/status` and
-  the CLI. **Also in this phase, because the flip must not happen without them:** basic failover
-  (a Go limit/refusal continues on OpenRouter and says so, via Nova's policy hook) and the
-  `dev/fakeopenai` Go-dialect `--limit` mode that §10 needs to verify it (the rest of
-  `dev/fakeopenrouter`'s rename stays in Phase 5). Ship with `default_backend: openrouter` and no
-  `model_backends.deepseek` line, so the merge is a no-op until deliberately flipped; flip
-  `deepseek`, then watch one real week of windows before touching `mimo`.
+- **Phase 0 — spike (a few hours, nothing merged).** Nova's own tests already pin the wire
+  (`OAI72`/`MSG32`/`RSP32` for `usage.opencode`, the `testkit` double for the session header and
+  `/api/go/status`, `RT03`/`RT04` for limit-spill vs bad-request). What is left is confirmation on
+  *our* account, not discovery: one keyed `deepseek-v4.1-flash` call showing real
+  `allowance`/`list_cost`/`billing_source` values; one `/api/go/status` dump (expect account-wide
+  meters, §3); one look at the console to confirm DeepSeek's plan window. `mimo` repeats the call
+  only when it flips. Nothing here blocks Phase 2 starting.
+- **Phase 1 — Nova (nova#59).** **Done, 2026-11-05, shipped in v0.3.4.** `provider/route`,
+  `provider/chat.Complete`, the `Usage` allowance fields, `opencode.FetchMeters`/`PeriodEnd`, the
+  catalog picker fields, and the `testkit` Go double all exist — see §4.
+- **Phase 2 — Polaris plumbing, `deepseek` only.** Starts with `go get
+  github.com/AutumnsGrove/nova@v0.3.4`, which is low-risk here: the v0.3.4 upgrade notes are
+  additive (`Usage`/`Response`/`Model` fields), and v0.3.0's breaking notes are `bundled`/`tui`
+  only (`bundled/ask` and the `ui_request` id are TUI/protocol concerns Polaris does not consume) —
+  Polaris imports `agent`, `message`, `proto`, `provider`, `provider/openrouter`, `tool`, and the
+  v0.3.0 changes there are additive (`agent.Config.Embed`, `tool.Context.Embed`). `agent/nova_parity_test.go` is the check that it really is
+  byte-identical. Then: the `providers` config block + `go_model` + `model_backends` (validated in
+  `config.Load`, §5); **the `ModelID` and `RegisterModel` wiring (§8), before anything else routes
+  — without it every call keeps using the default provider and looks like it works**;
+  `llm.Client` becomes a thin adapter over Nova (then deleted once no caller remains);
+  `provider_usage` + `messages.provider` + `Stats` breakouts; `/api/providers/status` and the CLI.
+  **Also in this phase, because the flip must not happen without them:** basic failover (a Go
+  limit/refusal continues on OpenRouter and says so, via `Route.FallbackOn` +
+  `Route.OnFallback`) and the `dev/fakeopenai` Go-dialect `--limit` mode that §10 needs to verify
+  it (the rest of `dev/fakeopenrouter`'s rename stays in Phase 5). Ship with
+  `default_backend: openrouter` and no `model_backends.deepseek` line, so the merge is a no-op
+  until deliberately flipped (no Go routes are built; `ForceProvider` is not involved — see §5);
+  flip `deepseek`, then watch one real week of windows before touching `mimo`.
 - **Phase 3 — UI.** The Go panel, the two picker badges, turn attribution, the balance warning.
 - **Phase 4 — policy.** `auto` with meter-aware headroom (pre-emptive routing, so failover stops
   being the first line of defence — §11 risk 9). Failover itself already shipped in Phase 2.
@@ -265,20 +383,22 @@ but it is out of scope here and is not needed for the subscription to pay off.
 
 Anything touching this must be exercised on the potato against the real Go account before it is
 called done — `go test` and review have missed worse here (see CLAUDE.md's Docker-path list):
-`polaris providers status` showing real meters; one turn on `deepseek` writing a `provider_usage`
-row with a nonzero allowance; the settings panel agreeing with the OpenCode console; a forced
-limit — point `opencode_go.base_url` at `dev/fakeopenai --limit` (phase 2) — producing a visible
-failover to OpenRouter with the same thread continuing on the next turn; and `POLARIS_NOVA_LOOP=0`
-degrading exactly as documented in §4.
+`polaris providers status` showing real meters plus the per-model `Primary` table (the config
+wiring in §8 is visible before any turn runs); one turn on `deepseek` writing a `provider_usage`
+row with a nonzero allowance and `messages.provider = 'opencode_go'`; the settings panel agreeing
+with the OpenCode console; a forced limit — point `opencode_go.base_url` at `dev/fakeopenai
+--limit` (phase 2) — producing a visible failover to OpenRouter with the same thread continuing on
+the next turn; and `POLARIS_NOVA_LOOP=0` degrading exactly as documented in §4.
 
 ## 11. Risks
 
 1. Missing `x-opencode-session` is a hard 400 — the first request of a misconfigured client fails
    outright.
-2. Omitting `stream_options.include_usage` is *believed* to zero usage silently (no cost, no
-   allowance, no tokens) — unverified until Phase 0, but cheap to always send.
-3. `delta.reasoning_content` ignored ⇒ the thinking UI and the reasoning-leak sniffer both go quiet
-   with no error.
+2. ~~Omitting `stream_options.include_usage` zeroes usage silently.~~ Moot as of v0.3.4 —
+   `openaicompat` always sends it. It stays on the list because it is the reason not to hand-roll a
+   request body for a one-off call.
+3. ~~`delta.reasoning_content` is ignored, so the thinking UI goes quiet.~~ Moot once `llm.Client`
+   is not the transport; `openaicompat` reads both fields.
 4. Never derive allowance from tokens; `cost.multipliers` make it wrong by 2x during peak hours.
 5. `billing_source = balance` means Extra Usage is on. With an empty balance the call fails (not a
    cheaper call); with funds in it, the call spends real money. Both are misconfigurations (§6.6).
@@ -292,6 +412,17 @@ degrading exactly as documented in §4.
 9. Failover doubles the cost of a failed turn when it fires (a Go attempt plus a full OpenRouter
    retry). Acceptable once per limit window; unacceptable per turn — so pre-emptive routing on
    meter headroom matters as much as the fallback itself.
+10. **`CostUSD` is allowance on a Go call, not list price** (§6). A `ctx.AddCost(resp.Usage.CostUSD)`
+    that is right for OpenRouter silently overstates list cost by the peak multiplier, and records
+    `$0` for a covered free-model call. This is the single most likely mistake in the whole change,
+    and no test catches it unless one asserts the two fields differ.
+11. **A missing `ModelID` looks like success.** The router falls through to `DefaultProvider`, so
+    every call bills OpenRouter, every thread says "OpenRouter", and nothing errors. Defence in
+    depth: `/api/providers/status` exposes `Primary` per model id (a missing `ModelID` shows up as
+    "default" before any money moves), plus the §10 live check that a real `deepseek` turn lands on
+    `opencode_go`.
+12. **`route.New` panics on a bad policy.** Called per request it turns a config typo into a crash
+    loop; it must be built per config generation and validated in `config.Load` (§5).
 
 ## 12. Decisions (settled 2026-11-04)
 
@@ -305,13 +436,32 @@ degrading exactly as documented in §4.
 - **Model scope (2026-11-04)**: `deepseek` only for the first release, `mimo` as a one-line
   follow-up if it looks right. No other model gets a `go_model` — the narrow map is the feature,
   not a v1 compromise.
+- **Upstream landed (2026-11-05)**: nova#59 closed in v0.3.4. Nothing in §4 is Polaris's to build.
+- **Catalogue fields, not a Polaris table (2026-11-05)**: per-model limits come from
+  `provider.Model.MonthlyLimitUSD`; `mimo` is the known gap (discovery-only, reads `0`) and gets a
+  config value or a tiny upstream fix when it flips.
+- **Meters are account-wide (2026-11-05)**: plan headroom is authoritative from
+  `opencode.FetchMeters`; per-model headroom is a Polaris-side estimate from `provider_usage` and
+  is presented as such. No UI claims a per-model remaining balance is exact.
+- **Pin is the kill switch, nothing else (2026-11-05)**: `ForceProvider` is only ever
+  `"openrouter"` under `POLARIS_NOVA_LOOP=0`. All other policy is route-building (§5).
+- **Two seams (2026-11-05)**: turns stream through `Router.Stream`; `chat.Complete` is one-shots
+  only (§8).
 
 ## 13. References
 
-- nova#59 — the upstream work this depends on
-- `llm/client.go` (dialect, headers, `usage.cost` parse at :771), `llm/settings.go`
-- `agent/nova_provider.go` (`openrouter.New` hardcoded, `X-OpenRouter-Metadata` always injected)
-- `config/config.go:31` (`OpenRouter` block), `config.ModelConfig`, `Models`/`ModelOverrides`
+- nova#59 (closed 2026-11-05) and Nova's `CHANGELOG.md` [0.3.4] upgrade notes — the contract this
+  plan is written against
+- Nova: `provider/route/route.go`, `provider/chat/chat.go`, `provider/provider.go:59` (`Usage`),
+  `provider/provider.go:155` (`Response.Provider`), `provider/model.go` (`MonthlyLimitUSD` etc.),
+  `provider/opencodego/catalog.go`, `auth/opencode/usage.go` (`FetchMeters`/`PeriodEnd`),
+  `usage/ledger.go`, `docs/INTEGRATION.md`'s "Two providers behind one switch"
+- `llm/client.go` (the OpenRouter-shaped client this replaces, `usage.cost` at :771),
+  `llm/settings.go` (gains the Polaris model id for `ModelID`, §8)
+- `agent/nova_provider.go` (`openrouter.New` hardcoded, `X-OpenRouter-Metadata` always injected,
+  and — the §8 trap — `novaModel{Name: s.Model}` with no `ModelID`)
+- `config/config.go:31` (`OpenRouter` block), `config.ModelConfig`, `Models`/`ModelOverrides`,
+  `config/config.go:375` (the `nova_loop` kill-switch comment)
 - `store/usage.go` (`decisions_usage`/`aux_usage` ledger shape), `store/stats.go:58` (breakout
   precedent), `store/schema.go:470` (`aux_usage` comment)
 - `gateway/turn_thread.go:176` and the other 15 `llm.NewClient` call sites
