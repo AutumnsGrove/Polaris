@@ -122,8 +122,10 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   store, both (its own plus your regular ones, read-only), or off. Shared files are read-only to every conversation in the
   Field (an edit becomes a private copy); pin a Field to keep it in the sidebar, or file a conversation under one from the composer's More menu. Shared files
   need the `code_exec` sandbox's workspace configured.
-- **Illustrated sources** — citations carry a thumbnail when one's genuinely available, instead
-  of a bare text chip.
+- **Sources sheet** — a compact strip under each answer (site tiles, "7 sources · 4 read · 2
+  checked") opens a bottom sheet listing every source with its reading length and "found in
+  source" ticks. Citations carry a thumbnail when one's genuinely available, instead of a site
+  monogram.
 - **Help (?) button** — next to Settings in the sidebar; a plain-English glossary of the app's
   named features (Fields = projects, Pulsar = routine searches, and so on).
 - **Settings panel** — theme, default model, the Memory list above, and a one-click

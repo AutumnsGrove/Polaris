@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sources list — design options</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap');
+
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	--shadow-xs: 0 1px 2px rgba(15, 10, 5, 0.22), 0 1px 1px rgba(15, 10, 5, 0.14);
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
+	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+	--font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	--font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+:root[data-theme='light'] {
+	color-scheme: light;
+	--color-bg: oklch(97% 0.008 75);
+	--color-surface: oklch(99% 0.004 80);
+	--color-surface-2: oklch(95% 0.01 75);
+	--color-surface-3: oklch(91% 0.012 75);
+	--color-border: oklch(87% 0.012 75);
+	--color-border-strong: oklch(78% 0.016 75);
+	--color-text: oklch(24% 0.016 60);
+	--color-text-dim: oklch(46% 0.018 60);
+	--color-accent: oklch(54% 0.17 68);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+	--color-accent-2: oklch(48% 0.1 240);
+}
+
+* { box-sizing: border-box; margin: 0; }
+body {
+	font-family: var(--font-sans);
+	background: var(--color-bg);
+	color: var(--color-text);
+	padding: var(--space-xl);
+	line-height: 1.5;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+
+header.page { max-width: 1400px; margin: 0 auto var(--space-xl); display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-xl); }
+header.page h1 { font-size: 20px; font-weight: 600; }
+header.page p { font-size: 13px; color: var(--color-text-dim); max-width: 640px; margin-top: var(--space-xs); }
+.theme-btn { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-full); padding: var(--space-xs) var(--space-md); font-size: 12px; }
+
+.grid { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: var(--space-2xl) var(--space-xl); }
+.option h2 { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-accent); }
+.option .blurb { font-size: 12.5px; color: var(--color-text-dim); margin: var(--space-xs) 0 var(--space-md); min-height: 56px; }
+.hint { font-size: 11px; color: var(--color-text-dim); margin-top: var(--space-sm); }
+
+/* A phone-width slice of the conversation, not a full device frame. */
+.phone {
+	width: 100%;
+	max-width: 390px;
+	background: var(--color-bg);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-xl);
+	padding: var(--space-lg);
+	box-shadow: var(--shadow-lg);
+}
+.answer { font-size: 14.5px; line-height: 1.65; }
+.answer p + p { margin-top: var(--space-md); }
+.cite {
+	display: inline-flex; align-items: center; max-width: 180px;
+	margin-left: var(--space-xs); padding: var(--space-xs) var(--space-sm);
+	border-radius: var(--radius-full); background: var(--color-surface-2);
+	color: var(--color-text-dim); font-size: 11.5px; font-weight: 500;
+	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+	vertical-align: middle; transform: translateY(-1px); box-shadow: var(--shadow-xs);
+}
+.tick { width: 11px; height: 11px; margin-right: 3px; color: var(--color-accent-2); flex-shrink: 0; }
+.tick.lg { width: 12px; height: 12px; margin: 0; }
+
+/* shared monogram, stands in for a favicon — Citation has no favicon field today */
+.mono {
+	flex-shrink: 0; display: grid; place-items: center;
+	width: 22px; height: 22px; border-radius: 6px;
+	background: color-mix(in srgb, var(--hue, var(--color-accent-2)) 18%, var(--color-surface-2));
+	color: var(--hue, var(--color-accent-2));
+	font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+}
+
+/* ============ A — CURRENT ============ */
+.a .sources { margin-top: var(--space-md); }
+.a .toggle { display: inline-flex; align-items: center; gap: var(--space-xs); border: none; background: transparent; padding: var(--space-xs) 0; font-size: 12px; color: var(--color-text-dim); }
+.a .toggle:hover { color: var(--color-text); }
+.a .count { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 var(--space-xs); border-radius: var(--radius-full); background: var(--color-surface-3); font-size: 10px; }
+.a .chev { transition: transform .15s; }
+.a .open .chev { transform: rotate(90deg); }
+.a .info { color: var(--color-text-dim); margin-left: var(--space-xs); vertical-align: middle; font-size: 11px; }
+.a .chips { display: none; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-sm); }
+.a .open + .chips, .a .open ~ .chips { display: flex; }
+.a .chip { display: flex; align-items: center; gap: var(--space-sm); max-width: 220px; background: var(--color-surface-2); border-radius: var(--radius-sm); padding: var(--space-xs) var(--space-sm); box-shadow: var(--shadow-xs); }
+.a .idx { flex-shrink: 0; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: color-mix(in srgb, var(--color-accent-2) 20%, transparent); color: var(--color-accent-2); font-size: 9.5px; font-weight: 600; }
+.a .ct { min-width: 0; display: flex; flex-direction: column; gap: var(--space-xs); }
+.a .ct b { font-weight: 400; font-size: 12px; display: flex; align-items: center; gap: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.a .ct span { font-size: 10px; color: var(--color-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ============ B — BIBLIOGRAPHY ============ */
+.b .sources { margin-top: var(--space-lg); border-top: 1px solid var(--color-border); padding-top: var(--space-md); }
+.b .head { width: 100%; display: flex; align-items: baseline; justify-content: space-between; background: none; border: none; padding: 0; }
+.b .head h3 { font-family: var(--font-serif); font-weight: 400; font-size: 15px; font-style: italic; }
+.b .head small { font-size: 11px; color: var(--color-text-dim); }
+.b ol { list-style: none; padding: 0; margin-top: var(--space-sm); display: none; }
+.b .open ~ ol { display: block; }
+.b li { display: grid; grid-template-columns: 22px 1fr; gap: var(--space-sm); padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border); }
+.b li:last-child { border-bottom: none; }
+.b .n { font-family: var(--font-serif); font-size: 13px; color: var(--color-text-dim); font-variant-numeric: tabular-nums; padding-top: 1px; }
+.b .t { font-size: 13.5px; line-height: 1.35; display: flex; gap: var(--space-xs); align-items: flex-start; }
+.b .t .tick { margin-top: 3px; }
+.b .m { font-size: 11px; color: var(--color-text-dim); margin-top: 2px; }
+.b .m i { font-style: normal; opacity: .5; padding: 0 3px; }
+.b .peek { display: none; font-size: 12px; color: var(--color-text-dim); margin-top: var(--space-xs); }
+.b .peek-line { font-size: 12px; color: var(--color-text-dim); margin-top: var(--space-xs); }
+
+/* ============ C — SOURCE STRIP + SHEET ============ */
+.c .strip {
+	margin-top: var(--space-md); width: 100%;
+	display: flex; align-items: center; gap: var(--space-sm);
+	background: var(--color-surface); border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg); padding: var(--space-sm) var(--space-md);
+}
+.c .stack { display: flex; }
+.c .stack .mono { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--color-surface); margin-left: -7px; }
+.c .stack .mono:first-child { margin-left: 0; }
+.c .strip .lbl { flex: 1; text-align: left; font-size: 12.5px; }
+.c .strip .lbl small { display: block; font-size: 10.5px; color: var(--color-text-dim); }
+.c .strip .go { color: var(--color-text-dim); font-size: 14px; }
+.c .phone { position: relative; overflow: hidden; min-height: 520px; }
+.c .scrim { position: absolute; inset: 0; background: rgba(8, 5, 2, .55); opacity: 0; pointer-events: none; transition: opacity .25s var(--ease-out-expo); }
+.c .sheet {
+	position: absolute; left: 0; right: 0; bottom: 0; max-height: 78%; overflow: auto;
+	background: var(--color-surface); border-top: 1px solid var(--color-border-strong);
+	border-radius: var(--radius-xl) var(--radius-xl) 0 0; padding: var(--space-sm) var(--space-lg) var(--space-xl);
+	transform: translateY(100%); transition: transform .3s var(--ease-out-expo);
+}
+.c .open .scrim { opacity: 1; pointer-events: auto; }
+.c .open .sheet { transform: none; }
+.c .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--color-border-strong); margin: 0 auto var(--space-md); }
+.c .sheet h3 { font-size: 14px; font-weight: 600; }
+.c .sheet .sub { font-size: 11.5px; color: var(--color-text-dim); margin-bottom: var(--space-sm); }
+.c .row { display: flex; gap: var(--space-md); align-items: center; padding: var(--space-sm) 0; }
+.c .row + .row { border-top: 1px solid var(--color-border); }
+.c .row .mono { width: 32px; height: 32px; border-radius: 8px; font-size: 12px; }
+.c .row .tx { min-width: 0; flex: 1; }
+.c .row .tx b { font-weight: 400; font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c .row .tx span { font-size: 11px; color: var(--color-text-dim); }
+
+/* ============ D — READ vs SEEN ============ */
+.d .sources { margin-top: var(--space-lg); }
+.d .sum { width: 100%; display: flex; align-items: center; gap: var(--space-sm); background: none; border: none; padding: var(--space-xs) 0; font-size: 12.5px; text-align: left; }
+.d .bar { display: flex; gap: 2px; }
+.d .bar i { width: 5px; height: 14px; border-radius: 2px; background: var(--color-surface-3); }
+.d .bar i.read { background: var(--color-accent); }
+.d .bar i.read.ok { background: var(--color-accent-2); }
+.d .sum small { color: var(--color-text-dim); font-size: 11.5px; }
+.d .sum .sp { flex: 1; }
+.d .body { display: none; margin-top: var(--space-sm); }
+.d .open ~ .body { display: block; }
+.d .grp { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-dim); margin: var(--space-md) 0 var(--space-xs); display: flex; align-items: center; gap: var(--space-sm); }
+.d .grp::after { content: ''; flex: 1; height: 1px; background: var(--color-border); }
+.d .card { display: grid; grid-template-columns: 22px 1fr auto; gap: var(--space-sm) var(--space-md); align-items: center; padding: var(--space-sm) var(--space-md); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.d .card + .card { margin-top: var(--space-sm); }
+.d .card.full { border-color: color-mix(in srgb, var(--color-accent-2) 40%, var(--color-border)); }
+.d .card b { font-weight: 400; font-size: 13px; display: block; line-height: 1.3; }
+.d .card span { font-size: 11px; color: var(--color-text-dim); }
+.d .pill { font-size: 10.5px; padding: 1px var(--space-sm); border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); white-space: nowrap; }
+.d .pill.v { background: color-mix(in srgb, var(--color-accent-2) 18%, transparent); color: var(--color-accent-2); display: inline-flex; gap: 3px; align-items: center; }
+.d .seen { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm); }
+.d .seen a { font-size: 11.5px; color: var(--color-text-dim); display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; }
+.d .seen .dot { width: 8px; height: 8px; border-radius: 2px; background: var(--hue); opacity: .8; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+	<symbol id="cc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></symbol>
+	<symbol id="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></symbol>
+</svg>
+
+<header class="page">
+	<div>
+		<h1>Sources list — design options</h1>
+		<p>Same sample answer and same seven sources in every option. Click the toggle/strip in each phone to open it. All four use only fields <code>Citation</code> already has (<code>title, url, opened, words, pages, verified</code>) — except the monogram tiles, which stand in for a favicon (see notes at the bottom).</p>
+	</div>
+	<button class="theme-btn" onclick="const r=document.documentElement;r.dataset.theme=r.dataset.theme==='light'?'':'light'">Toggle light / dark</button>
+</header>
+
+<div class="grid">
+
+<!-- ============ A ============ -->
+<section class="option a">
+	<h2>A · Current</h2>
+	<p class="blurb">Count toggle, collapsed by default. Expanded: a wrapping cloud of 220px chips with a numbered dot (or thumbnail) and a check when a claim was verified.</p>
+	<div class="phone">
+		<div class="answer">
+			<p>Go 1.24 is the current stable release<span class="cite"><svg class="tick"><use href="#cc"/></svg>go.dev</span>, and it ships with generic type aliases and a faster map implementation<span class="cite">Go Blog</span>.</p>
+		</div>
+		<div class="sources">
+			<button class="toggle" onclick="this.classList.toggle('open')"><span class="count">7</span><span>Sources</span><svg class="chev" width="12" height="12"><use href="#chev"/></svg></button><span class="info">ⓘ</span>
+			<div class="chips">
+				<div class="chip"><span class="idx">1</span><span class="ct"><b><svg class="tick"><use href="#cc"/></svg>Go Release History</b><span>go.dev</span></span></div>
+				<div class="chip"><span class="idx">2</span><span class="ct"><b><svg class="tick"><use href="#cc"/></svg>Go 1.24 is released</b><span>go.dev</span></span></div>
+				<div class="chip"><span class="idx">3</span><span class="ct"><b>Go 1.24 Release Notes</b><span>tip.golang.org</span></span></div>
+				<div class="chip"><span class="idx">4</span><span class="ct"><b>Swiss tables in Go 1.24</b><span>cockroachlabs.com</span></span></div>
+				<div class="chip"><span class="idx">5</span><span class="ct"><b>What's new in Go 1.24?</b><span>reddit.com</span></span></div>
+				<div class="chip"><span class="idx">6</span><span class="ct"><b>Generic type aliases</b><span>github.com</span></span></div>
+				<div class="chip"><span class="idx">7</span><span class="ct"><b>Download and install</b><span>go.dev</span></span></div>
+			</div>
+		</div>
+	</div>
+	<p class="hint">Baseline. Note the 7 chips tell you nothing about <i>which</i> Polaris actually read.</p>
+</section>
+
+<!-- ============ B ============ -->
+<section class="option b">
+	<h2>B · Bibliography</h2>
+	<p class="blurb">Reads like the end of an article. Numbered rows, full titles that wrap instead of truncating, quiet meta line (domain · read length). Closest to "well-typeset reading surface."</p>
+	<div class="phone">
+		<div class="answer">
+			<p>Go 1.24 is the current stable release<span class="cite"><svg class="tick"><use href="#cc"/></svg>go.dev</span>, and it ships with generic type aliases and a faster map implementation<span class="cite">Go Blog</span>.</p>
+		</div>
+		<div class="sources">
+			<button class="head" onclick="this.classList.toggle('open')"><h3>Sources</h3><small>7 · 4 read · 2 checked ▾</small></button>
+			<ol>
+				<li><span class="n">1</span><div><div class="t"><svg class="tick"><use href="#cc"/></svg>Go Release History</div><div class="m">go.dev<i>·</i>3 min read</div></div></li>
+				<li><span class="n">2</span><div><div class="t"><svg class="tick"><use href="#cc"/></svg>Go 1.24 is released</div><div class="m">go.dev<i>·</i>4 min read</div></div></li>
+				<li><span class="n">3</span><div><div class="t">Go 1.24 Release Notes</div><div class="m">tip.golang.org<i>·</i>12 min read</div></div></li>
+				<li><span class="n">4</span><div><div class="t">Swiss tables in Go 1.24: faster maps and what it means for your workload</div><div class="m">cockroachlabs.com<i>·</i>9 min read</div></div></li>
+				<li><span class="n">5</span><div><div class="t">What's new in Go 1.24?</div><div class="m">reddit.com</div></div></li>
+				<li><span class="n">6</span><div><div class="t">Generic type aliases</div><div class="m">github.com</div></div></li>
+				<li><span class="n">7</span><div><div class="t">Download and install</div><div class="m">go.dev</div></div></li>
+			</ol>
+		</div>
+	</div>
+	<p class="hint">Hairline rule instead of a card; serif only on the heading, matching the "serif for headings only" rule in app.css.</p>
+</section>
+
+<!-- ============ C ============ -->
+<section class="option c">
+	<h2>C · Strip + bottom sheet</h2>
+	<p class="blurb">One compact row under the answer: overlapping domain tiles + "7 sources · 2 checked". Tap opens a bottom sheet — a thumb-reachable list that doesn't push the thread around.</p>
+	<div class="phone" id="cphone">
+		<div class="answer">
+			<p>Go 1.24 is the current stable release<span class="cite"><svg class="tick"><use href="#cc"/></svg>go.dev</span>, and it ships with generic type aliases and a faster map implementation<span class="cite">Go Blog</span>.</p>
+			<p>Upgrading is a drop-in for most modules; the only breaking-adjacent change is stricter vet checks.</p>
+		</div>
+		<button class="strip" onclick="document.getElementById('cphone').classList.add('open')">
+			<span class="stack">
+				<span class="mono" style="--hue:oklch(78% .1 150)">go</span>
+				<span class="mono" style="--hue:oklch(78% .1 80)">tg</span>
+				<span class="mono" style="--hue:oklch(78% .1 20)">cr</span>
+				<span class="mono" style="--hue:oklch(78% .1 40)">r</span>
+			</span>
+			<span class="lbl">7 sources<small>4 read · 2 checked</small></span>
+			<span class="go">›</span>
+		</button>
+		<div class="scrim" onclick="document.getElementById('cphone').classList.remove('open')"></div>
+		<div class="sheet">
+			<div class="grab"></div>
+			<h3>Sources</h3>
+			<div class="sub">4 pages read in full · 3 from search results</div>
+			<div class="row"><span class="mono" style="--hue:oklch(78% .1 150)">go</span><span class="tx"><b>Go Release History</b><span>go.dev · 3 min read</span></span><svg class="tick lg"><use href="#cc"/></svg></div>
+			<div class="row"><span class="mono" style="--hue:oklch(78% .1 150)">go</span><span class="tx"><b>Go 1.24 is released</b><span>go.dev · 4 min read</span></span><svg class="tick lg"><use href="#cc"/></svg></div>
+			<div class="row"><span class="mono" style="--hue:oklch(78% .1 80)">tg</span><span class="tx"><b>Go 1.24 Release Notes</b><span>tip.golang.org · 12 min read</span></span></div>
+			<div class="row"><span class="mono" style="--hue:oklch(78% .1 20)">cr</span><span class="tx"><b>Swiss tables in Go 1.24</b><span>cockroachlabs.com · 9 min read</span></span></div>
+			<div class="row"><span class="mono" style="--hue:oklch(78% .1 40)">r</span><span class="tx"><b>What's new in Go 1.24?</b><span>reddit.com</span></span></div>
+			<div class="row"><span class="mono" style="--hue:oklch(78% .02 250)">gh</span><span class="tx"><b>Generic type aliases</b><span>github.com</span></span></div>
+			<div class="row"><span class="mono" style="--hue:oklch(78% .1 150)">go</span><span class="tx"><b>Download and install</b><span>go.dev</span></span></div>
+		</div>
+	</div>
+	<p class="hint">Click the strip to open; click the dimmed area to close. Sheet slides over the thread, so nothing reflows.</p>
+</section>
+
+<!-- ============ D ============ -->
+<section class="option d">
+	<h2>D · Read vs. seen</h2>
+	<p class="blurb">Leans into "sourcing is the product." The summary bar shows how many sources Polaris actually opened (bright) vs. only saw in search results (dim). Expanded, read pages get full cards; the rest collapse to a quiet line of links.</p>
+	<div class="phone">
+		<div class="answer">
+			<p>Go 1.24 is the current stable release<span class="cite"><svg class="tick"><use href="#cc"/></svg>go.dev</span>, and it ships with generic type aliases and a faster map implementation<span class="cite">Go Blog</span>.</p>
+		</div>
+		<div class="sources">
+			<button class="sum" onclick="this.classList.toggle('open')">
+				<span class="bar"><i class="read ok"></i><i class="read ok"></i><i class="read"></i><i class="read"></i><i></i><i></i><i></i></span>
+				<span>4 read</span><small>· 3 skimmed</small><span class="sp"></span><small>▾</small>
+			</button>
+			<div class="body">
+				<div class="grp">Read in full</div>
+				<div class="card full"><span class="mono" style="--hue:oklch(78% .1 150)">go</span><div><b>Go Release History</b><span>go.dev · 3 min read</span></div><span class="pill v"><svg class="tick lg" style="width:10px;height:10px"><use href="#cc"/></svg>checked</span></div>
+				<div class="card full"><span class="mono" style="--hue:oklch(78% .1 150)">go</span><div><b>Go 1.24 is released</b><span>go.dev · 4 min read</span></div><span class="pill v"><svg class="tick lg" style="width:10px;height:10px"><use href="#cc"/></svg>checked</span></div>
+				<div class="card full"><span class="mono" style="--hue:oklch(78% .1 80)">tg</span><div><b>Go 1.24 Release Notes</b><span>tip.golang.org · 12 min read</span></div></div>
+				<div class="card full"><span class="mono" style="--hue:oklch(78% .1 20)">cr</span><div><b>Swiss tables in Go 1.24</b><span>cockroachlabs.com · 9 min read</span></div></div>
+				<div class="grp">Skimmed from search</div>
+				<div class="seen">
+					<a style="--hue:oklch(78% .1 40)"><span class="dot"></span>What's new in Go 1.24? — reddit</a>
+					<a style="--hue:oklch(78% .02 250)"><span class="dot"></span>Generic type aliases — github</a>
+					<a style="--hue:oklch(78% .1 150)"><span class="dot"></span>Download and install — go.dev</a>
+				</div>
+			</div>
+		</div>
+	</div>
+	<p class="hint">Blue bars = read and a claim was checked against it. Gold = read. Dim = only seen in results.</p>
+</section>
+
+</div>
+
+<p class="hint" style="max-width:1400px;margin:var(--space-2xl) auto 0">
+	<b>Data notes.</b> A: no new data. B &amp; C use <code>words</code>/<code>pages</code> for "N min read" (already on <code>Citation</code>). D additionally needs the UI to group on <code>opened</code>. C and D show a monogram tile where a favicon would go — <code>Citation</code> has no favicon today, so a real one would need either a server-side fetch or the monogram as the permanent design (hue derived from a hash of the hostname).
+</p>
+
+</body>
+</html>
