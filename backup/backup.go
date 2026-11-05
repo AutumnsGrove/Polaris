@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -216,6 +217,41 @@ func Prune(dir string, retain time.Duration) ([]string, error) {
 	return deleted, nil
 }
 
+// runInProgress is set for the whole of one backup run (create → mirror →
+// prune) and is part of gateway's /api/busy signal (handleServerBusy), which
+// the Docker update watcher polls before it --force-recreates the container.
+//
+// Both halves of a run need covering, and for different reasons. A kill during
+// the mirror strands a .r2-upload-*.gz temp in the data volume that List and
+// Prune both skip forever. A kill during Create is worse: VACUUM INTO writes
+// straight to the destination path, so the result is a partially-written file
+// whose name List *does* accept as a real backup — one that could later be
+// mirrored or restored as if it were complete. The watcher caps its wait at
+// 5 minutes (compose/watcher/update.sh's WAIT_MAX_SECONDS), comfortably longer
+// than the ~20-30s a real run takes on the potato.
+//
+// Package-level rather than a gateway.Server field because RunScheduler is
+// launched from cmd/run.go with no Server handle at all — same reason
+// gateway/embeddings_routes.go's embeddingBackfillRunning is package-level.
+var runInProgress atomic.Bool
+
+// TryStart marks a backup run as in progress. ok is false when one is already
+// running, which is what serializes the two callers that can create and mirror
+// a backup — RunScheduler and gateway's on-demand POST /api/backup — instead
+// of letting them race over the same VACUUM INTO destination (fileName has
+// one-second granularity, so two runs in the same second would target the same
+// path). Callers must call the returned release func when the run finishes.
+func TryStart() (release func(), ok bool) {
+	if !runInProgress.CompareAndSwap(false, true) {
+		return nil, false
+	}
+	return func() { runInProgress.Store(false) }, true
+}
+
+// Busy reports whether a backup run is in progress — see runInProgress for why
+// this has to be visible to /api/busy in the first place.
+func Busy() bool { return runInProgress.Load() }
+
 // RunScheduler backs up dbPath into dir roughly once a day, pruning
 // anything older than retain each time, until done is closed. Meant to
 // run as a background goroutine for the life of the server process —
@@ -239,6 +275,16 @@ func Prune(dir string, retain time.Duration) ([]string, error) {
 // unchanged whether or not R2 is reachable.
 func RunScheduler(done <-chan struct{}, dbPath, dir string, retain time.Duration, r2Client *r2.Client) {
 	runOnce := func() {
+		release, ok := TryStart()
+		if !ok {
+			// An on-demand `polaris backup create` is already running. Skip this
+			// tick rather than racing it — the next one is an hour away, and the
+			// run in flight is taking a backup of the same database anyway.
+			log.Info("skipping scheduled backup: another backup run is already in progress")
+			return
+		}
+		defer release()
+
 		infos, err := List(dir)
 		if err != nil {
 			log.Warn("listing existing backups failed, skipping scheduled backup", "err", err)

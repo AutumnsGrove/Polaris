@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"polaris/backup"
 	"polaris/llm"
 	"polaris/prompts"
 	"polaris/store"
@@ -150,7 +151,9 @@ func (s *Server) handleListConstellationStars(w http.ResponseWriter, r *http.Req
 // (see startDailyGenerationIfIdle's doc comment), all of it lost the
 // instant the container recreates out from under it. Comet's pipeline, and the
 // blocking classify/backfill admin endpoints (via claimCometRun), hold
-// cometGenerationRunning for the same reason.
+// cometGenerationRunning for the same reason, and an in-progress backup run
+// (create → mirror → prune) holds backup.runInProgress — killing that strands
+// a partial snapshot or a half-uploaded mirror, see that flag's own comment.
 func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 	constellationBusy, err := s.db.HasInFlightShootingStarRun()
 	if err != nil {
@@ -160,8 +163,9 @@ func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 	}
 	// embeddingBackfillRunning counts too — see its own doc comment: an
 	// update recreating the container mid-backfill cuts the run off rather
-	// than draining it.
-	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load() || s.cometGenerationRunning.Load() || embeddingBackfillRunning.Load()})
+	// than draining it. Same for backup.Busy, which covers both the create
+	// and the R2 mirror.
+	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load() || s.cometGenerationRunning.Load() || embeddingBackfillRunning.Load() || backup.Busy()})
 }
 
 // handleSearchConstellationStars backs the Library's search box — the

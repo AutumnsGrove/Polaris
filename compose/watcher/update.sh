@@ -275,9 +275,10 @@ fi
 timeout 300 docker pull ghcr.io/autumnsgrove/polaris-sandbox:latest 2>&1 | tee "$CMD_LOG" || \
 	echo "code_exec sandbox image pull failed (non-fatal, continuing update): $(truncate_detail "$(cat "$CMD_LOG")")" >&2
 
-# Wait for any in-flight Constellation shooting-star run, chat turn, or
-# Pulsar Daily generation to finish before recreating the container out
-# from under it — issue #57 started this for just the shooting-star case
+# Wait for any in-flight Constellation shooting-star run, chat turn, Pulsar
+# Daily generation, embedding backfill, Comet job, or backup run to finish
+# before recreating the container out from under it — issue #57 started this
+# for just the shooting-star case
 # (caught live: an update landed exactly mid-batch, only harmless because
 # the batch happened to finish in the few seconds before the recreate
 # actually ran); extended to cover an ordinary chat turn and a Daily
@@ -301,10 +302,10 @@ while true; do
 	*) break ;;
 	esac
 	if [ "$waited" -ge "$WAIT_MAX_SECONDS" ]; then
-		echo "a Constellation run, chat turn, or Daily generation is still in progress after ${WAIT_MAX_SECONDS}s — proceeding with the restart anyway" >&2
+		echo "a Constellation run, chat turn, Daily generation, embedding backfill, Comet job, or backup is still in progress after ${WAIT_MAX_SECONDS}s — proceeding with the restart anyway" >&2
 		break
 	fi
-	echo "a Constellation run, chat turn, or Daily generation is in progress, waiting for it to finish before restarting (${waited}s/${WAIT_MAX_SECONDS}s)..."
+	echo "a Constellation run, chat turn, Daily generation, embedding backfill, Comet job, or backup is in progress, waiting for it to finish before restarting (${waited}s/${WAIT_MAX_SECONDS}s)..."
 	sleep "$WAIT_INTERVAL"
 	waited=$((waited + WAIT_INTERVAL))
 done
