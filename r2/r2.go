@@ -6,9 +6,24 @@
 // object), and this project already prefers small, hand-rolled HTTP clients
 // for third-party APIs over pulling in their SDKs — see brave/, parallel/,
 // tavily/. See backup.go's Mirror/PruneRemote/Fetch for how this is used.
+//
+// Objects are stored gzip-compressed: Upload compresses on the way out and
+// Download decompresses on the way in, transparently to callers, who always
+// hand Upload and receive from Download a plain file. R2 does no compression
+// at rest of its own, and a VACUUM INTO snapshot of Polaris's database
+// compresses to roughly 40% of its raw size (measured against a live
+// production backup: 108.7MB -> 44.9MB at gzip's default level), so uploading
+// raw bytes is pure waste of bucket space and of the potato's uplink on every
+// daily backup. Keys are deliberately left unchanged (polaris-<stamp>.db, no
+// .gz suffix) so backup.parseTime, PruneRemote, and `backup list --remote`
+// keep working untouched — and so the plain objects already in the bucket
+// from before compression existed stay readable: Download sniffs for gzip's
+// magic bytes rather than assuming, see its own comment.
 package r2
 
 import (
+	"bufio"
+	"compress/gzip"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -19,6 +34,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -102,30 +118,59 @@ func newClient(accountID, accessKeyID, secretAccessKey, bucket, endpoint string)
 // JSON tags match backup.Info's naming convention — gateway/backup.go's
 // remote-list endpoint serializes these directly.
 type Object struct {
-	Key          string    `json:"key"`
+	Key string `json:"key"`
+	// SizeBytes is the object's stored size. For backups written by
+	// Upload that's the *compressed* size, so it's noticeably smaller
+	// than the matching local file's — `backup list --remote` compares
+	// this against `backup list`, and the mismatch is expected, not a
+	// truncated upload.
 	SizeBytes    int64     `json:"size_bytes"`
 	LastModified time.Time `json:"last_modified"`
 }
 
-// Upload PUTs the file at path into the bucket under key, streaming
-// directly from disk rather than reading the whole backup into memory
-// first.
+// Temp files gzipToTemp writes, and therefore the names Upload is allowed to
+// sweep up as its own leftovers (see sweepStaleTemps).
+const (
+	tempPrefix = ".r2-upload-"
+	tempSuffix = ".gz"
+)
+
+// staleTempAge is how long a temp file has to sit untouched before Upload
+// treats it as abandoned by a dead process rather than still in flight.
+// Compression of the biggest backup this project produces takes seconds, so an
+// hour is enormously conservative.
+const staleTempAge = time.Hour
+
+// Upload gzips the file at path and PUTs the result into the bucket under
+// key. It streams from (and to) disk rather than reading the whole backup
+// into memory, which matters on the potato: a backup is ~100MB there and the
+// SBC has 2GB of RAM total, shared with everything else.
 func (c *Client) Upload(ctx context.Context, key, path string) error {
-	f, err := os.Open(path)
+	sweepStaleTemps(filepath.Dir(path))
+
+	gzPath, gzSize, err := gzipToTemp(path)
 	if err != nil {
-		return fmt.Errorf("opening %s: %w", path, err)
+		return err
+	}
+	defer os.Remove(gzPath)
+
+	f, err := os.Open(gzPath)
+	if err != nil {
+		return fmt.Errorf("opening compressed %s: %w", gzPath, err)
 	}
 	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return fmt.Errorf("stat'ing %s: %w", path, err)
-	}
 
 	req, err := c.newRequest(ctx, http.MethodPut, c.objectPath(key), nil, f)
 	if err != nil {
 		return err
 	}
-	req.ContentLength = fi.Size()
+	req.ContentLength = gzSize
+	// Unsigned on purpose: canonicalizeHeaders only signs host plus the two
+	// x-amz-* headers, and S3/R2 don't require every header to be signed.
+	// This is purely a hint for anyone reading the bucket with wrangler/curl/
+	// rclone — Download decides from the bytes, not from this header, so an
+	// object stored before compression existed still reads back correctly.
+	req.Header.Set("Content-Encoding", "gzip")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -139,9 +184,10 @@ func (c *Client) Upload(ctx context.Context, key, path string) error {
 	return nil
 }
 
-// Download GETs the object at key into a file at destPath, streaming
-// straight to disk for the same reason Upload streams from it. destPath's
-// parent directory must already exist.
+// Download GETs the object at key into a file at destPath, decompressing it
+// if it's gzip-compressed, and streaming straight to disk for the same
+// reason Upload streams from it. destPath's parent directory must already
+// exist.
 func (c *Client) Download(ctx context.Context, key, destPath string) error {
 	req, err := c.newRequest(ctx, http.MethodGet, c.objectPath(key), nil, nil)
 	if err != nil {
@@ -158,12 +204,36 @@ func (c *Client) Download(ctx context.Context, key, destPath string) error {
 		return fmt.Errorf("r2 download failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
+	// Whether this object is compressed is decided from the bytes, not from
+	// the Content-Encoding we stored or from a filename suffix: the bucket
+	// still holds plain objects from before Upload gzipped anything, so
+	// either shape has to work indefinitely. gzip's two-byte magic (0x1f
+	// 0x8b) can't collide with a real SQLite file, which starts with
+	// "SQLite format 3\x00". Note that net/http may already have silently
+	// decompressed the body (it auto-decompresses a response carrying
+	// Content-Encoding: gzip, because it adds its own Accept-Encoding), in
+	// which case the peek below just sees a plain file and copies it — the
+	// same path a legacy object takes.
+	br := bufio.NewReader(resp.Body)
+	var src io.Reader = br
+	if magic, err := br.Peek(2); err == nil && magic[0] == 0x1f && magic[1] == 0x8b {
+		zr, err := gzip.NewReader(br)
+		if err != nil {
+			return fmt.Errorf("reading compressed %s: %w", key, err)
+		}
+		defer zr.Close()
+		src = zr
+	}
+
 	tmp := destPath + ".downloading"
 	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", tmp, err)
 	}
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	// A gzip stream's checksum is verified only when it's read through to
+	// EOF, which io.Copy does — a truncated or corrupted object surfaces
+	// here as an error rather than as a half-valid .db.
+	if _, err := io.Copy(out, src); err != nil {
 		out.Close()
 		os.Remove(tmp)
 		return fmt.Errorf("writing %s: %w", tmp, err)
@@ -183,6 +253,88 @@ func (c *Client) Download(ctx context.Context, key, destPath string) error {
 		return fmt.Errorf("finalizing download: %w", err)
 	}
 	return nil
+}
+
+// gzipToTemp compresses path into a temp file in the same directory and
+// returns that file's path and compressed size. Callers are responsible for
+// removing it.
+//
+// Same-directory is deliberate (one filesystem, and the backing volume is
+// already sized for a backups folder) and so is the dot-prefixed name: it
+// must not look like a polaris-YYYYMMDD-HHMMSS.db backup, or backup.List
+// would report a half-written temp file as a recoverable backup.
+//
+// Compressing to a file rather than streaming through an io.Pipe is the
+// consequence of R2 needing a real Content-Length on the PUT while gzip's
+// output length isn't known until its stream ends. The extra write+read is
+// of the *compressed* size (~40MB for a ~100MB backup) and is far cheaper
+// than buffering the whole thing in memory.
+func gzipToTemp(path string) (string, int64, error) {
+	in, err := os.Open(path)
+	if err != nil {
+		return "", 0, fmt.Errorf("opening %s: %w", path, err)
+	}
+	defer in.Close()
+
+	tmp, err := os.CreateTemp(filepath.Dir(path), tempPrefix+"*"+tempSuffix)
+	if err != nil {
+		return "", 0, fmt.Errorf("creating temp file for %s: %w", path, err)
+	}
+	zw := gzip.NewWriter(tmp)
+	if _, err := io.Copy(zw, in); err != nil {
+		zw.Close()
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", 0, fmt.Errorf("compressing %s: %w", path, err)
+	}
+	if err := zw.Close(); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", 0, fmt.Errorf("finishing compressed %s: %w", path, err)
+	}
+	fi, err := tmp.Stat()
+	if err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", 0, fmt.Errorf("stat'ing compressed %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return "", 0, fmt.Errorf("closing compressed %s: %w", tmp.Name(), err)
+	}
+	return tmp.Name(), fi.Size(), nil
+}
+
+// sweepStaleTemps removes abandoned compression temp files from dir.
+//
+// It exists because there is a real way for one to be left behind: the Docker
+// update watcher recreates the container with --force-recreate, which kills
+// this process outright rather than draining it, and nothing holds a busy flag
+// for a backup being mirrored (handleServerBusy only covers chat turns,
+// shooting-star runs, Daily/Comet generations, and the embedding backfill). A
+// killed upload therefore strands a ~40MB file in the data volume that
+// backup.List and backup.Prune both skip forever — List because the name isn't
+// one of ours, Prune because it only deletes names List returned. Best-effort
+// by design: this is janitorial, and a failure here must never fail the upload
+// it's preceding.
+func sweepStaleTemps(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasPrefix(name, tempPrefix) || !strings.HasSuffix(name, tempSuffix) {
+			continue
+		}
+		fi, err := e.Info()
+		// Only stale ones: a file this fresh may be a concurrent Upload's
+		// in-flight compression, which must not be deleted out from under it.
+		if err != nil || time.Since(fi.ModTime()) < staleTempAge {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, name))
+	}
 }
 
 // Delete removes the object at key. A key that doesn't exist is not an

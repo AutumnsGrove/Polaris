@@ -211,6 +211,13 @@ backups keep working exactly as before. Use a bucket dedicated to this and a sco
 (Object Read & Write on that bucket only) rather than an account-wide key —
 [creating one](https://developers.cloudflare.com/r2/api/tokens/).
 
+Mirrored objects are gzip-compressed inside the bucket, at roughly 40% of the local file's size,
+and decompressed automatically on the way back out — including for objects mirrored before that
+compression existed, so nothing needs re-uploading. The object name is still the backup's own
+filename (`polaris-YYYYMMDD-HHMMSS.db`, no `.gz`). One consequence worth expecting:
+`backup list --remote` reports the *stored* size, so its numbers will look a few times smaller
+than `backup list`'s for the same day. That's compression, not a truncated upload.
+
 ```bash
 polaris backup list --remote               # what's actually recoverable from R2, not local disk
 polaris backup restore-remote <name>       # disaster recovery: download from R2, then restore
