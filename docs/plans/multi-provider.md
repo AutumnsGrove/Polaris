@@ -2,11 +2,13 @@
 
 **Added 2026-11-04.**
 
-**Status: plan only, no Polaris code written, and the swap is on hold. Policy decisions are
-settled and the model scope is narrowed to `deepseek` (+ `mimo` as a follow-up) — see §12. The Nova
-prerequisite, [AutumnsGrove/nova#59](https://github.com/AutumnsGrove/nova/issues/59), **landed in
-Nova v0.3.4 (2026-11-05)**, so the blocker is gone; Polaris is still pinned at v0.2.0 and nothing
-here has started. Re-checked against the shipped Nova API on 2026-11-05 — the wire, routing,
+**Status: Nova prerequisite landed and Polaris is pinned at v0.3.4 (2026-11-06) —
+`go build`/`go vet` clean, `go test ./...` green both with the Nova loop and with
+`POLARIS_NOVA_LOOP=0`, parity harness green. No routing code written yet; the swap itself is
+still on hold. Policy decisions are settled and the model scope is narrowed to `deepseek`
+(+ `mimo` as a follow-up) — see §12. The Nova prerequisite,
+[AutumnsGrove/nova#59](https://github.com/AutumnsGrove/nova/issues/59), **landed in
+Nova v0.3.4 (2026-11-05)**, so the blocker is gone. Re-checked against the shipped Nova API on 2026-11-05 — the wire, routing,
 money, meter, and catalog assumptions all moved at once. Sections carrying an "adjusted for
 v0.3.4" note are the ones that changed; §3's third column is the map.**
 
@@ -352,13 +354,15 @@ but it is out of scope here and is not needed for the subscription to pay off.
 - **Phase 1 — Nova (nova#59).** **Done, 2026-11-05, shipped in v0.3.4.** `provider/route`,
   `provider/chat.Complete`, the `Usage` allowance fields, `opencode.FetchMeters`/`PeriodEnd`, the
   catalog picker fields, and the `testkit` Go double all exist — see §4.
-- **Phase 2 — Polaris plumbing, `deepseek` only.** Starts with `go get
-  github.com/AutumnsGrove/nova@v0.3.4`, which is low-risk here: the v0.3.4 upgrade notes are
-  additive (`Usage`/`Response`/`Model` fields), and v0.3.0's breaking notes are `bundled`/`tui`
-  only (`bundled/ask` and the `ui_request` id are TUI/protocol concerns Polaris does not consume) —
-  Polaris imports `agent`, `message`, `proto`, `provider`, `provider/openrouter`, `tool`, and the
-  v0.3.0 changes there are additive (`agent.Config.Embed`, `tool.Context.Embed`). `agent/nova_parity_test.go` is the check that it really is
-  byte-identical. Then: the `providers` config block + `go_model` + `model_backends` (validated in
+- **Phase 2 — Polaris plumbing, `deepseek` only.** ~~Starts with `go get
+  github.com/AutumnsGrove/nova@v0.3.4`~~ **Done 2026-11-06**: the bump was low-risk as
+  predicted — the v0.3.4 upgrade notes are additive (`Usage`/`Response`/`Model` fields), and
+  v0.3.0's breaking notes are `bundled`/`tui` only (`bundled/ask` and the `ui_request` id are
+  TUI/protocol concerns Polaris does not consume) — Polaris imports `agent`, `message`,
+  `proto`, `provider`, `provider/openrouter`, `tool`, and the v0.3.0 changes there are additive
+  (`agent.Config.Embed`, `tool.Context.Embed`). `go build`/`go vet` clean with no code
+  changes required; `agent/nova_parity_test.go` green, so the wire really is byte-identical.
+  Next: the `providers` config block + `go_model` + `model_backends` (validated in
   `config.Load`, §5); **the `ModelID` and `RegisterModel` wiring (§8), before anything else routes
   — without it every call keeps using the default provider and looks like it works**;
   `llm.Client` becomes a thin adapter over Nova (then deleted once no caller remains);
