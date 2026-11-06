@@ -1,0 +1,13 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                    score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95   cost    
+1   parallel/decisions-fast  78.4   72.3-84.0  78.2       94%      90%    95%      85%    1%         0%   697ms  1.0s  $0.025  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  parallel/decisions-fast  ████░░                          |         p50 697ms  p95 1.0s  
+
+Tracks scoring 25+ points below the model's own headline:
+  parallel/decisions-fast: locale 40, premise 20

@@ -6,10 +6,10 @@ person?", "is the user asking for something deep?") and quietly adjusts how the 
 decision model sits in front of every message, so it has to be **fast, cheap, and right**, in that
 order.
 
-This page records a full run of `polaris oracle-bench` across twenty-seven candidate models, and how to
+This page records a full run of `polaris oracle-bench` across twenty-eight candidate models, and how to
 repeat it.
 
-<p align="center"><img src="scorecard.svg" alt="Scorecard: twenty-seven decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
+<p align="center"><img src="scorecard.svg" alt="Scorecard: twenty-eight decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
 
 ## The short version
 
@@ -91,6 +91,15 @@ repeat it.
   every call to upstream 429s on 2026-10-19 and was re-run once the limit cleared on 2026-10-26. It is cheap
   and fast but 11 points behind Jev, mostly on focus actions (70%) and `premise` (36); see
   [Perplexity Decider Flash v1.2](#perplexity-decider-flash-v12).
+- **Parallel's Decisions Fast scores 78.4, nine points behind Jev, and is the one model here that researches
+  the live web before answering.** It is compatible and quick in the middle (all 23 questions in one request,
+  697ms median, 1.0s p95, 99.8% of calls under 2.5s, no refusals, no errors) but its tail is the worst in the
+  table: the two calls that missed the cutoff took **14.9s**, right at the bench's own 15s limit. Its weak
+  families are `premise` (20) and `locale` (40), and it is the only row whose numbers are not reproducible,
+  because it answers from the state *plus whatever the web says today*. A model that runs its own research
+  also concludes the assistant doesn't need any: it told Oracle "no fresh data needed" on the
+  sertraline-cold-turkey and Tylenol-plus-NyQuil cases, where the label says otherwise. Its `$0.000` is not
+  a free tier — see [Parallel Decisions Fast](#parallel-decisions-fast-web-grounded).
 - **Paid Mercury Decide could not be benchmarked.** Upstream HTTP 429s hit 96% of its calls, so it is
   disqualified for this run. It is the same build as the free tier, which scored 89.0, so nothing is missing;
   see [Mercury](#mercury-decide).
@@ -99,13 +108,13 @@ Recommendation: **keep `typesafe/jev-1.14` pinned.** Details and caveats below.
 
 ## Results
 
-Runs of 2026-10-16, 2026-10-19, 2026-10-22, 2026-10-25, 2026-10-26, 2026-10-27, 2026-10-30 and 2026-11-04 (twice for Reflex): 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
+Runs of 2026-10-16, 2026-10-19, 2026-10-22, 2026-10-25, 2026-10-26, 2026-10-27, 2026-10-30, 2026-11-04 (twice for Reflex) and 2026-11-06: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported
 separately), 3 repeats each, 2 calls in flight, weights `a6cbc140bd53`. The raw leaderboards are saved in
-[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in fifteen
+[`runs/`](runs/); this table is generated from them ([`results.md`](results.md)). The models ran in sixteen
 invocations with identical settings (except the Drex run, which used concurrency 1) (the first nine models, then Luna, then D1 Ultra, Classify 1 and
 Solar Flash, then on 2026-10-19 Perplexity's Decider v1.2 and Flash v1.2, then on 2026-10-22 Baseten's
 Mammoth 1 and, separately, Elephant 1, each paced at one call per 3.5s because they are `:free` models, then on 2026-10-25 Respan's
-Span-02, then on 2026-10-26 Nace's three Drex models and, separately, Together's Tev1 and Kev, Cloudflare's Clef Omni, and a re-run of Perplexity's Flash v1.2 after its first attempt hit upstream 429s, then on 2026-10-27 Liquid's D1.1, then on 2026-10-30 Baseten's Joey 1, then on 2026-11-04 Morph's Reflex — twice, the second run to capture per-call cost and token accounting, which is the row above; see
+Span-02, then on 2026-10-26 Nace's three Drex models and, separately, Together's Tev1 and Kev, Cloudflare's Clef Omni, and a re-run of Perplexity's Flash v1.2 after its first attempt hit upstream 429s, then on 2026-10-27 Liquid's D1.1, then on 2026-10-30 Baseten's Joey 1, then on 2026-11-04 Morph's Reflex — twice, the second run to capture per-call cost and token accounting, which is the row above, then on 2026-11-06 Parallel's Decisions Fast; see
 [Reproduce it](#reproduce-it)); the report command refuses to merge runs that differ in cases, repeats or
 weights, and in concurrency unless given `--allow-concurrency-mismatch`, which marks those models' rows (†). The two earlier files in `runs/` (2026-10-15) used an older, smaller case bank and weights, so
 they are not comparable to these runs.
@@ -128,15 +137,16 @@ they are not comparable to these runs.
 | 14 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
 | 15 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
 | 16 | `liquid/d1` § | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 17 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 18 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
-| 19 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 20 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
-| 21 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
-| 22 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
-| 23 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
-| 24 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
-| 25 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| 17 | `parallel/decisions-fast` ‡ | **78.4** (72.3-84.0) | 94% | 95% | 85% | 1% | 0% | 697ms | 1.0s | 99.8% | $0.000 |
+| 18 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 19 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
+| 20 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 21 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 22 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
+| 23 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
+| 24 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
+| 25 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 26 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.175 |
 | x | `inception/mercury-decide` § | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 
@@ -153,13 +163,20 @@ both requests. Drex 1.5 has no cap and ran as a single request. See
 [Models with a question cap](#models-with-a-question-cap). Drex 2.0's 22% errors are
 upstream `429 Model busy` responses (details in that section), which is why it is disqualified.
 
+‡ `parallel/decisions-fast`'s `$0.000` is what OpenRouter actually billed, not a free tier: every call
+reported `cost: 0` with all its `cost_details` zero, while the catalog lists $0.130 per million input
+tokens. At that price its measured 7,134 input tokens per call would be about **$0.93 per 1,000 turns**,
+level with Reflex and second only to Clef Omni. So its cost cell is "not billed", not "free" — see
+[Parallel Decisions Fast](#parallel-decisions-fast-web-grounded).
+
 *Under 2.5s* is the share of all calls that returned an answer inside Oracle's real timeout
 (`oracleTimeout` in `gateway/oracle.go`); a call over that is dropped and the turn runs without Oracle.
 *$/1k turns* is the decision-call cost for 1,000 Oracle turns (one call each). Trigger and focus
 describe what production's rules *did* with the answer, not just the raw answer. The whole run cost
-**$6.67** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
+**$6.70** in total ($1.22 for the first nine models, $0.51 for Luna, $1.18 for the next three, $0.09 for
 Perplexity's two new models, $0.01 each for Mammoth and Elephant, which are free and cost only their
-judging, $0.06 for Span-02, $0.58 for the three Drex models, $0.38 for Tev and Kev, and $0.72 for Clef Omni, $0.06 for the Flash re-run, $0.10 for D1.1, $0.08 for Joey 1, and $1.69 for Reflex's two runs), of which about $0.43 was the judge.
+judging, $0.06 for Span-02, $0.58 for the three Drex models, $0.38 for Tev and Kev, and $0.72 for Clef Omni, $0.06 for the Flash re-run, $0.10 for D1.1, $0.08 for Joey 1, $1.69 for Reflex's two runs, and $0.02 for Parallel's Decisions Fast, where the provider reported zero
+cost per call so the judge was the entire bill), of which about $0.46 was the judge.
 
 ### Overall quality
 
@@ -268,7 +285,7 @@ actions, the contested-label cases, calibration, dangerous false nudges, and err
 
 <p align="center"><img src="metrics.svg" alt="Eight ranked panels, one per metric" width="860"></p>
 
-Two details worth knowing. Jev 1.14 is the **best of all twenty-seven models at focus actions (98%)**, which is the
+Two details worth knowing. Jev 1.14 is the **best of all twenty-eight models at focus actions (98%)**, which is the
 decision that changes what Oracle *does* rather than what it says. And every model but one keeps dangerous
 false nudges to about 1% or less. The exception is Solar Flash at 4% (14 of 391 opportunities), close to the 5%
 disqualification line.
@@ -301,6 +318,7 @@ Where a model is unusually weak (25+ points below its own overall score):
 - **Drex 2.0:** `depth` (26), `task` (15) and `ui` (11). Those are the families that lost the most calls to
   the provider's 429s (an errored call scores zero), so they say more about the errors than the model.
 - **Span-02:** none. Its lowest families are `clarify` (61) and `locale` (62), right at the 25-point line.
+- **Parallel Decisions Fast:** `premise` (20), `locale` (40), `private_person` (62) and `contested` (66).
 - **Clef:** `emotional` (42).
 - **Clef Omni:** `premise` (16).
 - **Luna:** `depth` (56), `emotional` (41) and `private_person` (48, mostly refusals).
@@ -361,6 +379,12 @@ Judged on the operator's stated priorities (speed first, then accuracy):
 11. **Skip D1, D1.1, the Clef models (Omni especially), Classify 1 and Solar Flash.** D1 and Clef are fast enough but lose 9 to 14
    points, mostly on focus actions; Classify 1 and Solar Flash lose 12 to 30 points, and Solar Flash also
    produces the most dangerous false nudges.
+12. **Skip Parallel's Decisions Fast**, and not only on score. At 78.4 it is 9.4 points behind Jev, its weak
+   families are `premise` and `locale`, and its two slowest calls in 885 took 14.9s against Jev's worst of
+   572ms. The bigger objection is structural: Oracle runs before every turn, so pinning this model would
+   send every message the operator types into a web-search pipeline, and would make Oracle's answers depend on
+   what the web says that day instead of on the message. See
+   [Parallel Decisions Fast](#parallel-decisions-fast-web-grounded).
 
 `jev.Model` and `oracleTimeout` were not changed by this run.
 
@@ -424,6 +448,60 @@ Read the split models with three caveats:
   different surface with a different response shape. Listed here only so a later catalog review does not
   rediscover it and queue a pointless run.
 
+### Parallel Decisions Fast (web-grounded)
+
+`parallel/decisions-fast` (build `parallel/decisions-fast-20261106`, released 2026-11-06) **scores 78.4**
+(72.3-84.0): 9.4 points behind Jev 1.14, well past the noise floor, so it is not a candidate. It is still the
+row worth reading here, because it is the only model in this table that does not answer from the message
+alone.
+
+**It researches the live web before answering.** Parallel's description says it reads the `state` you pass
+and then searches, and the API confirms it: a one-question probe against the state "what is the price of
+bitcoin right now" came back with **ten `url_citation` annotations** (Google Finance, bitcoin.org, Coinbase,
+Bitget, JM Bullion…) and 3,287 input tokens for a question about the message that needed none of that
+content. Every one of the bench's 885 calls carried a page of fetched material with it: **7,134 input
+tokens per call, against Jev's measured 4,788** for the identical 23 questions. That extra half of the
+payload is web content, paid as input tokens on every turn.
+
+Otherwise it is compatible as-is: it took all 23 questions in one request (the catalog allows up to 100, so
+no cap and no split), refused nothing, errored on nothing, and stayed inside Oracle's 2.5s cutoff on 883 of
+885 calls. The two that missed are the reason not to trust it, though: **14.92s and 14.93s**, the slowest
+calls in the whole table, close enough to the bench's own 15s limit that a longer research tail would have
+timed out outright. Jev's slowest call across the whole bank was 572ms, and its 95th percentile 189ms.
+
+What its weak families say is that the research gets in the way of reading the message:
+
+- **`premise` (20)** — 4 of its 13 premise cases answer `no` where the label wants `yes` (the knuckles, the
+  landlord deposit, the sky that isn't green at night, the glass-sagging follow-up), each with under half
+  its probability on the labeled answer (0.15 to 0.44). It is judging the world the web describes rather
+  than the belief in the user's message.
+- **`locale` (40)** — it fires the region/spelling nudge on "What is the minimum wage in Portland, Oregon
+  right now?", where the place is already stated and the label is `no`.
+- **`private_person` (62)** and **`contested` (66)** trail its own average by 15 points or more.
+- **A model that researches also thinks the assistant doesn't need to.** It delivered the "no fresh data
+  needed" hint on the sertraline-cold-turkey and Tylenol-plus-NyQuil cases, where the label is
+  `research: yes` — having just read the web, it concludes nothing more is required. That is the same
+  mechanism that makes it a poor fit for Oracle in principle: its job is to judge the message, and it keeps
+  doing someone else's job first.
+
+Two things to know before it could ever be pinned:
+
+- **It would send every message to a search pipeline.** Oracle runs before every turn, so this model in
+  production means every message the operator types goes into Parallel's live-web research, not just into a
+  classifier. The other 27 models see the message and the question set and nothing else. That is a product
+  decision disguised as a model choice.
+- **Its row is not reproducible, and its citations are currently thrown away.** Answers depend on today's
+  web, so this is a 2026-11-06 measurement, not a repeatable one — re-running the same 295 cases on another
+  day would give a different number in a way no other row here does. And `decisions.Response` has no field
+  for `annotations`, so neither the gateway nor the bench ever sees the citations the provider returns; if
+  this model were ever adopted, its sources would need decoding before they were of any use.
+
+Cost: OpenRouter billed **$0.000** for all 885 calls (every `usage.cost` and `cost_details` field came back
+zero), so the column marks it ‡ rather than reusing the free models' figure. At the catalog's $0.130 per
+million input tokens and its measured 7,134 tokens a call it would be about **$0.93 per 1,000 turns** —
+second only to Clef Omni, and not a cheap model at all. There is also a `parallel/decisions-fast:free`
+variant in the catalog, not run here.
+
 ### Perplexity Decider Flash v1.2
 
 `perplexity/pplx-decider-flash-v1.2` (a 4B-parameter sibling of Decider v1.2, $0.01 per million input
@@ -469,8 +547,8 @@ Mercury has two entries and neither is a clean result:
 - **Fixed load.** Models run one after another with 2 calls in flight, so every model is timed under
   the same load. Latency moves with provider load, so treat it as one day's measurement.
 - **Judge.** A separate chat model (`deepseek`) reads the disputed cases, near-misses, and a 10% random
-  spot-check of ordinary answers. Across the runs' 555 spot-checks (318, 41, 118, and 39 for each Reflex
-  run) it disagreed with the hand label 6 times (1.1%), which is the best available estimate of how wrong
+  spot-check of ordinary answers. Across the runs' 592 spot-checks (318, 41, 118, 39 for each Reflex
+  run, and 37 here) it disagreed with the hand label 6 times (1.0%), which is the best available estimate of how wrong
   the bank is. It flagged
   `dr-remote-work-relocation`, `fo-researcher-loan-vs-index`, `pr-followup-japan-crowds`,
   `hs-first-ipo-trivia` and `cl-best-pizza` for a human look.
@@ -487,6 +565,8 @@ Mercury has two entries and neither is a clean result:
 - Three repeats and 274 scored cases give intervals of about plus or minus 4 points. Do not read ranks inside
   a tier as meaningful.
 - Latency was measured once, on one day, at concurrency 2.
+- One row is not reproducible by design: `parallel/decisions-fast` answers from live web research, so its
+  78.4 is a snapshot of 2026-11-06 rather than a measurement anyone can repeat exactly.
 - Some `prompts.yaml` options genuinely overlap (`brief` vs `off`, `legal` vs `financial`), so a few
   labels are ambiguous by construction. Changing them changes live Oracle behavior, so they were left
   alone.
@@ -508,6 +588,9 @@ polaris oracle-bench --repeats 3 --seed 1 --concurrency 2 --timeout 15s \
 # a newly released model is benchmarked in its own invocation with the same flags, e.g. 2026-11-04:
 #   polaris oracle-bench --models morph/reflex --repeats 3 --seed 1 --concurrency 2 --timeout 15s \
 #     --label "morph reflex"
+# then 2026-11-06:
+#   polaris oracle-bench --models parallel/decisions-fast --repeats 3 --seed 1 --concurrency 2 --timeout 15s \
+#     --label "parallel decisions-fast"
 # (smoke it first with --n 8 --repeats 1 --no-judge --save-dir /tmp/... to confirm the catalog entry takes
 # Choice questions and to see what it costs per call before spending on 885 of them)
 

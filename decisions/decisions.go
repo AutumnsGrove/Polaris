@@ -223,6 +223,14 @@ type Response struct {
 	// the Oracle benchmark records it, since a result for an alias is
 	// uninterpretable once the alias moves. Empty if the server omits it.
 	Model string `json:"model,omitempty"`
+	// Annotations is not decoded on purpose, and nothing here is wired for it.
+	// The catalog now holds a web-grounded model (parallel/decisions-fast, which
+	// searches the live web on every call and returns `url_citation` entries
+	// here, ~10 per call); it scored 78.4 on the Oracle bench versus Jev's 87.8,
+	// so it is not in use. Decoding this field is the prerequisite for adopting
+	// it at all — the sources would otherwise be paid for and thrown away. See
+	// docs/benchmarks/oracle-decision-models/README.md's "Parallel Decisions
+	// Fast".
 }
 
 type errorBody struct {
