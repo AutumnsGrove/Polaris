@@ -35,7 +35,9 @@ type OneShotOptions struct {
 	UserAgent string
 	// Tools, when non-empty, offers tool calls (the memory-import loop);
 	// ToolChoice controls them. Nil/empty is a plain completion.
-	Tools      []provider.ToolDef
+	// llm.ToolDef, converted internally — callers already speak llm
+	// types, and agent owns the llm↔Nova mapping (toNovaDefs).
+	Tools      []llm.ToolDef
 	ToolChoice any
 	// OnFallback fires when the Go attempt spills to OpenRouter, so the
 	// caller can surface the paid retry instead of staying silent.
@@ -46,10 +48,12 @@ type OneShotOptions struct {
 // the full message for tool-call loops), what it consumed in the totals'
 // currency, and which backend served it.
 type OneShotResult struct {
-	Text     string
-	Message  message.Message
-	Usage    provider.Usage
-	Provider string
+	Text    string
+	Message llm.ChatMessage
+	Usage   provider.Usage
+	// ToolCalls mirrors Message.ToolCalls for loops that dispatch them.
+	ToolCalls []llm.ToolCall
+	Provider  string
 	// Spilled is true when something other than the route's primary
 	// answered — the usage folds the failed leg in, approximate rather
 	// than exact.
@@ -95,20 +99,26 @@ func CompleteOneShot(ctx context.Context, cfg *config.Config, client *llm.Client
 		// Settings.PromptCaching is that same bit — nil would let Nova
 		// re-derive it from a catalog entry that doesn't know our ids.
 		PromptCache: &promptCache,
-		Tools:       opts.Tools,
+		Tools:       toNovaDefs(opts.Tools),
 		ToolChoice:  opts.ToolChoice,
 	})
 	if err != nil {
 		return nil, translateProviderError(err)
 	}
 	primary, _, _ := r.Primary(modelID)
+	converted := fromNovaMessages([]message.Message{resp.Message})
+	msg := llm.ChatMessage{}
+	if len(converted) == 1 {
+		msg = converted[0]
+	}
 	return &OneShotResult{
-		Text:     resp.Message.Content,
-		Message:  resp.Message,
-		Usage:    resp.Usage,
-		Provider: resp.Provider,
-		Spilled:  resp.Provider != "" && primary != "" && resp.Provider != primary,
-		ListCost: routing.ListCost(resp.Usage),
+		Text:      resp.Message.Content,
+		Message:   msg,
+		ToolCalls: msg.ToolCalls,
+		Usage:     resp.Usage,
+		Provider:  resp.Provider,
+		Spilled:   resp.Provider != "" && primary != "" && resp.Provider != primary,
+		ListCost:  routing.ListCost(resp.Usage),
 	}, nil
 }
 
