@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"polaris/llm"
+	"polaris/routing"
 )
 
 // persistAnswer writes the assistant message and every post-hoc field that
@@ -75,6 +76,19 @@ func (t *turnRun) persistAnswer() bool {
 		log.Warn("failed to record applied model", "err", err)
 		t.logEvent(t.storageThreadID, "warn", "turn", "recording applied model failed", map[string]interface{}{"err": err.Error()}, t.turnID)
 	}
+	// Provider attribution (docs/plans/multi-provider.md §6):
+	// messages.provider records the backend that actually served the
+	// turn (the last call's provider — a failover shows up here, unlike
+	// applied_model above which records what was requested), and
+	// provider_usage gets one row per call that touched Go. A call
+	// "touched Go" when usage.opencode was present — billing_source set,
+	// or either dollar figure nonzero (a free-model call still carries a
+	// real list price). A spilled turn's only recorded call is the
+	// serving one with combined usage, so its row is flagged spilled:
+	// the failed Go leg's tokens folded into it, approximate rather
+	// than exact — the panel footnotes it instead of presenting the
+	// split as exact.
+	t.recordProviderUsage()
 
 	// oracleResult.Checks is only non-empty when Oracle actually got a
 	// live decision-model answer this turn (RunOracle returns early, before
@@ -166,6 +180,45 @@ func (t *turnRun) persistAnswer() bool {
 		}
 	}
 	return true
+}
+
+// recordProviderUsage persists the turn's provider attribution: the
+// serving backend on the assistant message, plus one provider_usage row
+// per call that touched the Go subscription. See the call-site comment in
+// persistAnswer for the touched-Go and spilled rules.
+func (t *turnRun) recordProviderUsage() {
+	calls := t.result.ProviderCalls
+	if len(calls) == 0 {
+		return
+	}
+	serving := calls[len(calls)-1].Provider
+	if serving == "" {
+		return
+	}
+	if err := t.s.db.SetMessageProvider(t.assistantMsgID, serving); err != nil {
+		log.Warn("failed to record serving provider", "err", err)
+		t.logEvent(t.storageThreadID, "warn", "turn", "recording serving provider failed", map[string]interface{}{"err": err.Error()}, t.turnID)
+	}
+	// Spilled when something other than the route's primary answered —
+	// the recorded (combined) usage folds the failed leg's tokens in.
+	spilled := false
+	if t.router != nil {
+		if primary, _, _ := t.router.Primary(t.modelCfg.ID); primary != "" && serving != primary {
+			spilled = true
+		}
+	}
+	for _, pc := range calls {
+		u := pc.Usage
+		if u.BillingSource == "" && u.AllowanceUSD == 0 && u.ListCostUSD == 0 {
+			continue // never touched Go: OpenRouter calls get no row
+		}
+		if err := t.s.db.LogProviderUsage(routing.OpenCodeGo, t.modelCfg.ID,
+			u.AllowanceUSD, routing.ListCost(u), u.BillingSource,
+			u.PromptTokens, u.CompletionTokens, u.CachedTokens, spilled); err != nil {
+			log.Warn("failed to record provider usage", "err", err)
+			t.logEvent(t.storageThreadID, "warn", "turn", "recording provider usage failed", map[string]interface{}{"err": err.Error()}, t.turnID)
+		}
+	}
 }
 
 // finishTurn logs completion and sends "done" with the turn's totals.

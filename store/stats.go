@@ -62,6 +62,24 @@ type Stats struct {
 	// second time. Split from VerificationCostUSD so neither reads as the
 	// other's spend (issue #125).
 	OracleCostUSD SourceCost `json:"oracle_cost_usd"`
+	// CoveredBySubscription is how much of the above (already counted once,
+	// inside TotalCostUSD/PeriodCostUSD via messages.cost_usd, which is
+	// denominated in list price) the Go subscription covered — a
+	// transparency breakout, never added a second time. Sourced from
+	// provider_usage, so unlike VerificationCostUSD above it sums
+	// list_cost_usd (retail, the same currency as the totals), not the
+	// allowance dollars the plan consumed. "Covered" is billing_source
+	// go/go-plus — free/byok rows are covered at $0 allowance but keep
+	// their own billing_source, so they stay out of this slice; balance
+	// rows are real money and live in BilledToBalance below. The
+	// headline reads "$X real · $Y covered by Go" with real as the
+	// total minus covered. See docs/plans/multi-provider.md §6.
+	CoveredBySubscription SourceCost `json:"covered_by_subscription"`
+	// BilledToBalance is the same breakout shape for provider_usage rows
+	// with billing_source balance — real console money, and always a
+	// misconfiguration (plan §6.6), never a routing outcome. Zero in
+	// normal operation; nonzero is the loud warning, not a line item.
+	BilledToBalance SourceCost `json:"billed_to_balance"`
 	// DecisionCalls counts real decisions API calls (rows in decisions_usage), not questions
 	// asked or turns — one Oracle turn is one call. Verification is
 	// source = '' (per-claim badges, plus every pre-split compare_sources
@@ -464,6 +482,38 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 			`SELECT COALESCE(SUM(cost_usd), 0) FROM decisions_usage WHERE created_at >= ? AND `+b.where, since,
 		).Scan(&b.dst.PeriodCostUSD); err != nil {
 			return nil, err
+		}
+	}
+
+	// CoveredBySubscription/BilledToBalance: breakouts, not additions —
+	// this money is already inside TotalCostUSD/CostBySource above (it
+	// arrived via routing.ListCost into messages.cost_usd during the
+	// turn), so neither figure here is added a second time. Unlike the
+	// decisions_usage block just above, the sums read list_cost_usd
+	// (retail, the totals' currency), never allowance_usd (plan dollars).
+	if total, err := s.CoveredBySubscription(""); err != nil {
+		return nil, err
+	} else {
+		stats.CoveredBySubscription.TotalCostUSD = total
+	}
+	if total, err := s.BilledToBalance(""); err != nil {
+		return nil, err
+	} else {
+		stats.BilledToBalance.TotalCostUSD = total
+	}
+	if since == "" {
+		stats.CoveredBySubscription.PeriodCostUSD = stats.CoveredBySubscription.TotalCostUSD
+		stats.BilledToBalance.PeriodCostUSD = stats.BilledToBalance.TotalCostUSD
+	} else {
+		if period, err := s.CoveredBySubscription(since); err != nil {
+			return nil, err
+		} else {
+			stats.CoveredBySubscription.PeriodCostUSD = period
+		}
+		if period, err := s.BilledToBalance(since); err != nil {
+			return nil, err
+		} else {
+			stats.BilledToBalance.PeriodCostUSD = period
 		}
 	}
 

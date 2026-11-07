@@ -329,6 +329,14 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- assistant messages only, 0 elsewhere. Set post-hoc alongside
 	-- ttft_ms/tokens_per_second.
 	tool_call_count INTEGER NOT NULL DEFAULT 0,
+	-- provider: the backend that actually served the message's turn
+	-- ("openrouter" or "opencode_go", set via SetMessageProvider once
+	-- agent.Run returns) — the served backend, not the requested one.
+	-- Unlike applied_model (what was requested), a failover shows up
+	-- here and drives the transcript chip. '' for pre-feature rows and
+	-- for user messages. Still blind to OpenRouter's own within-model
+	-- provider fallback, same as applied_model.
+	provider TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -471,6 +479,35 @@ CREATE TABLE IF NOT EXISTS aux_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	kind TEXT NOT NULL,
 	cost_usd REAL NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- provider_usage is a per-call ledger of the OpenCode Go subscription
+-- side of spend (docs/plans/multi-provider.md §6) — one row per call that
+-- touched Go, the same shape and the same "record only what completed"
+-- rule as decisions_usage/aux_usage. OpenRouter calls get no row: their
+-- cost already lives in messages.cost_usd/aux_usage.
+--
+-- allowance_usd is plan dollars (what the subscription consumed, including
+-- the peak cost.multipliers — never summed into Stats totals); list_cost_usd
+-- is the same call at retail, the currency the panel's "covered by Go"
+-- headline is denominated in so it adds up with the existing totals.
+-- billing_source is who paid: "go"/"go-plus" (covered), "balance"
+-- (real money — a misconfiguration, see §6.6), "free", "byok".
+-- spilled is 1 when a failover fired mid-call: the failed Go leg's tokens
+-- are folded into the row written under the serving provider, so the split
+-- is approximate — the panel footnotes it instead of presenting exactness.
+CREATE TABLE IF NOT EXISTS provider_usage (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	provider TEXT NOT NULL,
+	model TEXT NOT NULL,
+	allowance_usd REAL NOT NULL,
+	list_cost_usd REAL NOT NULL,
+	billing_source TEXT NOT NULL DEFAULT '',
+	prompt_tokens INTEGER NOT NULL DEFAULT 0,
+	completion_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+	spilled INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
