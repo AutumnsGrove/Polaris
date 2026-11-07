@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "identity": "app",
+  "provider": "opencode-go",
+  "providerEnv": "OPENCODE_API_KEY",
+  "model": "muse-spark-1.3-contributor",
+  "thinking": "medium",
+  "tools": {
+    "bash": true
+  },
+  "verify": {
+    "installDependencies": true,
+    "installCommand": ""
+  },
+  "triggers": {
+    "types": [
+      "opened",
+      "synchronize",
+      "ready_for_review",
+      "reopened"
+    ],
+    "skipDrafts": true,
+    "skipBots": false,
+    "mention": true
+  },
+  "review": {
+    "event": "COMMENT",
+    "maxInlineComments": 25,
+    "strictness": "significant",
+    "resolveStaleThreads": false
+  },
+  "paths": {
+    "include": [],
+    "exclude": []
+  },
+  "pi": {
+    "version": "1.5.0",
+    "packageRef": "a2fa7070655ad960072c22a8284705aca008569d"
+  },
+  "timeoutMinutes": 20
+}
