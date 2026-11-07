@@ -10,6 +10,38 @@ import (
 // and the per-model route table — and degrades, never fails, when Go is
 // unconfigured: the meters probe is skipped and the error names the
 // missing key.
+// A provider_fallback event persists with its legs, so a reopened thread
+// rebuilds the transcript chip instead of only the live session showing it.
+func TestProvidersFallbackEventPersists(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	s := h.srvObj
+	if err := s.db.CreateThread("t1", "Thread", "m", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	e := newTurnEmitter(s, func(ServerEvent) {}, "t1", "t1", "turn-1")
+	e.emit("provider_fallback", map[string]interface{}{"from": "opencode-go", "to": "openrouter", "error": "rate limited"})
+	evts, err := s.db.ListEvents("t1", 10)
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	found := false
+	for _, e := range evts {
+		if e.Message == "provider fallback" && e.TurnID == "turn-1" {
+			found = true
+			var data map[string]string
+			if err := json.Unmarshal([]byte(e.Data), &data); err != nil {
+				t.Fatalf("decoding persisted data: %v", err)
+			}
+			if data["from"] != "opencode-go" || data["to"] != "openrouter" {
+				t.Errorf("persisted legs = %v, want opencode-go -> openrouter", data)
+			}
+		}
+	}
+	if !found {
+		t.Error("no persisted provider fallback row for the turn")
+	}
+}
+
 func TestProvidersStatus_LegacyConfig(t *testing.T) {
 	// The pinned assertion below is about the un-pinned env; without this the
 	// test fails whenever the suite runs under the POLARIS_NOVA_LOOP=0 kill

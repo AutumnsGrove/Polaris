@@ -71,12 +71,15 @@ type ProvidersPolicyStatus struct {
 // ProvidersModelStatus is one registry model's effective route: the
 // serving backend and wire slug from route.Primary, plus the Go monthly
 // limit from Nova's catalog (0 when the model has no Go entry — unknown,
-// not unlimited).
+// not unlimited). PolarisShareAllowanceUSD is this model's ledger share
+// of the plan window this month — the picker's headroom tint reads this
+// Polaris-only number, never the account-wide meter.
 type ProvidersModelStatus struct {
-	ID                string  `json:"id"`
-	Primary           string  `json:"primary"`
-	WireModel         string  `json:"wire_model"`
-	GoMonthlyLimitUSD float64 `json:"go_monthly_limit_usd"`
+	ID                       string  `json:"id"`
+	Primary                  string  `json:"primary"`
+	WireModel                string  `json:"wire_model"`
+	GoMonthlyLimitUSD        float64 `json:"go_monthly_limit_usd"`
+	PolarisShareAllowanceUSD float64 `json:"polaris_share_allowance_usd"`
 }
 
 func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +132,11 @@ func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
 	// The effective per-model table: the same router turns use, so a
 	// missing ModelID (which would silently bill OpenRouter) shows up
 	// here as "default" before any money moves.
+	shareByModel, err := s.db.ProviderModelAllowanceThisMonth()
+	if err != nil {
+		log.Warn("providers status: reading per-model share failed", "err", err)
+		shareByModel = map[string]float64{}
+	}
 	router := routing.Build(cfg, routing.Options{ForceOpenRouter: out.Policy.Pinned})
 	for _, m := range cfg.Models {
 		primary, wire, _ := router.Primary(m.ID)
@@ -138,6 +146,7 @@ func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
 				st.GoMonthlyLimitUSD = gm.MonthlyLimitUSD
 			}
 		}
+		st.PolarisShareAllowanceUSD = shareByModel[m.ID]
 		out.Models = append(out.Models, st)
 	}
 

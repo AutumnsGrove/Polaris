@@ -64,3 +64,27 @@ func (s *Store) ProviderAllowanceThisMonth() (float64, error) {
 	).Scan(&total)
 	return total, err
 }
+
+// ProviderModelAllowanceThisMonth breaks ProviderAllowanceThisMonth down
+// by registry model id — the picker's per-row Polaris-only headroom tint
+// reads this, never the account-wide meter (which includes other clients
+// and would mislabel a shared window as ours alone).
+func (s *Store) ProviderModelAllowanceThisMonth() (map[string]float64, error) {
+	rows, err := s.db.Query(
+		`SELECT model, COALESCE(SUM(allowance_usd), 0) FROM provider_usage WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now') GROUP BY model`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]float64{}
+	for rows.Next() {
+		var model string
+		var total float64
+		if err := rows.Scan(&model, &total); err != nil {
+			return nil, err
+		}
+		out[model] = total
+	}
+	return out, rows.Err()
+}
