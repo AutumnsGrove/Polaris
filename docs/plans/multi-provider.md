@@ -357,6 +357,17 @@ but it is out of scope here and is not needed for the subscription to pay off.
   `allowance`/`list_cost`/`billing_source` values; one `/api/go/status` dump (expect account-wide
   meters, §3); one look at the console to confirm DeepSeek's plan window. `mimo` repeats the call
   only when it flips. Nothing here blocks Phase 2 starting.
+- **Vision spike (same session, same account).** Two unknowns gate any image traffic on Go,
+  and one of them is already on the routed path: (1) a keyed Go `deepseek-v4.1-flash` call
+  carrying an `image_url` part — Nova's Go baseline catalog marks DeepSeek text-only, so a
+  400 here is the expected outcome until proven otherwise; (2) the `reasoning` object on a
+  Go leg (sent verbatim by design — parity with the OpenRouter wire body). A 400 on either
+  never spills, so both must be confirmed before the flip, not after. Note the asymmetry:
+  `DescribeImage` (llm/vision.go, always runs on `mimo` via OpenRouter — no `go_model`,
+  no route) is safe wherever it runs, but the turn-level *see* path (real image messages
+  inside a flipped deepseek turn) already flows through the router: if the spike fails,
+  image-bearing turns need a content-aware OpenRouter pin, not just a direct describe
+  client — and `Multimodal` (currently per-model) would need to become per-(model,backend).
 - **Phase 1 — Nova (nova#59).** **Done, 2026-11-05, shipped in v0.3.4.** `provider/route`,
   `provider/chat.Complete`, the `Usage` allowance fields, `opencode.FetchMeters`/`PeriodEnd`, the
   catalog picker fields, and the `testkit` Go double all exist — see §4.
