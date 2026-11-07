@@ -649,6 +649,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/constellation/map", s.handleGetConstellationMap)
 	s.mux.HandleFunc("POST /api/constellation/backfill", s.handleConstellationBackfill)
 	s.mux.HandleFunc("GET /api/embeddings/status", s.handleEmbeddingsStatus)
+	s.mux.HandleFunc("GET /api/providers/status", s.handleProvidersStatus)
 	s.mux.HandleFunc("POST /api/embeddings/backfill", s.handleEmbeddingsBackfill)
 	s.mux.HandleFunc("POST /api/embeddings/reindex", s.handleEmbeddingsReindex)
 	s.mux.HandleFunc("GET /api/comet/config", s.handleGetCometConfig)
