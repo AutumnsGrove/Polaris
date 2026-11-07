@@ -427,40 +427,37 @@
 />
 
 <style>
-	/* Backend badge: which subscription serves this model. Same quiet
-	   language as .badge (soft surface fill, no border, no uppercase) —
-	   the dot carries the backend color so the label itself stays calm.
-	   "tight" (Polaris-only share >= 80% of the Go monthly limit) warms
-	   the whole badge — labelled Polaris-only in the title, since the
-	   account-wide meter would mislabel shared headroom. */
+	/* Backend badge: which subscription serves this model. Deliberately
+	   backgroundless and dimmed — the model name owns the row, this is
+	   metadata. The dot carries the only backend hue (accent for Go, dim
+	   for OpenRouter); "tight" (Polaris-only share >= 80% of the Go
+	   monthly limit) warms the text — labelled Polaris-only in the title,
+	   since the account-wide meter would mislabel shared headroom. */
 	.backend-badge {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
 		margin-left: var(--space-sm);
 		font-size: 11px;
-		font-weight: 500;
+		font-weight: 400;
 		color: var(--color-text-dim);
-		background: var(--color-surface-2);
-		border-radius: var(--radius-full);
-		padding: 3px 10px;
+		opacity: 0.75;
 		white-space: nowrap;
 		vertical-align: 1px;
 	}
 	.backend-dot {
-		width: 6px;
-		height: 6px;
+		width: 5px;
+		height: 5px;
 		border-radius: 50%;
 		background: currentColor;
-		opacity: 0.7;
 		flex-shrink: 0;
 	}
-	.backend-badge.go {
-		color: var(--color-accent-2);
+	.backend-badge.go .backend-dot {
+		background: var(--color-accent-2);
 	}
 	.backend-badge.tight {
 		color: var(--color-accent-strong);
-		background: color-mix(in srgb, var(--color-accent-strong) 12%, var(--color-surface-2));
+		opacity: 0.9;
 	}
 
 	/* Doubles as a status readout — badges for whatever's actively turned
