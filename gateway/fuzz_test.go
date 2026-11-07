@@ -5,6 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"polaris/agent"
 	"polaris/llm"
 	"polaris/tools"
 )
@@ -57,11 +58,11 @@ func FuzzParseDailyVerdict(f *testing.F) {
 	f.Add(`not json`, "")
 	f.Add(``, "plain prose reply")
 	f.Fuzz(func(t *testing.T, args, content string) {
-		resp := &llm.ChatResponse{Content: content}
+		res := &agent.OneShotResult{Text: content}
 		if args != "" {
-			resp.ToolCalls = []llm.ToolCall{{Function: llm.FunctionCall{Name: "record_verdict", Arguments: args}}}
+			res.ToolCalls = []llm.ToolCall{{Function: llm.FunctionCall{Name: "record_verdict", Arguments: args}}}
 		}
-		v, err := parseDailyVerdict("block", resp)
+		v, err := parseDailyVerdict("block", res)
 		if err == nil && v.Verdict != "unchanged" && v.Verdict != "notable" && v.Verdict != "normal" {
 			t.Errorf("unrecognized verdict %q escaped normalization", v.Verdict)
 		}
