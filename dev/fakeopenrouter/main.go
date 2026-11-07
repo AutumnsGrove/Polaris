@@ -109,6 +109,31 @@
 // "queue empty -> everything answers quiet/off" fallback as
 // defaultReply's reasoning — a script that only cares about the chat
 // completion side doesn't have to also stub every decisions call it triggers.
+//
+// # OpenCode Go dialect and the failover proof (docs/plans/multi-provider.md §10)
+//
+// -go makes this server speak the Go dialect: it requires
+// x-opencode-session on every inference request (400 MissingSessionID
+// without it, the live body), attaches usage.opencode
+// (allowance/list_cost/billing_source, scriptable per queued response) to
+// every usage chunk, and serves a canned GET /api/go/status. -limit makes
+// every inference request 429, whatever is queued.
+//
+// The live failover proof runs two instances — a spent Go leg and a
+// healthy OpenRouter leg — against a real `polaris run` with deepseek
+// routed Go-first:
+//
+//	go run ./dev/fakeopenrouter -addr 127.0.0.1:18901 -go -limit &
+//	go run ./dev/fakeopenrouter -addr 127.0.0.1:18902 &
+//	# config.yaml: opencode_go.base_url http://127.0.0.1:18901,
+//	# openrouter.base_url http://127.0.0.1:18902, deepseek routed Go-first
+//
+// The turn's Go attempt 429s, the same thread continues on OpenRouter and
+// says so (provider_fallback event → transcript chip), the next turn tries
+// Go first again, and /_control/calls on :18901 shows every Go attempt
+// carrying the thread's x-opencode-session. (The -limit instance never
+// emits a usage block: a refused request never reaches the model, so
+// nothing is consumed — same as the real backend.)
 package main
 
 import (
@@ -155,6 +180,15 @@ type queuedResponse struct {
 	// verify a tool's internal filter-pass LLM call actually gets counted
 	// toward a thread's total cost, not silently dropped).
 	Cost float64 `json:"cost,omitempty"`
+	// Allowance/ListCost/BillingSource script the Go usage block
+	// (usage.opencode) when the server runs with -go — what the real Go
+	// backend attaches to every response. Pointers so a scripted free
+	// call (explicit zero allowance with a real list price) reads
+	// differently from an unset field, which falls back to the -go
+	// defaults. Ignored without -go.
+	Allowance     *float64 `json:"allowance,omitempty"`
+	ListCost      *float64 `json:"list_cost,omitempty"`
+	BillingSource string   `json:"billing_source,omitempty"`
 	// PromptTokens scripts this response's reported usage.prompt_tokens
 	// (default 0, like Cost) — what makes a token display (the turn-info
 	// sheet's "Context" vs summed "Tokens in") exercisable end to end
@@ -239,12 +273,44 @@ type server struct {
 	// doc comment's "Decisions API" section.
 	decisionsQueue []queuedDecisionsResponse
 	decisionsCalls []json.RawMessage
+
+	// goDialect makes this server speak the OpenCode Go dialect instead
+	// of plain OpenRouter (set via -go): every inference request without
+	// x-opencode-session is refused with the live 400 MissingSessionID
+	// body, and the usage chunk carries usage.opencode
+	// (allowance/list_cost/billing_source). limitAll (set via -limit)
+	// answers every inference request with 429, whatever is queued —
+	// the failover proof needs both: a Go leg that refuses for a real
+	// reason (missing header) or a spent window (limit), never an
+	// invented one.
+	goDialect bool
+	limitAll  bool
 }
 
 func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// The Go dialect's hard requirement, enforced before anything scripted
+	// is consumed: a refused request never reaches the model, so the queue
+	// stays intact for the retry that fixes the header.
+	if s.goDialect && r.Header.Get("x-opencode-session") == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"MissingSessionID","message":"Request is missing x-opencode-session and cannot be routed efficiently."}}`)
+		return
+	}
+
+	// A spent subscription window: every call fails the same way a real
+	// rate-limited Go backend does, so the router must spill to OpenRouter
+	// and say so.
+	if s.limitAll {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"subscription limit reached","type":"RateLimitError","code":429}}`)
 		return
 	}
 
@@ -342,11 +408,39 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	finishChunk, _ := json.Marshal(map[string]interface{}{
 		"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": finish}},
-		"usage":   map[string]interface{}{"prompt_tokens": resp.PromptTokens, "completion_tokens": 0, "total_tokens": resp.PromptTokens, "cost": resp.Cost},
+		"usage":   s.usageChunk(resp),
 		"model":   "fake-openrouter",
 	})
 	sseLine(string(finishChunk))
 	sseLine("[DONE]")
+}
+
+// usageChunk builds the response's usage object: the plain OpenRouter
+// shape by default, plus the usage.opencode block in Go dialect mode.
+// A scripted free call (explicit zero allowance, real list price) keeps
+// its zero — only unset fields fall back to the -go defaults.
+func (s *server) usageChunk(resp queuedResponse) map[string]interface{} {
+	u := map[string]interface{}{
+		"prompt_tokens": resp.PromptTokens, "completion_tokens": 0,
+		"total_tokens": resp.PromptTokens, "cost": resp.Cost,
+	}
+	if !s.goDialect {
+		return u
+	}
+	allowance, listCost, billing := 0.001, 0.002, "go"
+	if resp.Allowance != nil {
+		allowance = *resp.Allowance
+	}
+	if resp.ListCost != nil {
+		listCost = *resp.ListCost
+	}
+	if resp.BillingSource != "" {
+		billing = resp.BillingSource
+	}
+	u["opencode"] = map[string]interface{}{
+		"allowance": allowance, "list_cost": listCost, "billing_source": billing,
+	}
+	return u
 }
 
 // takeResponse pops and returns the queued response for one incoming
@@ -524,13 +618,27 @@ func (s *server) handleDecisionsCalls(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(calls)
 }
 
+// handleGoStatus serves a canned account-wide allowance window set, so
+// the settings Go panel and `polaris providers status` can be exercised
+// live without a real subscription. Only registered in -go mode; the
+// numbers are static and deliberately round.
+func (s *server) handleGoStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, `{"access":{"endsAt":"2026-12-06T00:00:00Z","meters":{`+
+		`"fiveHour":{"usedMicroCents":2000000000,"limitMicroCents":20000000000,"resetsAt":"2026-11-07T00:00:00Z"},`+
+		`"week":{"usedMicroCents":10000000000,"limitMicroCents":50000000000,"resetsAt":"2026-11-09T00:00:00Z"},`+
+		`"month":{"usedMicroCents":35000000000,"limitMicroCents":100000000000,"resetsAt":"2026-12-06T00:00:00Z"}}}}`)
+}
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:18901", "listen address")
 	delay := flag.Duration("delay", 0, "sleep this long before each call starts streaming its response — 0 (default) answers instantly; set e.g. 1500ms to slow a scripted multi-tool-call turn down enough to actually watch it stream or catch it mid-turn")
 	chunkDelay := flag.Duration("chunk-delay", 0, "sleep this long between the ~24-byte chunks of a plain-text answer — 0 (default) streams instantly; set e.g. 40ms to watch a diagram or ui block fill in as it streams")
+	goDialect := flag.Bool("go", false, "speak the OpenCode Go dialect: require x-opencode-session (400 MissingSessionID without it), emit usage.opencode on every response, serve a canned GET /api/go/status — point opencode_go.base_url at this server")
+	limitAll := flag.Bool("limit", false, "answer every inference request with 429 (spent subscription window) — combine with -go to force a live failover to OpenRouter and watch the transcript chip")
 	flag.Parse()
 
-	s := &server{delay: *delay, chunkDelay: *chunkDelay}
+	s := &server{delay: *delay, chunkDelay: *chunkDelay, goDialect: *goDialect, limitAll: *limitAll}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/_control/queue", s.handleQueue)
@@ -539,7 +647,18 @@ func main() {
 	mux.HandleFunc("/api/alpha/decisions", s.handleDecisions)
 	mux.HandleFunc("/_control/decisions/queue", s.handleDecisionsQueue)
 	mux.HandleFunc("/_control/decisions/calls", s.handleDecisionsCalls)
+	if *goDialect {
+		mux.HandleFunc("/api/go/status", s.handleGoStatus)
+	}
 
-	log.Printf("fake OpenRouter stub listening on %s (delay=%s) — point openrouter.base_url at it in config.yaml", *addr, *delay)
+	which := "openrouter.base_url"
+	extra := ""
+	if *goDialect {
+		which = "opencode_go.base_url"
+	}
+	if *limitAll {
+		extra = " (every inference call 429s: point a second instance at openrouter.base_url and watch the failover chip)"
+	}
+	log.Printf("fake OpenRouter stub listening on %s (delay=%s) — point %s at it in config.yaml%s", *addr, *delay, which, extra)
 	log.Fatal(http.ListenAndServe(*addr, mux))
 }
