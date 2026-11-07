@@ -373,12 +373,35 @@
 						{:else if view === 'model'}
 							<section>
 								{#each appState.models as model (model.id)}
+									{@const goRouted = model.primary === 'opencode-go'}
+									{@const goLimit = model.go_monthly_limit_usd ?? 0}
+									{@const goShare = model.polaris_share_allowance_usd ?? 0}
+									{@const goTight = goRouted && goLimit > 0 && goShare >= 0.8 * goLimit}
 									<button type="button" class="row-btn" onclick={() => selectModel(model.id)}>
 										<Cpu size={16} />
 										<span class="row-label">
 											{model.name}
 											{#if model.pricing}
 												<span class="row-description">{formatPricing(model.pricing)}</span>
+											{/if}
+											{#if model.primary}
+												<!-- Backend badge from the live routing table — agrees with
+												     the turn loop instead of guessing from config. The tint
+												     is Polaris-only headroom (our ledger share vs the Go
+												     limit), labelled as such: the account-wide meter would
+												     mislabel a shared window as ours. -->
+												<span
+													class="backend-badge"
+													class:go={goRouted}
+													class:tight={goTight}
+													title={goRouted && goLimit > 0
+														? `Covered by Go subscription — Polaris has used $${goShare.toFixed(2)} of $${goLimit.toFixed(0)}`
+														: goRouted
+															? 'Covered by Go subscription'
+															: 'Billed to OpenRouter'}
+												>
+													{goRouted ? 'Go' : 'OpenRouter'}{goTight ? ' · tight' : ''}
+												</span>
 											{/if}
 										</span>
 										{#if appState.selectedModel === model.id}<Check size={14} class="row-check" />{/if}
@@ -403,6 +426,30 @@
 />
 
 <style>
+	/* Backend badge: which subscription serves this model. Go rows read
+	   in the subscription accent; "tight" (Polaris-only share >= 80% of
+	   the Go monthly limit) warms the tint — labelled Polaris-only in the
+	   title, since the account-wide meter would mislabel shared headroom. */
+	.backend-badge {
+		margin-left: var(--space-sm);
+		font-size: 10.5px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-dim);
+		border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+		border-radius: var(--radius-full);
+		padding: 1px 7px;
+		white-space: nowrap;
+	}
+	.backend-badge.go {
+		color: var(--color-accent-2);
+	}
+	.backend-badge.tight {
+		color: var(--color-accent-strong);
+		border-color: color-mix(in srgb, currentColor 55%, transparent);
+	}
+
 	/* Doubles as a status readout — badges for whatever's actively turned
 	   on, see activeFocusLabel above. */
 	.trigger {

@@ -182,16 +182,25 @@ func (t *turnRun) persistAnswer() bool {
 	return true
 }
 
+// servingProvider is the backend that actually served the turn (the last
+// completed call's provider) — "" when no call completed. The transcript
+// chip, messages.provider, and the done event all read this one value so
+// they can never disagree about who answered.
+func (t *turnRun) servingProvider() string {
+	calls := t.result.ProviderCalls
+	if len(calls) == 0 {
+		return ""
+	}
+	return calls[len(calls)-1].Provider
+}
+
 // recordProviderUsage persists the turn's provider attribution: the
 // serving backend on the assistant message, plus one provider_usage row
 // per call that touched the Go subscription. See the call-site comment in
 // persistAnswer for the touched-Go and spilled rules.
 func (t *turnRun) recordProviderUsage() {
 	calls := t.result.ProviderCalls
-	if len(calls) == 0 {
-		return
-	}
-	serving := calls[len(calls)-1].Provider
+	serving := t.servingProvider()
 	if serving == "" {
 		return
 	}
@@ -283,6 +292,7 @@ func (t *turnRun) finishTurn() {
 		OracleFocusModeSource: t.oracleFocusModeSource,
 		AppliedFocusMode:      t.appliedFocusMode,
 		AppliedModel:          t.requestedModel,
+		Provider:              t.servingProvider(),
 		CostAnswerUSD:         totalCost,
 		// CostVerificationUSD deliberately left at its zero value: that
 		// spend isn't known yet (verification runs in a detached goroutine

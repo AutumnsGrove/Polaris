@@ -390,6 +390,9 @@ export type ServerEvent =
 			// This turn's requested model id — see
 			// gateway/protocol.go's ServerEvent.AppliedModel doc comment.
 			applied_model?: string;
+			// Backend that served this turn — see gateway/protocol.go's
+			// ServerEvent.Provider. Drives TurnInfoSheet's covered line.
+			provider?: string;
 	  }
 	// Sent once, shortly after 'done' — up to 3 follow-up questions for the
 	// answer that just finished, persisted alongside it (see
@@ -585,6 +588,9 @@ export interface ModelOption {
 	primary?: string;
 	// Subscription monthly allowance for this model; 0/absent = no Go entry.
 	go_monthly_limit_usd?: number;
+	// Polaris's own share of that window this month — the picker's headroom
+	// tint reads this Polaris-only number.
+	polaris_share_allowance_usd?: number;
 }
 
 export interface Thread {
