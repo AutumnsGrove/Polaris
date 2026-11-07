@@ -11,6 +11,12 @@ import (
 // unconfigured: the meters probe is skipped and the error names the
 // missing key.
 func TestProvidersStatus_LegacyConfig(t *testing.T) {
+	// The pinned assertion below is about the un-pinned env; without this the
+	// test fails whenever the suite runs under the POLARIS_NOVA_LOOP=0 kill
+	// switch it is meant to be green under. "1", not "": ForceOpenRouter
+	// treats any set value other than 1/true — including the empty string —
+	// as the kill switch.
+	t.Setenv("POLARIS_NOVA_LOOP", "1")
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
 	resp, err := http.Get(h.url("/api/providers/status"))

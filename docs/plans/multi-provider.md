@@ -357,7 +357,20 @@ but it is out of scope here and is not needed for the subscription to pay off.
   `allowance`/`list_cost`/`billing_source` values; one `/api/go/status` dump (expect account-wide
   meters, §3); one look at the console to confirm DeepSeek's plan window. `mimo` repeats the call
   only when it flips. Nothing here blocks Phase 2 starting.
-- **Vision spike (same session, same account).** Two unknowns gate any image traffic on Go,
+- **Spike results (2026-11-07, live Go key, `deepseek-v4.1-flash`).** All three payload
+  shapes Polaris sends returned HTTP 200 on Go: the OpenRouter `provider` routing object
+  (accepted and ignored — it was not in the original spike list, but Nova merges
+  `ProviderOptions` verbatim on every attempt, so it rides along on the Go leg), the
+  `reasoning` object, and an `image_url` part (221 prompt tokens against 36 for text only, so
+  the image is processed, not stripped). `usage.opencode` came back with
+  `billing_source: "go"`, `allowance` = 0.6 × `list_cost`. End to end through a Go-only
+  Polaris instance: a plain turn, a streamed tool-call turn (memory tool, 8,832 cached
+  tokens reported on the follow-up call), a title one-shot, and the `provider_usage` /
+  `messages.provider` rows all landed correctly. Failover was also proven live against the
+  `dev/fakeopenrouter` doubles (`-go -limit` → OpenRouter, `messages.provider = openrouter`,
+  no ledger row for the failed leg). So the image-bearing-turn pin described below is **not**
+  needed for deepseek on Go; keep it only if a future `go_model` turns out text-only.
+- **Vision spike (original framing, now answered above).** Two unknowns gated any image traffic on Go,
   and one of them is already on the routed path: (1) a keyed Go `deepseek-v4.1-flash` call
   carrying an `image_url` part — Nova's Go baseline catalog marks DeepSeek text-only, so a
   400 here is the expected outcome until proven otherwise; (2) the `reasoning` object on a

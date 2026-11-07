@@ -114,6 +114,24 @@ func Build(cfg *config.Config, opts Options) *route.Router {
 		})
 	}
 
+	if len(decls) == 0 {
+		// A config built by hand rather than through Load (tests, tools) may
+		// carry only the legacy openrouter: block. route.New panics on zero
+		// providers, so seed the one Load would have seeded.
+		decls = append(decls, route.ProviderDecl{
+			Name:    OpenRouter,
+			Kind:    route.OpenRouter,
+			BaseURL: cfg.OpenRouter.BaseURL,
+			APIKey:  cfg.OpenRouter.APIKey,
+		})
+	}
+	hasOpenRouter := false
+	for _, d := range decls {
+		if d.Name == OpenRouter {
+			hasOpenRouter = true
+		}
+	}
+
 	failover := cfg.Routing.Failover
 	if failover == "" {
 		failover = "openrouter"
@@ -133,7 +151,9 @@ func Build(cfg *config.Config, opts Options) *route.Router {
 		}
 		if backend == "opencode_go" {
 			attempts := []route.Attempt{{Provider: OpenCodeGo, Model: m.GoModel}}
-			if failover == "openrouter" {
+			// A Go-only deployment has no OpenRouter to spill to; naming one
+			// in an attempt chain would make route.New panic.
+			if failover == "openrouter" && hasOpenRouter {
 				attempts = append(attempts, route.Attempt{Provider: OpenRouter, Model: m.Model})
 			}
 			routes[m.ID] = route.Route{
@@ -141,7 +161,7 @@ func Build(cfg *config.Config, opts Options) *route.Router {
 				FallbackOn: route.OnLimitOrRefusal,
 				OnFallback: opts.OnFallback,
 			}
-		} else {
+		} else if hasOpenRouter {
 			routes[m.ID] = route.Route{
 				Attempts:   []route.Attempt{{Provider: OpenRouter, Model: m.Model}},
 				FallbackOn: route.OnLimitOrRefusal,
@@ -151,11 +171,12 @@ func Build(cfg *config.Config, opts Options) *route.Router {
 	}
 
 	defaultProvider := OpenRouter
-	if _, ok := cfg.Providers[OpenRouter]; !ok {
+	if !hasOpenRouter {
 		// A Go-only boot has no OpenRouter entry; unknown ids fall to Go
 		// rather than panicking New on a default naming no provider.
-		// Every real model id has an explicit route, so this only serves
-		// ids the registry never declared.
+		// Go-eligible ids have explicit routes; a model with no go_model
+		// has none here (it cannot be served), so it also lands on Go and
+		// gets Go's own model-not-found error instead of a crash.
 		defaultProvider = OpenCodeGo
 	}
 	force := ""

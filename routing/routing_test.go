@@ -169,3 +169,36 @@ func TestListCost_Shapes(t *testing.T) {
 		t.Errorf("free call ListCost = %v, want 0.003", got)
 	}
 }
+
+// A Go-only deployment (no OpenRouter key) must build a router rather than
+// panic in route.New: eligible models go to Go with no spill leg, and a
+// go_model-less model has no route to build. Before the fix the plain
+// model's OpenRouter route and the failover attempt both named a provider
+// that wasn't declared.
+func TestBuild_GoOnlyDoesNotPanic(t *testing.T) {
+	cfg := loadTestConfig(t, `providers:
+  opencode_go:
+    api_key: "go-key"
+`)
+	r := Build(cfg, Options{})
+	prov, wire, ok := r.Primary("go-model")
+	if !ok || prov != OpenCodeGo || wire != "go-model-1" {
+		t.Errorf("Primary(go-model) = %q %q %v, want opencode-go go-model-1", prov, wire, ok)
+	}
+	rt, _ := r.Resolve("go-model")
+	if len(rt.Attempts) != 1 {
+		t.Errorf("go-only route has %d attempts, want 1 (nowhere to fail over to)", len(rt.Attempts))
+	}
+}
+
+// A hand-built config with only the legacy openrouter: block (no Providers
+// map) must still build — the fixture shape several gateway tests use.
+func TestBuild_LegacyOnlyBlockDoesNotPanic(t *testing.T) {
+	cfg := &config.Config{Models: testRegistry}
+	cfg.OpenRouter.APIKey = "or-key"
+	cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+	r := Build(cfg, Options{})
+	if prov, _, ok := r.Primary("plain-model"); !ok || prov != OpenRouter {
+		t.Errorf("Primary(plain-model) = %q %v, want openrouter", prov, ok)
+	}
+}

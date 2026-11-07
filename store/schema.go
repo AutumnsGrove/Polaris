@@ -330,8 +330,9 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- ttft_ms/tokens_per_second.
 	tool_call_count INTEGER NOT NULL DEFAULT 0,
 	-- provider: the backend that actually served the message's turn
-	-- ("openrouter" or "opencode_go", set via SetMessageProvider once
-	-- agent.Run returns) — the served backend, not the requested one.
+	-- ("openrouter" or "opencode-go" — the router's provider names, with
+	-- a hyphen, unlike the config key opencode_go; set via
+	-- SetMessageProvider once agent.Run returns) — the served backend, not the requested one.
 	-- Unlike applied_model (what was requested), a failover shows up
 	-- here and drives the transcript chip. '' for pre-feature rows and
 	-- for user messages. Still blind to OpenRouter's own within-model

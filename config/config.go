@@ -872,6 +872,13 @@ func (c *Config) BackendFor(modelID string) (backend string, ok bool) {
 	if want == "" {
 		want = "openrouter"
 	}
+	// A Go-only deployment has nowhere else to send an eligible model, so
+	// the policy default can't mean OpenRouter there. (An explicit
+	// model_backends entry still wins below, and Load rejects one naming
+	// a provider that isn't configured.)
+	if _, hasOR := c.Providers["openrouter"]; !hasOR && eligible {
+		want = "opencode_go"
+	}
 	if override, ok := c.ModelBackends[modelID]; ok {
 		want = override
 	}
