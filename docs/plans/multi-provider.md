@@ -2,7 +2,13 @@
 
 **Added 2026-11-04.**
 
-**Status: Phase 2 in progress on branch `multi-provider` (2026-11-07) —
+**Status: flipped live on the potato 2026-11-07 — `deepseek` serves from OpenCode Go
+(`default_backend: auto`), verified same day: `polaris providers status` shows real
+meters (5h $1.73/$12, week $5.28/$30, month $24.77/$60), a live turn wrote
+`provider_usage` rows with nonzero allowance and `messages.provider = 'opencode-go'`,
+`CoveredBySubscription` splits correctly, and the earlier fake-double proof covered
+the spill path. Watch one real week before touching `mimo`. Phase 2 was built on
+branch `multi-provider` (PR #199, merged) —
 config, router, ledger, status endpoint/CLI, failover proof, and all
 product one-shot ports are implemented and green in both loop modes, still
 dark by default (no behavior change until the operator flips). Live potato
