@@ -288,8 +288,8 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 			UserAgent:       "Polaris/" + s.version,
 			ForceOpenRouter: agent.ForceOpenRouter(),
 		}),
-		Emit:          func(string, map[string]interface{}) {}, // no live client to stream to
-		MaxTurns:      cfg.MaxAgentTurns,
+		Emit:     func(string, map[string]interface{}) {}, // no live client to stream to
+		MaxTurns: cfg.MaxAgentTurns,
 		// RequestLocation is never actually called here — no location-
 		// needing tool (weather/nearby_search) is ever offered under
 		// NoResearch above — but catalog.go's "interactive_chat" gate on

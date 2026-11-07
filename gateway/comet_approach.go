@@ -260,9 +260,9 @@ func (s *Server) newApproachToolContext(cfg *config.Config, cfgRow *store.CometC
 	// a turn: registry id for the chain, the hidden approach thread for
 	// the Go header.
 	ctx := &tools.Context{
-		Ctx:                     context.Background(),
-		LLM:                     client,
-		ModelID:                 cfg.ModelByID(cfgRow.Model).ID,
+		Ctx:     context.Background(),
+		LLM:     client,
+		ModelID: cfg.ModelByID(cfgRow.Model).ID,
 		Router: routing.Build(cfg, routing.Options{
 			SessionID:       func() string { return approachThreadID },
 			UserAgent:       "Polaris/" + s.version,
