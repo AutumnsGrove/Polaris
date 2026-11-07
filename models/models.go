@@ -144,6 +144,13 @@ var Registry = []config.ModelConfig{
 		Provider:    []string{"together", "wafer/mxfp4", "baseten", "deepinfra/fp8"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
+		// OpenCode Go wire slug (bare, never vendor-prefixed). The only
+		// go_model in the registry for the first release — mimo follows
+		// as a one-line follow-up once the first window's numbers look
+		// right (docs/plans/multi-provider.md §12). Presence here is what
+		// makes the model Go-eligible; the routing policy decides whether
+		// it actually goes there.
+		GoModel: "deepseek-v4.1-flash",
 		Reasoning: &config.ReasoningConfig{
 			Enabled: true,
 			Effort:  "medium",
