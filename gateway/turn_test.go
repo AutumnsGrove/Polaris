@@ -190,7 +190,7 @@ func TestGenerateSuggestions(t *testing.T) {
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
 
 	s := &Server{}
-	suggestions, cost, err := s.generateSuggestions(cfg, modelCfg, "question", "answer")
+	suggestions, cost, err := s.generateSuggestions(cfg, modelCfg, "question", "answer", "test-thread")
 	if err != nil {
 		t.Fatalf("generateSuggestions returned error: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestGenerateSuggestions_RejectsContinuationSentences(t *testing.T) {
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
 
 	s := &Server{}
-	suggestions, _, err := s.generateSuggestions(cfg, modelCfg, "question", "answer")
+	suggestions, _, err := s.generateSuggestions(cfg, modelCfg, "question", "answer", "test-thread")
 	if err != nil {
 		t.Fatalf("generateSuggestions returned error: %v", err)
 	}
