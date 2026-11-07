@@ -12,6 +12,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider/openrouter"
 
 	"polaris/llm"
+	"polaris/tools"
 )
 
 // novaRequestTimeout bounds a single provider call, matching llm.Client's
@@ -26,30 +27,57 @@ var novaRetry = struct {
 	Base time.Duration
 }{Max: 2, Base: 2 * time.Second}
 
+// ProviderCall is one completed model call's attribution: which backend
+// served it and what that call consumed. A spilled turn has one entry per
+// attempt (the failed Go leg's tokens fold into the row written under the
+// serving provider); the common case is exactly one entry.
+type ProviderCall struct {
+	Provider string
+	Usage    provider.Usage
+}
+
 // novaModel is everything about the model that goes on the Nova agent.Config
 // rather than into the provider.
 type novaModel struct {
 	Name        string
+	ModelID     string
 	Temperature float64
 	MaxTokens   int
 	PromptCache bool
 	Options     map[string]any
 }
 
-// novaProviderFor builds the provider for one run from ctx.LLM.
+// novaProviderFor builds the provider for one run from the turn's context.
+//
+// When the context carries a Router and a ModelID, the run goes through
+// the router: ModelID (the Polaris registry id) resolves the attempt chain
+// while the wire slug travels as Model for the rewrite. A wire slug alone
+// can never name a backend, so a missing ModelID falls back to direct —
+// the router would key on the slug, find no route, and silently bill
+// OpenRouter while looking exactly like success (docs/plans/nova-loop.md
+// §5.2, multi-provider §8).
 //
 // A real *llm.Client describes itself (llm.SettingsProvider), so the run gets
 // a genuine Nova OpenRouter provider carrying the same base URL, key, routing
 // and reasoning. Anything else — llmtest.MockClient, in practice — is bridged
 // as-is, so the existing scripted-model tests drive the Nova loop unchanged
 // instead of needing a second mock.
-func novaProviderFor(client llm.ChatClient) (*polarisProvider, novaModel) {
+func novaProviderFor(ctx *tools.Context) (*polarisProvider, novaModel) {
+	client := ctx.LLM
 	sp, ok := client.(llm.SettingsProvider)
 	if !ok {
 		return &polarisProvider{inner: chatClientProvider{client}}, novaModel{Name: "chat-client"}
 	}
 	s := sp.Settings()
 	m := novaModel{Name: s.Model, Temperature: s.Temperature, MaxTokens: s.MaxTokens, PromptCache: s.PromptCaching}
+	if ctx.Router != nil && ctx.ModelID != "" {
+		// Routed path: the router owns the wire (attempt slugs, session
+		// header, failover). The request's Model stays the OpenRouter
+		// slug the client was built with; the router rewrites it to the
+		// attempt's slug, and ModelID picks the chain.
+		m.ModelID = ctx.ModelID
+		return &polarisProvider{inner: ctx.Router}, m
+	}
 	opts := map[string]any{}
 	if s.Provider != nil {
 		r := openrouter.Routing{Order: s.Provider.Order, Only: s.Provider.Only, Ignore: s.Provider.Ignore, AllowFallbacks: s.Provider.AllowFallbacks, Sort: s.Provider.Sort}
@@ -87,8 +115,15 @@ func novaProviderFor(client llm.ChatClient) (*polarisProvider, novaModel) {
 // any inner provider: the OpenRouter metadata header and the reasoning-leak
 // re-filing. (The per-call deadline is agent.Config.RequestTimeout, and
 // Polaris's user-facing error type is translateRunError, applied by the caller.)
+//
+// OnCall, when set, fires once per completed provider call with the
+// finalized response — how the run attributes each call to the backend
+// that served it (Response.Provider) and what it consumed. It fires for
+// the answering call only on a spill; the failed leg's spend is already
+// folded into the returned usage by the router.
 type polarisProvider struct {
-	inner provider.Provider
+	inner  provider.Provider
+	OnCall func(resp *provider.Response)
 }
 
 func (p *polarisProvider) Name() string { return p.inner.Name() }
@@ -132,6 +167,16 @@ func (p *polarisProvider) Stream(ctx context.Context, req provider.Request, onEv
 	}
 	if resp != nil && leaked {
 		resp.Message.Content = content.String()
+	}
+	// Attribute the call to the backend that ran it: a router stamps the
+	// answering attempt; a plain provider may leave it empty, in which
+	// case the inner provider's own name is the honest answer (direct
+	// OpenRouter, or the chat-client bridge in tests).
+	if resp != nil && resp.Provider == "" {
+		resp.Provider = p.inner.Name()
+	}
+	if resp != nil && p.OnCall != nil {
+		p.OnCall(resp)
 	}
 	return resp, nil
 }
