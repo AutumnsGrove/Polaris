@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/AutumnsGrove/nova/provider/route"
 	"golang.org/x/sync/singleflight"
 
 	"polaris/brave"
@@ -33,6 +34,22 @@ type Context struct {
 	Brave      *brave.Client            // nil if not configured — web_search's degraded-SearXNG fallback tries this first, ahead of Parallel/Tavily (see tools/web_search.go)
 	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried after Brave, before Tavily) is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
+
+	// ModelID is the thread's Polaris model id (the registry id, e.g.
+	// "deepseek") — the catalog id the router resolves to an attempt
+	// chain. The wire slug alone cannot name a backend (a slug never
+	// says which provider serves it), so without this the router keys
+	// on the slug, finds no route, and silently bills OpenRouter — the
+	// exact bug Nova already fixed once for subagents. Empty means
+	// "route by slug, fall through to the default" (pre-routing
+	// behavior for contexts that never set it).
+	ModelID string
+	// Router, when non-nil, is the Nova provider router this turn's
+	// calls go through (built per turn from that turn's config
+	// generation — see routing.Build). Nil means direct: agent runs the
+	// thread's LLM client straight, the pre-routing behavior every
+	// non-turn context keeps until it opts in.
+	Router *route.Router
 
 	// Embed is a local Ollama client used only by agent.Run's
 	// query-similarity stale-search signal (see agent/query_similarity.go)

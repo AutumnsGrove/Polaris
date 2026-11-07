@@ -629,3 +629,10 @@ func TestBackendFor_Resolution(t *testing.T) {
 		t.Errorf("auto with keyless Go = %q, want openrouter", backend)
 	}
 }
+
+func TestLoad_UnknownProviderNameIsAnError(t *testing.T) {
+	contents := "providers:\n  openrouter:\n    api_key: \"k\"\n  wat:\n    api_key: \"x\"\n"
+	if _, err := Load(writeTestConfig(t, contents), testRegistryGo); err == nil {
+		t.Error("expected a load error for an unknown provider name, got none")
+	}
+}

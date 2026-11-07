@@ -793,6 +793,17 @@ func (c *Config) validateRouting(registry []ModelConfig) error {
 	for _, m := range registry {
 		byID[m.ID] = m
 	}
+	// The router only knows two backend kinds; a third name has no kind
+	// to build from, so it is a load error here rather than a route.New
+	// panic later. A proxy still works: keep the canonical name and
+	// override its base_url (the fakeopenai --limit seam).
+	for name := range c.Providers {
+		switch name {
+		case "openrouter", "opencode_go":
+		default:
+			return fmt.Errorf("config: unknown provider %q (only openrouter and opencode_go are supported)", name)
+		}
+	}
 	backend := c.Routing.DefaultBackend
 	if backend == "" {
 		backend = "openrouter"
