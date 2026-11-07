@@ -2,7 +2,13 @@
 
 **Added 2026-11-04.**
 
-**Status: Nova prerequisite landed and Polaris is pinned at v0.3.4 (2026-11-06) —
+**Status: Phase 2 in progress on branch `multi-provider` (2026-11-07) —
+config, router, ledger, status endpoint/CLI, failover proof, and all
+product one-shot ports are implemented and green in both loop modes, still
+dark by default (no behavior change until the operator flips). Live potato
+verification, the settings Go panel, and per-model meter headroom are still
+open — see the branch's review notes. Nova prerequisite landed and Polaris
+is pinned at v0.3.4 (2026-11-06) —
 `go build`/`go vet` clean, `go test ./...` green both with the Nova loop and with
 `POLARIS_NOVA_LOOP=0`, parity harness green. No routing code written yet; the swap itself is
 still on hold. Policy decisions are settled and the model scope is narrowed to `deepseek`
@@ -351,6 +357,30 @@ but it is out of scope here and is not needed for the subscription to pay off.
   `allowance`/`list_cost`/`billing_source` values; one `/api/go/status` dump (expect account-wide
   meters, §3); one look at the console to confirm DeepSeek's plan window. `mimo` repeats the call
   only when it flips. Nothing here blocks Phase 2 starting.
+- **Spike results (2026-11-07, live Go key, `deepseek-v4.1-flash`).** All three payload
+  shapes Polaris sends returned HTTP 200 on Go: the OpenRouter `provider` routing object
+  (accepted and ignored — it was not in the original spike list, but Nova merges
+  `ProviderOptions` verbatim on every attempt, so it rides along on the Go leg), the
+  `reasoning` object, and an `image_url` part (221 prompt tokens against 36 for text only, so
+  the image is processed, not stripped). `usage.opencode` came back with
+  `billing_source: "go"`, `allowance` = 0.6 × `list_cost`. End to end through a Go-only
+  Polaris instance: a plain turn, a streamed tool-call turn (memory tool, 8,832 cached
+  tokens reported on the follow-up call), a title one-shot, and the `provider_usage` /
+  `messages.provider` rows all landed correctly. Failover was also proven live against the
+  `dev/fakeopenrouter` doubles (`-go -limit` → OpenRouter, `messages.provider = openrouter`,
+  no ledger row for the failed leg). So the image-bearing-turn pin described below is **not**
+  needed for deepseek on Go; keep it only if a future `go_model` turns out text-only.
+- **Vision spike (original framing, now answered above).** Two unknowns gated any image traffic on Go,
+  and one of them is already on the routed path: (1) a keyed Go `deepseek-v4.1-flash` call
+  carrying an `image_url` part — Nova's Go baseline catalog marks DeepSeek text-only, so a
+  400 here is the expected outcome until proven otherwise; (2) the `reasoning` object on a
+  Go leg (sent verbatim by design — parity with the OpenRouter wire body). A 400 on either
+  never spills, so both must be confirmed before the flip, not after. Note the asymmetry:
+  `DescribeImage` (llm/vision.go, always runs on `mimo` via OpenRouter — no `go_model`,
+  no route) is safe wherever it runs, but the turn-level *see* path (real image messages
+  inside a flipped deepseek turn) already flows through the router: if the spike fails,
+  image-bearing turns need a content-aware OpenRouter pin, not just a direct describe
+  client — and `Multimodal` (currently per-model) would need to become per-(model,backend).
 - **Phase 1 — Nova (nova#59).** **Done, 2026-11-05, shipped in v0.3.4.** `provider/route`,
   `provider/chat.Complete`, the `Usage` allowance fields, `opencode.FetchMeters`/`PeriodEnd`, the
   catalog picker fields, and the `testkit` Go double all exist — see §4.
@@ -362,18 +392,25 @@ but it is out of scope here and is not needed for the subscription to pay off.
   `proto`, `provider`, `provider/openrouter`, `tool`, and the v0.3.0 changes there are additive
   (`agent.Config.Embed`, `tool.Context.Embed`). `go build`/`go vet` clean with no code
   changes required; `agent/nova_parity_test.go` green, so the wire really is byte-identical.
-  Next: the `providers` config block + `go_model` + `model_backends` (validated in
-  `config.Load`, §5); **the `ModelID` and `RegisterModel` wiring (§8), before anything else routes
-  — without it every call keeps using the default provider and looks like it works**;
-  `llm.Client` becomes a thin adapter over Nova (then deleted once no caller remains);
-  `provider_usage` + `messages.provider` + `Stats` breakouts; `/api/providers/status` and the CLI.
-  **Also in this phase, because the flip must not happen without them:** basic failover (a Go
-  limit/refusal continues on OpenRouter and says so, via `Route.FallbackOn` +
-  `Route.OnFallback`) and the `dev/fakeopenai` Go-dialect `--limit` mode that §10 needs to verify
-  it (the rest of `dev/fakeopenrouter`'s rename stays in Phase 5). Ship with
-  `default_backend: openrouter` and no `model_backends.deepseek` line, so the merge is a no-op
-  until deliberately flipped (no Go routes are built; `ForceProvider` is not involved — see §5);
-  flip `deepseek`, then watch one real week of windows before touching `mimo`.
+  Status 2026-11-07 (branch `multi-provider`, green in both loop modes):
+  the `providers`/`routing`/`model_backends` blocks (validated in `config.Load`),
+  `go_model` on `deepseek`, the `ModelID` + `RegisterModel` wiring, a per-turn
+  `Router` with list-cost accounting, `provider_usage` + `messages.provider` +
+  `Stats` breakouts, `/api/providers/status` + `polaris providers status|models`,
+  failover (`OnLimitOrRefusal` + `OnFallback` chip event, pinned by testkit spill
+  tests), and the `dev/fakeopenrouter` Go-dialect `--go`/`--limit` modes are all
+  implemented. Every product one-shot runs through `agent.CompleteOneShot`
+  (titles, suggestions, memory loop, pulsar suggest, pulsar daily pick/vet/elect/
+  diff/elaborate/research, comet approach, weaver, wizard); benchmarks/eval/
+  oraclebench stay on OpenRouter by design, as do vision describe (no Go vision
+  route) and the research-worker client (pending the `mimo` flip, #191 territory).
+  Tools' own side calls (`web_read` filter, `view_image` describe via `ctx.LLM`)
+  stay direct — routing them is #189's `Context.Complete` work, not this branch's.
+  Ships dark (`default_backend: openrouter`, no Go routes built, `ForceProvider`
+  only under the kill switch); flip `deepseek`, then watch one real week of
+  windows before touching `mimo`. Still open: live potato verification (§10),
+  the settings Go panel and picker badges (Phase 3), meter-aware `auto` headroom
+  (Phase 4), `dev/fakeopenrouter`'s rename (Phase 5).
 - **Phase 3 — UI.** The Go panel, the two picker badges, turn attribution, the balance warning.
 - **Phase 4 — policy.** `auto` with meter-aware headroom (pre-emptive routing, so failover stops
   being the first line of defence — §11 risk 9). Failover itself already shipped in Phase 2.

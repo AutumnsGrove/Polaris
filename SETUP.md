@@ -15,6 +15,10 @@ GHCR, updated by a host-side watcher. There's no other install path.
   Oracle mode setting use for their own decision-model classification calls; no separate key needed.
   Those calls default to Jev; `decisions.model` in `config.yaml` swaps in another decision model
   (see `config.yaml.example`)
+- Optional: an [OpenCode Go](https://opencode.ai) subscription key (`OPENCODE_API_KEY` in `.env`),
+  to run DeepSeek against the subscription's allowance with OpenRouter as the paid fallback.
+  Off until the `providers.opencode_go` block is uncommented in `config.yaml` and routing is
+  switched on (see `config.yaml.example`); `polaris providers status` shows the effective routes
 - Optional: a [Foursquare](https://foursquare.com/developers) Service API Key for structured
   nearby-place search (free tier: 10k calls/month) — without it, `nearby_search` falls back to
   plain web search

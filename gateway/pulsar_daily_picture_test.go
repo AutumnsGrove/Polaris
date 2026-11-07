@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/testkit"
+
+	"polaris/config"
 	"polaris/llm"
-	"polaris/llm/llmtest"
 	"polaris/search"
 	"polaris/tools"
 )
@@ -39,8 +41,30 @@ func imageResult(title, thumb string) map[string]interface{} {
 	return map[string]interface{}{"title": title, "url": "https://example.com/page", "thumbnail": thumb, "img_src": thumb}
 }
 
-func queryResponse(q string) llmtest.Response {
-	return llmtest.Response{Resp: &llm.ChatResponse{Content: q}}
+// pictureWriterFixture wires a scripted HTTP double as the picture
+// judge's writer backend — see dailyOneShotFixture (pulsar_daily_test.go)
+// for why these tests script turns instead of responses.
+func pictureWriterFixture(t *testing.T, turns ...testkit.ServerTurn) (*testkit.Server, *config.Config, *llm.Client, string) {
+	t.Helper()
+	srv, cfg, client, modelID := dailyOneShotFixture(t, turns...)
+	return srv, cfg, client, modelID
+}
+
+func lastUserContent(t *testing.T, body []byte) string {
+	t.Helper()
+	var req struct {
+		Messages []llm.ChatMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatalf("decoding recorded request body: %v", err)
+	}
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		if req.Messages[i].Role == "user" {
+			return req.Messages[i].Content
+		}
+	}
+	t.Fatal("recorded request has no user message")
+	return ""
 }
 
 // The regression this vetting exists for: the top hit for a vague query was
@@ -52,14 +76,14 @@ func TestGenerateDailyPictureBlock_RejectionTriggersRetryWithFeedback(t *testing
 		"abstract flowing curves": {imageResult("Women's OneForm Seamless High Waisted", "https://cdn.example/leggings.jpg")},
 		"aurora over mountains":   {imageResult("Aurora borealis over a ridge", "https://cdn.example/aurora.jpg")},
 	})
-	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		queryResponse("abstract flowing curves"),
-		{Resp: toolCallResponse("pick_picture", `{"choice":0,"reasoning":"a leggings product shot, not a photograph"}`)},
-		queryResponse("aurora over mountains"),
-		{Resp: toolCallResponse("pick_picture", `{"choice":1,"caption":"Green aurora above a snowy ridge","reasoning":"real night-sky photo"}`)},
-	}}
+	llmSrv, cfg, writerClient, modelID := pictureWriterFixture(t,
+		textTurn("abstract flowing curves"),
+		toolCallTurn("pick_picture", `{"choice":0,"reasoning":"a leggings product shot, not a photograph"}`),
+		textTurn("aurora over mountains"),
+		toolCallTurn("pick_picture", `{"choice":1,"caption":"Green aurora above a snowy ridge","reasoning":"real night-sky photo"}`),
+	)
 
-	content, imageURL, _, err := generateDailyPictureBlock(context.Background(), mock, pictureTestContext(srv), "SPACE PHOTOS")
+	content, imageURL, _, err := (&Server{}).generateDailyPictureBlock(context.Background(), cfg, writerClient, modelID, "test-session", pictureTestContext(srv), "SPACE PHOTOS")
 	if err != nil {
 		t.Fatalf("generateDailyPictureBlock: %v", err)
 	}
@@ -70,7 +94,11 @@ func TestGenerateDailyPictureBlock_RejectionTriggersRetryWithFeedback(t *testing
 		t.Errorf("content = %q, want the judge's caption rather than the search title", content)
 	}
 
-	retryPrompt := mock.Calls[2].Messages[len(mock.Calls[2].Messages)-1].Content
+	reqs := llmSrv.Requests()
+	if len(reqs) != 4 {
+		t.Fatalf("writer backend saw %d requests, want 4 (query, vet, retry query, vet)", len(reqs))
+	}
+	retryPrompt := lastUserContent(t, reqs[2].Body)
 	if !strings.Contains(retryPrompt, "abstract flowing curves") || !strings.Contains(retryPrompt, "leggings product shot") {
 		t.Errorf("retry query prompt = %q, want the rejected query and the judge's reason fed back", retryPrompt)
 	}
@@ -83,14 +111,14 @@ func TestGenerateDailyPictureBlock_AllRejectedErrors(t *testing.T) {
 		"q1": {imageResult("Shop leggings", "https://cdn.example/a.jpg")},
 		"q2": {imageResult("Buy shorts", "https://cdn.example/b.jpg")},
 	})
-	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		queryResponse("q1"),
-		{Resp: toolCallResponse("pick_picture", `{"choice":0,"reasoning":"ad"}`)},
-		queryResponse("q2"),
-		{Resp: toolCallResponse("pick_picture", `{"choice":0,"reasoning":"ad again"}`)},
-	}}
+	_, cfg, writerClient, modelID := pictureWriterFixture(t,
+		textTurn("q1"),
+		toolCallTurn("pick_picture", `{"choice":0,"reasoning":"ad"}`),
+		textTurn("q2"),
+		toolCallTurn("pick_picture", `{"choice":0,"reasoning":"ad again"}`),
+	)
 
-	_, imageURL, _, err := generateDailyPictureBlock(context.Background(), mock, pictureTestContext(srv), "")
+	_, imageURL, _, err := (&Server{}).generateDailyPictureBlock(context.Background(), cfg, writerClient, modelID, "test-session", pictureTestContext(srv), "")
 	if err == nil {
 		t.Fatalf("err = nil, imageURL = %q; want an error once every query's candidates were rejected", imageURL)
 	}
@@ -103,15 +131,15 @@ func TestGenerateDailyPictureBlock_AllRejectedErrors(t *testing.T) {
 // count as a rejection — never as "take the first one".
 func TestDailyPictureVet_UnusableJudgeAnswerIsRejection(t *testing.T) {
 	cands := []tools.Card{{Title: "t", Subtitle: "example.com", ImageURL: "https://cdn.example/a.jpg", Kind: "image"}}
-	cases := map[string]llmtest.Response{
-		"prose instead of the tool": {Resp: &llm.ChatResponse{Content: "I like number 1"}},
-		"choice out of range":       {Resp: toolCallResponse("pick_picture", `{"choice":7,"reasoning":"x"}`)},
-		"garbage arguments":         {Resp: toolCallResponse("pick_picture", `not json`)},
+	cases := map[string]testkit.ServerTurn{
+		"prose instead of the tool": textTurn("I like number 1"),
+		"choice out of range":       toolCallTurn("pick_picture", `{"choice":7,"reasoning":"x"}`),
+		"garbage arguments":         toolCallTurn("pick_picture", `not json`),
 	}
-	for name, resp := range cases {
+	for name, turn := range cases {
 		t.Run(name, func(t *testing.T) {
-			mock := &llmtest.MockClient{Responses: []llmtest.Response{resp}}
-			pick, _, err := dailyPictureVet(context.Background(), mock, &tools.Context{Ctx: context.Background()}, "", cands)
+			_, cfg, writerClient, modelID := pictureWriterFixture(t, turn)
+			pick, _, err := (&Server{}).dailyPictureVet(context.Background(), cfg, writerClient, modelID, "test-session", &tools.Context{Ctx: context.Background()}, "", cands)
 			if err != nil {
 				t.Fatalf("dailyPictureVet: %v", err)
 			}
@@ -138,10 +166,10 @@ func TestDailyPictureVet_UndescribableCandidatesAreNotOfferedBlind(t *testing.T)
 			return "a photo", 0, nil
 		},
 	}
-	mock := &llmtest.MockClient{}
+	llmSrv, cfg, writerClient, modelID := pictureWriterFixture(t)
 	cands := []tools.Card{{Title: "t", Subtitle: "example.com", ImageURL: img.URL + "/a.jpg", Kind: "image"}}
 
-	pick, _, err := dailyPictureVet(context.Background(), mock, ctx, "", cands)
+	pick, _, err := (&Server{}).dailyPictureVet(context.Background(), cfg, writerClient, modelID, "test-session", ctx, "", cands)
 	if err != nil {
 		t.Fatalf("dailyPictureVet: %v", err)
 	}
@@ -151,7 +179,7 @@ func TestDailyPictureVet_UndescribableCandidatesAreNotOfferedBlind(t *testing.T)
 	if described {
 		t.Error("DescribeImage ran, but the fetch should have been refused by the SSRF-safe dialer first")
 	}
-	if len(mock.Calls) != 0 {
-		t.Errorf("judge was called %d time(s), want 0 — nothing was left to judge", len(mock.Calls))
+	if len(llmSrv.Requests()) != 0 {
+		t.Errorf("judge was called %d time(s), want 0 — nothing was left to judge", len(llmSrv.Requests()))
 	}
 }

@@ -26,6 +26,11 @@
 			detail: 'A folder of conversations that share instructions and reference files.'
 		},
 		{
+			name: 'OpenCode Go',
+			means: 'The subscription DeepSeek runs on',
+			detail: 'Chat traffic can bill against an OpenCode Go allowance instead of OpenRouter credits, per model. `polaris providers status` shows what goes where.'
+		},
+		{
 			name: 'Constellation',
 			means: 'What it knows about you',
 			detail: 'An auto-built personal library of short facts, learned from your chats. Optional.'

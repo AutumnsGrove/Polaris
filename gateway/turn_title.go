@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
 	"polaris/prompts"
@@ -80,7 +81,7 @@ const maxTitleLen = 60
 // Salvatore..."). The system prompt now says so explicitly with
 // matching examples, and answerLikeTitle below catches whatever slips
 // through anyway.
-func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string, weaverThread bool) (string, float64, error) {
+func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string, weaverThread bool, sessionID string) (string, float64, error) {
 	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
 		// AllowFallbacks(true) — see the main turn client's construction
 		// above for why: an escape valve for every pinned provider being
@@ -111,11 +112,20 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 		{Role: "user", Content: userMessage},
 	}
 
-	resp, err := titleClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	res, err := agent.CompleteOneShot(context.Background(), cfg, titleClient, modelCfg.ID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		OnFallback: func(from, to string, err error) {
+			// Background call, no live turn to chip — the ledger row
+			// (below) and this log line are its visibility.
+			log.Warn("title generation spilled providers", "from", from, "to", to, "err", err)
+		},
+	}, prompt)
 	if err != nil {
 		return "", 0, err
 	}
-	return sanitizeGeneratedTitle(resp.Content), resp.CostUSD, nil
+	s.logOneShotProviderUsage(res, modelCfg.ID)
+	return sanitizeGeneratedTitle(res.Text), res.ListCost, nil
 }
 
 // sanitizeGeneratedTitle cleans up a raw title completion into something
@@ -162,7 +172,7 @@ func sanitizeGeneratedTitle(raw string) string {
 // (which the raw history always does) invites a helpful model to keep
 // answering instead of switching to the actual task, so the instruction
 // needs to be the very last thing it sees.
-func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig, history []llm.ChatMessage) (string, float64, error) {
+func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig, history []llm.ChatMessage, sessionID string) (string, float64, error) {
 	if len(history) == 0 {
 		return "", 0, fmt.Errorf("thread has no messages to title")
 	}
@@ -180,9 +190,16 @@ func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig
 	prompt = append(prompt, history...)
 	prompt = append(prompt, llm.ChatMessage{Role: "user", Content: p.Turn.TitleRegenerateTask})
 
-	resp, err := titleClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	res, err := agent.CompleteOneShot(context.Background(), cfg, titleClient, modelCfg.ID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		OnFallback: func(from, to string, err error) {
+			log.Warn("title regeneration spilled providers", "from", from, "to", to, "err", err)
+		},
+	}, prompt)
 	if err != nil {
 		return "", 0, err
 	}
-	return sanitizeGeneratedTitle(resp.Content), resp.CostUSD, nil
+	s.logOneShotProviderUsage(res, modelCfg.ID)
+	return sanitizeGeneratedTitle(res.Text), res.ListCost, nil
 }

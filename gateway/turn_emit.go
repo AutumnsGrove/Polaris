@@ -166,6 +166,15 @@ func (e *turnEmitter) emit(eventType string, payload map[string]interface{}) {
 	if v, ok := payload["agent_id"].(string); ok {
 		evt.AgentID = v
 	}
+	if v, ok := payload["from"].(string); ok {
+		evt.From = v
+	}
+	if v, ok := payload["to"].(string); ok {
+		evt.To = v
+	}
+	if v, ok := payload["error"].(string); ok {
+		evt.Error = v
+	}
 	if v, ok := payload["objective"].(string); ok {
 		evt.Objective = v
 	}
@@ -263,5 +272,14 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 		// citation_count. store.Store.GetStats reads these back to report
 		// how often each signal actually fires against real usage.
 		s.db.LogEvent(threadID, "info", "agent.nudge", "research steering nudge fired", evt.Args, turnID)
+	case "provider_fallback":
+		// Durable record of a paid retry: which backend refused and which
+		// one answered, with the classified error. Reopened threads
+		// rebuild the transcript chip from this row (see stateHelpers'
+		// buildTimelineFromEvents), so a failover stays visible after
+		// reload instead of surviving only in the live session.
+		s.db.LogEvent(threadID, "info", "turn", "provider fallback", map[string]interface{}{
+			"from": evt.From, "to": evt.To, "error": evt.Error,
+		}, turnID)
 	}
 }

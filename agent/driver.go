@@ -530,6 +530,12 @@ type Result struct {
 	// LLMCalls is how many model calls the loop made this turn — what
 	// PromptTokens is a sum over, so the sheet can say "32K across 2 calls".
 	LLMCalls int
+	// ProviderCalls attributes every completed model call this turn to
+	// the backend that served it, in order (usually exactly one entry;
+	// a spilled turn has one per attempt). The provider_usage ledger
+	// and messages.provider persist this; Usage events alone cannot say
+	// who ran the call.
+	ProviderCalls []ProviderCall
 	// Transcript is every message this turn put on the wire, in order,
 	// after the replayed history — the model-facing user message (with any
 	// attachment notes or Pulsar report folded in), mode reinforcement,

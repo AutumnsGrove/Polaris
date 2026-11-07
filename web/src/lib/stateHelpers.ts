@@ -104,6 +104,16 @@ export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 			list.push({ kind: 'thinking', content: data.content ?? '' });
 		} else if (evt.source === 'turn' && evt.message === 'commentary') {
 			list.push({ kind: 'commentary', content: data.content ?? '' });
+		} else if (evt.source === 'turn' && evt.message === 'provider fallback') {
+			// The persisted provider_fallback row (see gateway's logTurnEvent):
+			// a reopened thread rebuilds the spill chip from this instead
+			// of only the live session showing it.
+			list.push({
+				kind: 'provider_fallback',
+				from: String(data.from ?? ''),
+				to: String(data.to ?? ''),
+				error: typeof data.error === 'string' ? data.error : undefined
+			});
 		} else if (evt.source === 'turn' && evt.message === 'reasoning') {
 			// Persisted as one row per burst (see gateway/turn.go's
 			// flushReasoning), already complete — done: true, unlike the

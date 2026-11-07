@@ -5,28 +5,51 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/testkit"
+
+	"polaris/config"
 	"polaris/llm"
-	"polaris/llm/llmtest"
+	"polaris/models"
 	"polaris/store"
 )
 
-func toolCallResponse(name, argsJSON string) *llm.ChatResponse {
-	return &llm.ChatResponse{ToolCalls: []llm.ToolCall{{
-		ID:   "call_1",
-		Type: "function",
-		Function: llm.FunctionCall{
-			Name:      name,
-			Arguments: argsJSON,
-		},
-	}}}
+// dailyOneShotFixture wires a scripted HTTP double as the writer/architect
+// backend: the ported one-shots run through CompleteOneShot (which needs a
+// real *llm.Client, never a mock), so tests script turns instead of
+// responses. modelID is always a real registry id (mimo-pro), keeping the
+// router on an explicit route.
+func dailyOneShotFixture(t *testing.T, turns ...testkit.ServerTurn) (*testkit.Server, *config.Config, *llm.Client, string) {
+	t.Helper()
+	srv := testkit.NewServer(t, turns...)
+	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL), models.Registry)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	modelCfg := cfg.ModelByID("mimo-pro")
+	client := llm.NewClient(srv.URL, "k", modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens)
+	return srv, cfg, client, modelCfg.ID
+}
+
+func toolCallTurn(name, argsJSON string) testkit.ServerTurn {
+	return testkit.ServerTurn{Turn: testkit.Turn{
+		ToolCalls: []testkit.Call{{ID: "call_1", Name: name, Args: argsJSON}},
+		Usage:     &provider.Usage{PromptTokens: 5, CompletionTokens: 5, TotalTokens: 10, CostUSD: 0.001, CostSource: "provider"},
+	}}
+}
+
+func textTurn(text string) testkit.ServerTurn {
+	return testkit.ServerTurn{Turn: testkit.Turn{
+		Text:  text,
+		Usage: &provider.Usage{PromptTokens: 5, CompletionTokens: 5, TotalTokens: 10, CostUSD: 0.001, CostSource: "provider"},
+	}}
 }
 
 func TestDailyDiffJudge_ParsesStructuredVerdict(t *testing.T) {
-	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: toolCallResponse("record_verdict", `{"verdict":"notable","gist":"A big new development","reasoning":"A new fact appeared that wasn't in yesterday's version"}`)},
-	}}
+	_, cfg, client, modelID := dailyOneShotFixture(t,
+		toolCallTurn("record_verdict", `{"verdict":"notable","gist":"A big new development","reasoning":"A new fact appeared that wasn't in yesterday's version"}`))
 
-	v, _, err := dailyDiffJudge(context.Background(), mock, "Trending Now", "yesterday's content", "today's content")
+	v, _, err := (&Server{}).dailyDiffJudge(context.Background(), cfg, client, modelID, "test-session", "Trending Now", "yesterday's content", "today's content")
 	if err != nil {
 		t.Fatalf("dailyDiffJudge: %v", err)
 	}
@@ -43,11 +66,9 @@ func TestDailyDiffJudge_ParsesStructuredVerdict(t *testing.T) {
 // degrade to "normal" (never drop a block outright on a formatting slip)
 // rather than erroring the whole block generation out.
 func TestDailyDiffJudge_PlainProseFallsBackToNormal(t *testing.T) {
-	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: &llm.ChatResponse{Content: "This seems like a normal update."}},
-	}}
+	_, cfg, client, modelID := dailyOneShotFixture(t, textTurn("This seems like a normal update."))
 
-	v, _, err := dailyDiffJudge(context.Background(), mock, "Headlines", "yesterday", "today")
+	v, _, err := (&Server{}).dailyDiffJudge(context.Background(), cfg, client, modelID, "test-session", "Headlines", "yesterday", "today")
 	if err != nil {
 		t.Fatalf("dailyDiffJudge: %v", err)
 	}
@@ -57,11 +78,10 @@ func TestDailyDiffJudge_PlainProseFallsBackToNormal(t *testing.T) {
 }
 
 func TestDailyDiffJudge_UnrecognizedVerdictFallsBackToNormal(t *testing.T) {
-	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: toolCallResponse("record_verdict", `{"verdict":"huge","gist":"whatever"}`)},
-	}}
+	_, cfg, client, modelID := dailyOneShotFixture(t,
+		toolCallTurn("record_verdict", `{"verdict":"huge","gist":"whatever"}`))
 
-	v, _, err := dailyDiffJudge(context.Background(), mock, "Local", "yesterday", "today")
+	v, _, err := (&Server{}).dailyDiffJudge(context.Background(), cfg, client, modelID, "test-session", "Local", "yesterday", "today")
 	if err != nil {
 		t.Fatalf("dailyDiffJudge: %v", err)
 	}
@@ -92,15 +112,14 @@ func TestDailyBlockLocation(t *testing.T) {
 }
 
 func TestDailyElectTopStory_ReturnsWinnerKey(t *testing.T) {
-	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: toolCallResponse("elect_top_story", `{"winner_key":"trending","reasoning":"Bigger and more consequential than a quiet news day"}`)},
-	}}
+	_, cfg, client, modelID := dailyOneShotFixture(t,
+		toolCallTurn("elect_top_story", `{"winner_key":"trending","reasoning":"Bigger and more consequential than a quiet news day"}`))
 
 	candidates := []dailyRankCandidate{
 		{Key: "headlines", Title: "Top Headlines", Gist: "A quiet news day"},
 		{Key: "trending", Title: "Trending Now", Gist: "A major datacenter buildout announced"},
 	}
-	key, reasoning, _, err := dailyElectTopStory(context.Background(), mock, candidates)
+	key, reasoning, _, err := (&Server{}).dailyElectTopStory(context.Background(), cfg, client, modelID, "test-session", candidates)
 	if err != nil {
 		t.Fatalf("dailyElectTopStory: %v", err)
 	}
@@ -118,15 +137,14 @@ func TestDailyElectTopStory_ReturnsWinnerKey(t *testing.T) {
 // at least one real candidate exists) rather than returning an empty
 // winner.
 func TestDailyElectTopStory_UnknownKeyFallsBackToFirstCandidate(t *testing.T) {
-	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: toolCallResponse("elect_top_story", `{"winner_key":"nonexistent_block"}`)},
-	}}
+	_, cfg, client, modelID := dailyOneShotFixture(t,
+		toolCallTurn("elect_top_story", `{"winner_key":"nonexistent_block"}`))
 
 	candidates := []dailyRankCandidate{
 		{Key: "headlines", Title: "Top Headlines", Gist: "gist a"},
 		{Key: "trending", Title: "Trending Now", Gist: "gist b"},
 	}
-	key, _, _, err := dailyElectTopStory(context.Background(), mock, candidates)
+	key, _, _, err := (&Server{}).dailyElectTopStory(context.Background(), cfg, client, modelID, "test-session", candidates)
 	if err != nil {
 		t.Fatalf("dailyElectTopStory: %v", err)
 	}

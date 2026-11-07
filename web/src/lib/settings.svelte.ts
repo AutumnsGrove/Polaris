@@ -58,6 +58,13 @@ export interface UsageStats {
 	// Same kind of breakout for Oracle mode's own decisions pre-read spend — see
 	// store.Stats.OracleCostUSD. Never add into the totals above either.
 	oracle_cost_usd: { period_cost_usd: number; total_cost_usd: number };
+	// List-price value the Go subscription covered (billing go/go-plus) —
+	// see store.Stats.CoveredBySubscription. Breakout, never additive.
+	// Optional so an older backend hides the row instead of NaN-ing the panel.
+	covered_by_subscription?: { period_cost_usd: number; total_cost_usd: number };
+	// List-price value billed to console balance (always a misconfiguration) —
+	// see store.Stats.BilledToBalance. Same optional convention.
+	billed_to_balance?: { period_cost_usd: number; total_cost_usd: number };
 	// Decisions API call counts (not questions asked) — see store.Stats.DecisionCalls.
 	// Optional so an older backend without it just hides the rows.
 	// `verification` also holds every compare_sources call from before the
@@ -116,6 +123,42 @@ export interface UsageStats {
 // description index the model gets every turn (see tools.MemoryIndexEntry)
 // since a settings-panel page load isn't cost-sensitive the way every
 // single agent turn is.
+export interface ProvidersMeter {
+	kind: string;
+	label: string;
+	short: string;
+	percent: number;
+	used_usd: number;
+	limit_usd: number;
+	resets_at?: string;
+}
+
+export interface ProvidersModelStatus {
+	id: string;
+	primary: string;
+	wire_model: string;
+	go_monthly_limit_usd: number;
+	polaris_share_allowance_usd: number;
+}
+
+// GET /api/providers/status — which backends are configured, the live Go
+// meters, the effective policy, and the per-model route table. Optional
+// fields stay absent (not zero) when unconfigured so the panel degrades
+// to "unavailable" instead of rendering $0 bars.
+export interface ProvidersStatus {
+	openrouter: { configured: boolean };
+	opencode_go: {
+		configured: boolean;
+		plan?: string;
+		meters?: ProvidersMeter[];
+		period_end?: string;
+		polaris_share_allowance_usd: number;
+		error?: string;
+	};
+	policy: { default_backend: string; failover: string; pinned: boolean };
+	models: ProvidersModelStatus[];
+}
+
 export interface Memory {
 	name: string;
 	type: 'user' | 'feedback' | 'project' | 'reference';
@@ -269,6 +312,13 @@ export class SettingsState {
 	usage = $state<UsageStats | null>(null);
 	usageLoaded = $state(false);
 	usageError = $state(false);
+
+	// GET /api/providers/status snapshot for the OpenCode Go panel — null
+	// until loadProviders() resolves. Same loaded/error split as usage
+	// above; re-fetched on every settings open, since meters move fast.
+	providers = $state<ProvidersStatus | null>(null);
+	providersLoaded = $state(false);
+	providersError = $state(false);
 
 	// Memory settings section — see MemorySettings.svelte. memoriesLoaded
 	// mirrors `loaded` above: null/empty is a real, valid state ("nothing
@@ -738,6 +788,23 @@ export class SettingsState {
 		} catch {
 			// Best-effort — a normal idle server with nothing to report
 			// shouldn't surface a network hiccup here as an error state.
+		}
+	}
+
+	// Provider routing snapshot for the OpenCode Go panel — same re-fetch
+	// discipline as loadUsage below (meters move fast; a cached snapshot
+	// would misstate remaining allowance).
+	async loadProviders() {
+		this.providersLoaded = false;
+		this.providersError = false;
+		try {
+			const res = await fetch('/api/providers/status');
+			if (!res.ok) throw new Error('providers fetch failed');
+			this.providers = await res.json();
+		} catch {
+			this.providersError = true;
+		} finally {
+			this.providersLoaded = true;
 		}
 	}
 

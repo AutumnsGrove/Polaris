@@ -24,6 +24,28 @@ openrouter:
   api_key: "${OPENROUTER_API_KEY}"
   base_url: "https://openrouter.ai/api/v1"
 
+# Multi-provider routing (docs/plans/multi-provider.md). Dark by default:
+# with only the openrouter block above, every model resolves to OpenRouter
+# and nothing changes. To route DeepSeek through the OpenCode Go
+# subscription instead:
+#   1. uncomment the opencode_go provider below (needs OPENCODE_API_KEY),
+#   2. set routing.default_backend to "auto" (or add the model_backends
+#      line) — see `polaris providers status` to confirm the effective
+#      routes before and after.
+# providers:
+#   openrouter:
+#     api_key: "${OPENROUTER_API_KEY}"
+#     base_url: "https://openrouter.ai/api/v1"
+#   opencode_go:
+#     api_key: "${OPENCODE_API_KEY}"
+#     base_url: "https://opencode.ai/zen/go/v1"
+#     plan: "go"
+# routing:
+#   default_backend: "openrouter"  # auto | openrouter | opencode_go
+#   failover: "openrouter"         # openrouter | none
+# model_backends:
+#   deepseek: opencode_go
+
 searxng:
   base_url: "http://searxng:8080"
 

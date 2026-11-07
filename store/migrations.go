@@ -230,4 +230,7 @@ var migrations = []string{
 	// threads.alert_reason — see the schema comment above. Appended at the
 	// end, same positional-index rule as above.
 	`ALTER TABLE threads ADD COLUMN alert_reason TEXT NOT NULL DEFAULT ''`,
+	// messages.provider — the backend that served the turn (see the schema
+	// comment above). Appended at the end, same positional-index rule.
+	`ALTER TABLE messages ADD COLUMN provider TEXT NOT NULL DEFAULT ''`,
 }

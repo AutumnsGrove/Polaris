@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"polaris/agent"
 	"polaris/llm"
 	"polaris/prompts"
 	"polaris/store"
@@ -144,22 +145,29 @@ func (s *Server) handleSuggestPulsarPrompt(w http.ResponseWriter, r *http.Reques
 
 	ctx, cancel := context.WithTimeout(r.Context(), pulsarSuggestTimeout)
 	defer cancel()
-	resp, err := client.ChatCompletionStreaming(ctx, chat, func(string) {}, nil)
+	res, err := agent.CompleteOneShot(ctx, cfg, client, modelCfg.ID, agent.OneShotOptions{
+		SessionID: threadID,
+		UserAgent: "Polaris/" + s.version,
+		OnFallback: func(from, to string, err error) {
+			log.Warn("pulsar suggest spilled providers", "thread", threadID, "from", from, "to", to, "err", err)
+		},
+	}, chat)
 	if err != nil {
 		log.Warn("pulsar suggest: completion failed", "thread", threadID, "err", err)
 		http.Error(w, "couldn't draft a routine prompt — try again", http.StatusBadGateway)
 		return
 	}
+	s.logOneShotProviderUsage(res, modelCfg.ID)
 
 	// Billed before the parse check: the completion already ran and cost
 	// real money whether or not its output turns out usable.
-	if resp.CostUSD > 0 {
-		if err := s.db.RecordAuxCost("pulsar_suggest", resp.CostUSD); err != nil {
+	if res.ListCost > 0 {
+		if err := s.db.RecordAuxCost("pulsar_suggest", res.ListCost); err != nil {
 			log.Warn("pulsar suggest: recording cost failed", "thread", threadID, "err", err)
 		}
 	}
 
-	name, prompt := parsePulsarSuggestion(resp.Content)
+	name, prompt := parsePulsarSuggestion(res.Text)
 	if prompt == "" {
 		// A parse failure or an empty draft must not silently hand the
 		// form a blank prompt — the client falls back to the raw seed.
@@ -168,7 +176,7 @@ func (s *Server) handleSuggestPulsarPrompt(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, pulsarSuggestResponse{Name: name, Prompt: prompt, CostUSD: resp.CostUSD})
+	writeJSON(w, pulsarSuggestResponse{Name: name, Prompt: prompt, CostUSD: res.ListCost})
 }
 
 // buildPulsarSuggestTranscript renders the conversation tail the model

@@ -14,6 +14,7 @@ import (
 
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/routing"
 	"polaris/tools"
 )
 
@@ -62,8 +63,13 @@ type novaRunState struct {
 
 	// lastMsg is the assistant message of the call in flight, captured from
 	// message_end so the usage event that follows can decide about commentary.
-	lastMsg     message.Message
-	awaitUsage  bool
+	lastMsg    message.Message
+	awaitUsage bool
+	// calls attributes every completed model call to the backend that
+	// served it, in order — the provider_usage ledger and
+	// messages.provider read this in build, since Usage events alone
+	// cannot say who ran the call.
+	calls       []ProviderCall
 	wrapMsg     *message.Message // the wrap-up turn's raw assistant message
 	liveText    strings.Builder  // text shown live this turn, for a graceful stop
 	early       *novaEarlyExit
@@ -117,13 +123,18 @@ func runWithNova(reqCtx context.Context, ctx *tools.Context, history []llm.ChatM
 
 	defs := tools.Defs(ctx)
 	novaDefs := toNovaDefs(defs)
-	prov, model := novaProviderFor(ctx.LLM)
+	prov, model := novaProviderFor(ctx)
+	// Attribute every completed model call to the backend that served
+	// it — the ledger, messages.provider, and the failover chip all
+	// read this, and Usage alone cannot say who ran the call.
+	prov.OnCall = st.recordCall
 	temp := model.Temperature
 	promptCache := model.PromptCache
 
 	cfg := novaagent.Config{
 		Provider:        prov,
 		Model:           model.Name,
+		ModelID:         model.ModelID,
 		System:          system,
 		Tools:           novaToolRegistry(defs),
 		ToolData:        ctx,
@@ -175,6 +186,32 @@ func shapeToolRequest(req *provider.Request, defs []provider.ToolDef) {
 	req.ParallelToolCalls = &yes
 }
 
+// recordCall attributes one completed provider call to the backend that
+// served it. It fires from polarisProvider.Stream, synchronously with the
+// call it reports, so the entry order matches call order (parallel tool
+// batches share one provider call; concurrent provider calls never happen
+// in a run).
+//
+// A billing_source of balance is a loud warning, never a silent line
+// item: it means Console "Extra Usage" got enabled. With money in the
+// balance every post-cap call spends it; with an empty balance the call
+// fails instead. Either way it is a misconfiguration, never a routing
+// outcome (docs/plans/multi-provider.md §6.6).
+func (s *novaRunState) recordCall(resp *provider.Response) {
+	if resp == nil {
+		return
+	}
+	s.calls = append(s.calls, ProviderCall{Provider: resp.Provider, Usage: resp.Usage})
+	if resp.Usage.BillingSource == "balance" {
+		log.Warn("OpenCode Go call billed to console balance — Extra Usage is on, which is a misconfiguration, not a routing outcome",
+			"provider", resp.Provider, "allowance_usd", resp.Usage.AllowanceUSD, "list_cost_usd", resp.Usage.ListCostUSD)
+		s.ctx.Emit("provider_warning", map[string]interface{}{
+			"kind":    "balance_billing",
+			"content": "This call spent real console balance instead of the Go subscription — check Extra Usage in the OpenCode console.",
+		})
+	}
+}
+
 // build maps Nova's result back into Polaris's, whatever way the run ended.
 func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err error, turnPrefix []llm.ChatMessage, prov *polarisProvider) (*Result, error) {
 	ctx := s.ctx
@@ -189,6 +226,7 @@ func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err 
 		CompletionTokens: s.completionTokens,
 		LastPromptTokens: s.lastPromptTokens,
 		LLMCalls:         s.llmCalls,
+		ProviderCalls:    s.calls,
 	}
 	var newMsgs []message.Message
 	if res != nil {
@@ -316,7 +354,12 @@ func (s *novaRunState) onEvent(e proto.Event) {
 		}
 		s.awaitUsage = false
 		u := e.Usage
-		s.totalCost += u.CostUSD
+		// List cost, never allowance dollars: on a Go call CostUSD is
+		// what the subscription consumed and ListCostUSD is the retail
+		// price the thread totals are denominated in. Adding CostUSD
+		// directly overstates by the peak multiplier and records $0 for
+		// a covered free-model call (routing.ListCost's doc comment).
+		s.totalCost += routing.ListCost(*u)
 		s.promptTokens += u.PromptTokens
 		s.cacheReadTokens += u.CachedTokens
 		s.completionTokens += u.CompletionTokens

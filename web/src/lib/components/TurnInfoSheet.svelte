@@ -154,6 +154,12 @@
 
 		<div class="stats">
 			<div class="stat-cell wide"><span class="k">Model</span><span class="v">{modelName ?? '—'}</span></div>
+			{#if turn.provider === 'opencode-go'}
+				<!-- Turn cost is always list price, so a Go-served turn's full
+				     amount is what the subscription covered — the "$X real ·
+				     $Y covered" headline's per-turn proof. -->
+				<div class="stat-cell wide"><span class="k">Billed</span><span class="v go-covered">Covered by Go</span></div>
+			{/if}
 			<div class="stat-cell">
 				<span class="k">First token</span>
 				<span class="v">{turn.ttftMs !== undefined ? `${(turn.ttftMs / 1000).toFixed(1)}s` : '—'}</span>
@@ -319,6 +325,10 @@
 		padding: var(--space-sm) var(--space-md);
 		display: flex;
 		flex-direction: column;
+	}
+	.v.go-covered {
+		color: var(--color-accent-2);
+		font-weight: 600;
 	}
 
 	.stat-cell .k {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/AutumnsGrove/nova/provider/route"
 	"github.com/google/uuid"
 
 	"polaris/agent"
@@ -51,6 +52,11 @@ type turnRun struct {
 	requestedModel string
 	modelCfg       config.ModelConfig
 	client         *llm.Client
+	// router is this turn's Nova provider router, built once from the
+	// turn's config generation (routing.Build) — not one shared
+	// process-wide, because SessionID must close over this turn's thread
+	// id. Nil only when routing is unavailable; agent runs direct then.
+	router *route.Router
 
 	history         []llm.ChatMessage
 	prevUserMessage string

@@ -316,6 +316,12 @@ export type ServerEvent =
 	// aborted attempt got discarded) — see gateway/protocol.go's doc
 	// comment on this event type for the full rationale.
 	| { type: 'commentary'; thread_id?: string; content: string; agent_id?: string }
+	// A Go attempt hit a limit/refusal and the same call continued on
+	// OpenRouter — see gateway/protocol.go's ServerEvent From/To/Error.
+	// Persisted per turn (unlike cost_update above), so reopened threads
+	// rebuild the transcript chip instead of only the live session
+	// showing it. from/to are router attempt names (opencode-go, openrouter).
+	| { type: 'provider_fallback'; thread_id?: string; from: string; to: string; error?: string }
 	| { type: 'user_message'; thread_id: string; user_message_id: number }
 	| {
 			type: 'done';
@@ -384,6 +390,9 @@ export type ServerEvent =
 			// This turn's requested model id — see
 			// gateway/protocol.go's ServerEvent.AppliedModel doc comment.
 			applied_model?: string;
+			// Backend that served this turn — see gateway/protocol.go's
+			// ServerEvent.Provider. Drives TurnInfoSheet's covered line.
+			provider?: string;
 	  }
 	// Sent once, shortly after 'done' — up to 3 follow-up questions for the
 	// answer that just finished, persisted alongside it (see
@@ -574,6 +583,14 @@ export interface ModelOption {
 	pricing?: ModelPricing;
 	// Context size at which a thread on this model auto-compacts.
 	compaction_tokens?: number;
+	// Effective serving backend from the live routing policy (route.Primary).
+	// Absent on an older backend, which renders no badge instead of guessing.
+	primary?: string;
+	// Subscription monthly allowance for this model; 0/absent = no Go entry.
+	go_monthly_limit_usd?: number;
+	// Polaris's own share of that window this month — the picker's headroom
+	// tint reads this Polaris-only number.
+	polaris_share_allowance_usd?: number;
 }
 
 export interface Thread {
@@ -952,6 +969,9 @@ export interface StoredEvent {
 
 export type TimelineItem =
 	| { kind: 'thinking'; content: string }
+	// A Go attempt spilled to OpenRouter mid-turn: the paid retry the transcript
+	// must never stay silent about (same convention as web_search's "[via X]").
+	| { kind: 'provider_fallback'; from: string; to: string; error?: string }
 	// startedAt (epoch ms) is only set on a live-streamed burst, to drive the
 	// header's ticking "Thinking for Ns"; durationMs is set once it closes
 	// (live) or read back from the persisted row (reopened thread). Rows
@@ -1081,6 +1101,9 @@ export interface ChatTurn {
 	// doc comment. Mapped to a display name via appState.models in
 	// TurnInfoSheet.svelte, same lookup ComposerMenu's model picker uses.
 	appliedModel?: string;
+	// Backend that served the turn (openrouter/opencode-go) — unlike appliedModel
+	// (requested), a failover shows up here and drives TurnInfoSheet's covered line.
+	provider?: string;
 	// costAnswer/costVerification/costOracle are costUsd's three-tier split
 	// — see store.Message.CostAnswerUSD's doc comment. Shown even with
 	// Oracle off (verification can run either way).

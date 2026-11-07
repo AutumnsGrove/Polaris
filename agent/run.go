@@ -26,6 +26,21 @@ func NovaLoopEnvOverridden() bool {
 	return ok
 }
 
+// ForceOpenRouter reports whether the kill switch pins every routed call to
+// OpenRouter. Only POLARIS_NOVA_LOOP=0/false does this — the pin is the
+// kill switch, not a routing mode (docs/plans/multi-provider.md §4): while
+// the switch is off the bespoke loop runs turns on llm.Client directly and
+// the router is forced to openrouter for everything else (one-shot sites),
+// so a half-routed app can never happen. A config-level nova_loop: false
+// only selects the bespoke loop; it does not pin one-shots.
+func ForceOpenRouter() bool {
+	v, ok := os.LookupEnv("POLARIS_NOVA_LOOP")
+	if !ok {
+		return false
+	}
+	return !(v == "1" || strings.EqualFold(v, "true"))
+}
+
 // novaLoopEnabled is the config value (or settings-panel pick, see
 // gateway.NovaLoopFromStore), with POLARIS_NOVA_LOOP as a full
 // override in both directions: "1"/"true" forces the Nova loop on for a

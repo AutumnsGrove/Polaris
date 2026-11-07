@@ -246,6 +246,15 @@
 			<pre class="tool-result">{item.content}</pre>
 		{/if}
 	</div>
+{:else if item.kind === 'provider_fallback'}
+	<!-- A Go attempt spilled mid-turn: the paid retry the transcript must
+	     never stay silent about (same convention as web_search's "[via X]"
+	     line). A chip, not a card — it annotates the turn, it isn't content.
+	     Title carries the classified error for the curious. -->
+	<div class="provider-fallback-chip" title={item.error ?? `${item.from} limit reached`}>
+		<span class="fallback-dot" aria-hidden="true"></span>
+		<span>Continued on {item.to === 'openrouter' ? 'OpenRouter' : item.to} — {item.from === 'opencode-go' ? 'Go' : item.from} limit reached</span>
+	</div>
 {:else if item.kind === 'compacted'}
 	<div class="tool-event compacted">
 		<button class="tool-header" onclick={() => (open = !open)}>
@@ -427,6 +436,25 @@
 {/if}
 
 <style>
+	/* The failover chip: a small inline marker that a Go attempt spilled
+	   to a paid retry mid-turn. Deliberately quiet (dim text, no card) —
+	   it's an annotation on the turn, not content worth expanding. */
+	.provider-fallback-chip {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		margin: var(--space-xs) 0;
+		font-size: 11.5px;
+		color: var(--color-text-dim);
+	}
+	.fallback-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--color-accent-2);
+		flex-shrink: 0;
+	}
+
 	.thinking {
 		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
 		border-radius: var(--radius-sm);

@@ -1380,6 +1380,7 @@ export class AppState {
 				turn.tokensPerSecond = e.tokens_per_second;
 				turn.appliedFocusMode = e.applied_focus_mode;
 				turn.appliedModel = e.applied_model;
+				turn.provider = e.provider;
 				// See ServerEvent's assistant_message_id doc comment — without
 				// this, read-aloud on a turn from the current session (not yet
 				// reloaded from history) has no message id to attach a

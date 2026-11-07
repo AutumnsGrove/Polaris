@@ -362,6 +362,13 @@ type ServerEvent struct {
 	CostUSD       float64 `json:"cost_usd"`
 	ContextTokens int     `json:"context_tokens"`
 	Message       string  `json:"message,omitempty"`
+	// From/To are the provider_fallback event's legs (attempt names, e.g.
+	// opencode-go -> openrouter) — which backend refused and which one
+	// answered the paid retry. Error is that event's classified failure
+	// text. Empty for every other event.
+	From  string `json:"from,omitempty"`
+	To    string `json:"to,omitempty"`
+	Error string `json:"error,omitempty"`
 	// ErrorKind classifies an "error" event's Message for the frontend —
 	// currently only ever "network" (see llm.IsNetworkError), meaning the
 	// request never reached the LLM provider at all (dropped wifi, DNS

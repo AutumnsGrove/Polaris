@@ -58,6 +58,10 @@ services:
     # .env/the host env", same convention .env.example documents.
     environment:
       - OPENROUTER_API_KEY
+      # Without this, providers.opencode_go.api_key's ${OPENCODE_API_KEY}
+      # expands to "" and Go is silently disabled (every model resolves
+      # to OpenRouter with no error) — see config.GoEnabled.
+      - OPENCODE_API_KEY
       - FOURSQUARE_API_KEY
       - TAVILY_API_KEY
       - BRAVE_API_KEY

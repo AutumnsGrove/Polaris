@@ -462,3 +462,177 @@ func TestLoad_NovaLoopDefaultsOnAndParses(t *testing.T) {
 		t.Error("nova_loop: false did not parse; the kill switch is broken")
 	}
 }
+
+var testRegistryGo = []ModelConfig{
+	{
+		ID:          "test-model",
+		Name:        "Test Model",
+		Model:       "test/model",
+		Provider:    []string{"test"},
+		Temperature: 0.4,
+		MaxTokens:   1000,
+		GoModel:     "test-model-go",
+	},
+	{
+		ID:          "plain-model",
+		Name:        "Plain Model",
+		Model:       "plain/model",
+		Provider:    []string{"test"},
+		Temperature: 0.4,
+		MaxTokens:   1000,
+	},
+}
+
+func TestLoad_LegacyOpenRouterSeedsProviders(t *testing.T) {
+	cfg, err := Load(writeTestConfig(t, "openrouter:\n  api_key: \"sk-test\"\n"), testRegistry)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	or, ok := cfg.Providers["openrouter"]
+	if !ok {
+		t.Fatal("legacy openrouter block did not seed providers[openrouter]")
+	}
+	if or.APIKey != "sk-test" {
+		t.Errorf("providers[openrouter].APIKey = %q, want sk-test", or.APIKey)
+	}
+	if backend, _ := cfg.BackendFor("test-model"); backend != "openrouter" {
+		t.Errorf("legacy config BackendFor = %q, want openrouter (no behavior change unless opted in)", backend)
+	}
+	if cfg.GoEnabled() {
+		t.Error("GoEnabled without an opencode_go entry, want false")
+	}
+}
+
+func TestLoad_ProvidersBlockBridgesBackToOpenRouter(t *testing.T) {
+	cfg, err := Load(writeTestConfig(t, `providers:
+  openrouter:
+    api_key: "sk-new"
+    base_url: "https://openrouter.ai/api/v1"
+  opencode_go:
+    api_key: "go-key"
+    plan: "go"
+routing:
+  default_backend: openrouter
+`), testRegistryGo)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	// Existing readers go through cfg.OpenRouter — the new-style block must
+	// feed them, or every llm.NewClient site breaks on a new-style config.
+	if cfg.OpenRouter.APIKey != "sk-new" {
+		t.Errorf("OpenRouter.APIKey = %q, want sk-new bridged from providers", cfg.OpenRouter.APIKey)
+	}
+	if !cfg.GoEnabled() {
+		t.Error("GoEnabled with a keyed opencode_go entry, want true")
+	}
+	// default_backend: openrouter pins everything even though test-model is
+	// Go-eligible — the dark-ship merge is a no-op by construction.
+	if backend, _ := cfg.BackendFor("test-model"); backend != "openrouter" {
+		t.Errorf("BackendFor with default_backend=openrouter = %q, want openrouter", backend)
+	}
+}
+
+func TestLoad_GoOnlyConfigBoots(t *testing.T) {
+	cfg, err := Load(writeTestConfig(t, `providers:
+  opencode_go:
+    api_key: "go-key"
+`), testRegistryGo)
+	if err != nil {
+		t.Fatalf("Go-only config should boot, got: %v", err)
+	}
+	if cfg.GoEnabled() != true {
+		t.Error("GoEnabled, want true")
+	}
+}
+
+func TestLoad_RoutingValidation(t *testing.T) {
+	cases := map[string]string{
+		"unknown model": `providers:
+  openrouter:
+    api_key: "k"
+  opencode_go:
+    api_key: "go"
+model_backends:
+  nope: opencode_go
+`,
+		"unknown provider": `providers:
+  openrouter:
+    api_key: "k"
+model_backends:
+  test-model: wat
+`,
+		"go assignment without go_model": `providers:
+  openrouter:
+    api_key: "k"
+  opencode_go:
+    api_key: "go"
+model_backends:
+  plain-model: opencode_go
+`,
+		"bad default_backend": `providers:
+  openrouter:
+    api_key: "k"
+routing:
+  default_backend: wat
+`,
+		"bad failover": `providers:
+  openrouter:
+    api_key: "k"
+routing:
+  failover: wat
+`,
+	}
+	for name, contents := range cases {
+		if _, err := Load(writeTestConfig(t, contents), testRegistryGo); err == nil {
+			t.Errorf("%s: expected a load error, got none", name)
+		}
+	}
+}
+
+func TestBackendFor_Resolution(t *testing.T) {
+	load := func(extra string) *Config {
+		t.Helper()
+		base := "providers:\n  openrouter:\n    api_key: \"k\"\n  opencode_go:\n    api_key: \"go\"\n"
+		cfg, err := Load(writeTestConfig(t, base+extra), testRegistryGo)
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		return cfg
+	}
+	// auto: eligible model goes Go, go_model-less model stays.
+	auto := load("routing:\n  default_backend: auto\n")
+	if backend, _ := auto.BackendFor("test-model"); backend != "opencode_go" {
+		t.Errorf("auto eligible = %q, want opencode_go", backend)
+	}
+	if backend, _ := auto.BackendFor("plain-model"); backend != "openrouter" {
+		t.Errorf("auto ineligible = %q, want openrouter (OpenRouter by construction, not policy)", backend)
+	}
+	// An explicit override beats the default either way.
+	over := load("routing:\n  default_backend: auto\nmodel_backends:\n  test-model: openrouter\n")
+	if backend, _ := over.BackendFor("test-model"); backend != "openrouter" {
+		t.Errorf("explicit openrouter override = %q, want openrouter", backend)
+	}
+	// default_backend: opencode_go only lifts eligible models; the rest
+	// stay on OpenRouter rather than being sent to Go with a wrong slug.
+	pin := load("routing:\n  default_backend: opencode_go\n")
+	if backend, _ := pin.BackendFor("plain-model"); backend != "openrouter" {
+		t.Errorf("opencode_go default for go_model-less model = %q, want openrouter", backend)
+	}
+	// Go configured without a credential disables every Go route — keys
+	// arrive via env vars that may be empty at runtime, so this is a
+	// lookup-time fallback, not a load error.
+	nokey, err := Load(writeTestConfig(t, "providers:\n  openrouter:\n    api_key: \"k\"\n  opencode_go: {}\nrouting:\n  default_backend: auto\n"), testRegistryGo)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if backend, _ := nokey.BackendFor("test-model"); backend != "openrouter" {
+		t.Errorf("auto with keyless Go = %q, want openrouter", backend)
+	}
+}
+
+func TestLoad_UnknownProviderNameIsAnError(t *testing.T) {
+	contents := "providers:\n  openrouter:\n    api_key: \"k\"\n  wat:\n    api_key: \"x\"\n"
+	if _, err := Load(writeTestConfig(t, contents), testRegistryGo); err == nil {
+		t.Error("expected a load error for an unknown provider name, got none")
+	}
+}

@@ -21,6 +21,7 @@ import (
 	"polaris/config"
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/routing"
 	"polaris/store"
 	"polaris/tools"
 	"polaris/tz"
@@ -188,7 +189,7 @@ var dailyResearchTasks = map[string]string{
 // construction shape as runWizardTurn's client, minus reasoning: neither
 // role here needs extended internal reasoning turned on explicitly (see
 // generateSuggestions' doc comment for the opposite case).
-func dailyClient(cfg *config.Config, modelID string) llm.ChatClient {
+func dailyClient(cfg *config.Config, modelID string) *llm.Client {
 	modelCfg := cfg.ModelByID(modelID)
 	// AllowFallbacks(true) — escape valve for every pinned provider being
 	// down at once; see gateway/turn.go's main client construction.
@@ -236,21 +237,28 @@ const dailyPickHistoryCap = 500
 // same "cheap and shallow every day" framing the plan doc's expand-to-
 // chat section uses to justify the opposite (deep) behavior on tap.
 // history is this block key's past picks — see appendPickHistoryExclusion.
-func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, customInstruction string, history []string) (string, float64, error) {
+func (s *Server) generateDailyPickBlock(reqCtx context.Context, cfg *config.Config, client *llm.Client, modelID, sessionID, key, customInstruction string, history []string) (string, float64, error) {
 	task, ok := dailyPickTasks[key]
 	if !ok {
 		return "", 0, fmt.Errorf("no pick task defined for block %q", key)
 	}
 	task = appendCustomInstruction(task, customInstruction)
 	task = appendPickHistoryExclusion(task, history)
-	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
+	res, err := agent.CompleteOneShot(reqCtx, cfg, client, modelID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		OnFallback: func(from, to string, err error) {
+			log.Warn("pulsar daily: pick block spilled providers", "block", key, "from", from, "to", to, "err", err)
+		},
+	}, []llm.ChatMessage{
 		{Role: "system", Content: prompts.Get().PulsarDaily.PickBlockSystem},
 		{Role: "user", Content: task},
-	}, func(string) {}, nil)
+	})
 	if err != nil {
 		return "", 0, err
 	}
-	return strings.TrimSpace(resp.Content), resp.CostUSD, nil
+	s.logOneShotProviderUsage(res, modelID)
+	return strings.TrimSpace(res.Text), res.ListCost, nil
 }
 
 // dailyResearchTaskFor builds a fixed registry block's task text — the
@@ -280,8 +288,8 @@ func dailyResearchTaskFor(key, location, sportsTeams, customInstruction string) 
 // the diff-judge/gist/trace paths); when it doesn't (or wantsItems is
 // false), items is nil and content is the model's plain-prose answer,
 // exactly as before this existed.
-func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, task, location string, wantsItems bool) (content string, items []store.PulsarDailyBlockItem, chart *tools.ChartSpec, imageURL string, cost float64, err error) {
-	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, wantsItems)
+func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient *llm.Client, modelID, sessionID, task, location string, wantsItems bool) (content string, items []store.PulsarDailyBlockItem, chart *tools.ChartSpec, imageURL string, cost float64, err error) {
+	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, wantsItems, modelID, sessionID)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		return "", nil, nil, "", 0, err
@@ -306,7 +314,7 @@ func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.
 // prompt ("more paragraphs, additional context") produced a real,
 // observed 17KB Top Story card from a single elected item — this is meant
 // to read as one deeper digest card, not a full feature article.
-func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, title, quickContent, location string) (content string, chart *tools.ChartSpec, imageURL string, cost float64, err error) {
+func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Config, writerClient *llm.Client, modelID, sessionID, title, quickContent, location string) (content string, chart *tools.ChartSpec, imageURL string, cost float64, err error) {
 	task := fmt.Sprintf("This is today's lead story for a personal daily digest, titled %q. Here's the "+
 		"quick version already written: %s\n\nWrite a deeper but still concise version — 3-4 short "+
 		"paragraphs, not a full feature article. Add real additional context or background research (not "+
@@ -316,7 +324,7 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 		"and then show one relevant photo instead (search results aren't displayed until you call show). Don't just restate the quick version — add to it, but keep "+
 		"it tight.", title, quickContent)
 
-	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false)
+	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false, modelID, sessionID)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		return "", nil, "", 0, err
@@ -338,9 +346,18 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 // custom), never for Stage C's elaboration of a single already-chosen
 // item, and never for weather/picture's direct tools.Dispatch calls
 // (which never construct an agent.Run tool menu at all).
-func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClient, cfg *config.Config, location string, wantsItems bool) *tools.Context {
+func (s *Server) newDailyToolContext(reqCtx context.Context, client *llm.Client, cfg *config.Config, location string, wantsItems bool, modelID, sessionID string) *tools.Context {
+	// Stage A/B/C mini-generations run on the writer/architect
+	// models, so they route like turns: registry id for the chain, the
+	// edition-scoped session for the Go header.
 	ctx := &tools.Context{
 		PulsarDailyItems: wantsItems,
+		ModelID:          modelID,
+		Router: routing.Build(cfg, routing.Options{
+			SessionID:       func() string { return sessionID },
+			UserAgent:       "Polaris/" + s.version,
+			ForceOpenRouter: agent.ForceOpenRouter(),
+		}),
 		// Ctx is normally set by agent.Run itself (see its doc comment on
 		// Context.Ctx) — but Weather and Picture of the Day's image_search
 		// call tools.Dispatch directly, bypassing agent.Run entirely, so
@@ -482,10 +499,10 @@ const dailyPictureDescribeInstructions = "In 2-3 sentences: what is literally sh
 // image_search's own return string is a summary sentence, not the image
 // data (see tools/image_search.go's finishImageSearch), so URLs come from
 // the candidate cards it records in ctx.ImageCandidates.
-func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context, customInstruction string) (content, imageURL string, cost float64, err error) {
+func (s *Server) generateDailyPictureBlock(reqCtx context.Context, cfg *config.Config, writerClient *llm.Client, modelID, sessionID string, ctx *tools.Context, customInstruction string) (content, imageURL string, cost float64, err error) {
 	var rejected []string
 	for attempt := 0; attempt < dailyPictureMaxQueries; attempt++ {
-		query, queryCost, err := dailyPictureQuery(reqCtx, writerClient, customInstruction, rejected)
+		query, queryCost, err := s.dailyPictureQuery(reqCtx, cfg, writerClient, modelID, sessionID, customInstruction, rejected)
 		cost += queryCost
 		if err != nil {
 			return "", "", cost, err
@@ -517,7 +534,7 @@ func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClie
 			continue
 		}
 
-		pick, pickCost, err := dailyPictureVet(reqCtx, writerClient, ctx, customInstruction, candidates)
+		pick, pickCost, err := s.dailyPictureVet(reqCtx, cfg, writerClient, modelID, sessionID, ctx, customInstruction, candidates)
 		cost += pickCost
 		if err != nil {
 			return "", "", cost, err
@@ -546,7 +563,7 @@ func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClie
 // lists earlier queries from this same generation that produced nothing
 // usable (with why), so a retry tries a different angle instead of the
 // same search again.
-func dailyPictureQuery(reqCtx context.Context, writerClient llm.ChatClient, customInstruction string, rejected []string) (string, float64, error) {
+func (s *Server) dailyPictureQuery(reqCtx context.Context, cfg *config.Config, writerClient *llm.Client, modelID, sessionID, customInstruction string, rejected []string) (string, float64, error) {
 	task := "Give me a search query for an interesting, visually striking photo to feature as today's " +
 		"\"Picture of the Day\" — nature, space, art, architecture, wildlife, or similar. Vary it day to " +
 		"day rather than defaulting to the same subject."
@@ -556,18 +573,25 @@ func dailyPictureQuery(reqCtx context.Context, writerClient llm.ChatClient, cust
 			"take a clearly different angle, and phrase it so it can only match real photographs, not " +
 			"products or ads: " + strings.Join(rejected, "; ") + "."
 	}
-	resp, err := writerClient.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
+	res, err := agent.CompleteOneShot(reqCtx, cfg, writerClient, modelID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		OnFallback: func(from, to string, err error) {
+			log.Warn("pulsar daily: picture query spilled providers", "from", from, "to", to, "err", err)
+		},
+	}, []llm.ChatMessage{
 		{Role: "system", Content: "Reply with ONLY a short (3-6 word) image search query, nothing else."},
 		{Role: "user", Content: task},
-	}, func(string) {}, nil)
+	})
 	if err != nil {
 		return "", 0, err
 	}
-	query := strings.Trim(strings.TrimSpace(resp.Content), "\"")
+	s.logOneShotProviderUsage(res, modelID)
+	query := strings.Trim(strings.TrimSpace(res.Text), "\"")
 	if query == "" {
-		return "", resp.CostUSD, fmt.Errorf("picture_of_day: model returned an empty search query")
+		return "", res.ListCost, fmt.Errorf("picture_of_day: model returned an empty search query")
 	}
-	return query, resp.CostUSD, nil
+	return query, res.ListCost, nil
 }
 
 type dailyPicturePick struct {
@@ -584,7 +608,7 @@ type dailyPicturePick struct {
 // alone (weaker, but still a judge — a wrong pick is the failure to avoid,
 // not a missing description). Anything unparseable from the judge counts
 // as a rejection, never as "take the first one".
-func dailyPictureVet(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context, customInstruction string, candidates []tools.Card) (dailyPicturePick, float64, error) {
+func (s *Server) dailyPictureVet(reqCtx context.Context, cfg *config.Config, writerClient *llm.Client, modelID, sessionID string, ctx *tools.Context, customInstruction string, candidates []tools.Card) (dailyPicturePick, float64, error) {
 	reject := func(why string) dailyPicturePick { return dailyPicturePick{index: -1, reasoning: why} }
 
 	type described struct {
@@ -634,7 +658,14 @@ func dailyPictureVet(reqCtx context.Context, writerClient llm.ChatClient, ctx *t
 	if w := strings.TrimSpace(customInstruction); w != "" {
 		wish = w
 	}
-	resp, err := writerClient.ChatCompletionWithTools(reqCtx, []llm.ChatMessage{
+	res, err := agent.CompleteOneShot(reqCtx, cfg, writerClient, modelID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		Tools:     []llm.ToolDef{dailyPicturePickToolDef},
+		OnFallback: func(from, to string, err error) {
+			log.Warn("pulsar daily: picture vetting spilled providers", "from", from, "to", to, "err", err)
+		},
+	}, []llm.ChatMessage{
 		{Role: "system", Content: "You choose today's \"Picture of the Day\" for a daily newspaper. Call " +
 			"pick_picture. A candidate qualifies only if it is a real, striking photograph or artwork that " +
 			"fits what the reader asked for. Reject product or catalog shots, advertisements, screenshots, " +
@@ -642,12 +673,13 @@ func dailyPictureVet(reqCtx context.Context, writerClient llm.ChatClient, ctx *t
 			"full of these, and choosing none is a good answer. Trust the description of what an image " +
 			"actually looks like over its search title."},
 		{Role: "user", Content: "The reader wants: " + wish + "\n\nCandidates:\n" + b.String()},
-	}, []llm.ToolDef{dailyPicturePickToolDef}, func(string) {}, nil)
+	})
 	if err != nil {
 		return dailyPicturePick{}, cost, err
 	}
-	cost += resp.CostUSD
-	if len(resp.ToolCalls) == 0 {
+	s.logOneShotProviderUsage(res, modelID)
+	cost += res.ListCost
+	if len(res.ToolCalls) == 0 {
 		return reject("the judge didn't call pick_picture"), cost, nil
 	}
 	var args struct {
@@ -655,7 +687,7 @@ func dailyPictureVet(reqCtx context.Context, writerClient llm.ChatClient, ctx *t
 		Caption   string `json:"caption"`
 		Reasoning string `json:"reasoning"`
 	}
-	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
+	if err := json.Unmarshal([]byte(res.ToolCalls[0].Function.Arguments), &args); err != nil {
 		return reject("the judge's pick_picture arguments were unparseable"), cost, nil
 	}
 	if args.Choice < 1 || args.Choice > len(offered) {
@@ -714,17 +746,25 @@ type dailyVerdict struct {
 // block content (not summarized — see the plan doc's Stage A reasoning
 // on why a lossy summary would weaken a pairwise wording comparison) and
 // returns a structured verdict.
-func dailyDiffJudge(reqCtx context.Context, client llm.ChatClient, title, yesterday, today string) (dailyVerdict, float64, error) {
+func (s *Server) dailyDiffJudge(reqCtx context.Context, cfg *config.Config, client *llm.Client, modelID, sessionID, title, yesterday, today string) (dailyVerdict, float64, error) {
 	messages := []llm.ChatMessage{
 		{Role: "system", Content: fmt.Sprintf(prompts.Get().PulsarDaily.DiffJudgeSystem, title)},
 		{Role: "user", Content: "Yesterday:\n" + yesterday + "\n\nToday:\n" + today},
 	}
-	resp, err := client.ChatCompletionWithTools(reqCtx, messages, []llm.ToolDef{dailyVerdictToolDef}, func(string) {}, nil)
+	res, err := agent.CompleteOneShot(reqCtx, cfg, client, modelID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		Tools:     []llm.ToolDef{dailyVerdictToolDef},
+		OnFallback: func(from, to string, err error) {
+			log.Warn("pulsar daily: diff-judge spilled providers", "block", title, "from", from, "to", to, "err", err)
+		},
+	}, messages)
 	if err != nil {
 		return dailyVerdict{}, 0, err
 	}
-	verdict, err := parseDailyVerdict(title, resp)
-	return verdict, resp.CostUSD, err
+	s.logOneShotProviderUsage(res, modelID)
+	verdict, err := parseDailyVerdict(title, res)
+	return verdict, res.ListCost, err
 }
 
 // parseDailyVerdict falls back to "normal" (never drops a block outright)
@@ -737,17 +777,17 @@ func dailyDiffJudge(reqCtx context.Context, client llm.ChatClient, title, yester
 // starts consistently skipping the tool call or returning a bogus verdict
 // would otherwise be invisible in logs, since every caller's own error
 // paths only cover a hard failure, not this kind of quiet degradation.
-func parseDailyVerdict(title string, resp *llm.ChatResponse) (dailyVerdict, error) {
-	if len(resp.ToolCalls) == 0 {
+func parseDailyVerdict(title string, res *agent.OneShotResult) (dailyVerdict, error) {
+	if len(res.ToolCalls) == 0 {
 		log.Warn("pulsar daily: diff-judge answered in plain prose instead of calling record_verdict — defaulting to normal", "block", title)
-		return dailyVerdict{Verdict: "normal", Gist: strings.TrimSpace(resp.Content)}, nil
+		return dailyVerdict{Verdict: "normal", Gist: strings.TrimSpace(res.Text)}, nil
 	}
 	var args struct {
 		Verdict   string `json:"verdict"`
 		Gist      string `json:"gist"`
 		Reasoning string `json:"reasoning"`
 	}
-	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
+	if err := json.Unmarshal([]byte(res.ToolCalls[0].Function.Arguments), &args); err != nil {
 		return dailyVerdict{}, err
 	}
 	if args.Verdict != "unchanged" && args.Verdict != "notable" && args.Verdict != "normal" {
@@ -770,7 +810,7 @@ type dailyRankCandidate struct {
 // Only ever called with at least one candidate (see runDailyPipeline);
 // falls back to the first candidate if the model names a key outside the
 // given list, rather than electing nothing.
-func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidates []dailyRankCandidate) (string, string, float64, error) {
+func (s *Server) dailyElectTopStory(reqCtx context.Context, cfg *config.Config, client *llm.Client, modelID, sessionID string, candidates []dailyRankCandidate) (string, string, float64, error) {
 	var b strings.Builder
 	for _, c := range candidates {
 		fmt.Fprintf(&b, "- %s (%s): %s\n", c.Key, c.Title, c.Gist)
@@ -801,29 +841,37 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 		{Role: "system", Content: prompts.Get().PulsarDaily.TopStoryElectorSystem},
 		{Role: "user", Content: b.String()},
 	}
-	resp, err := client.ChatCompletionWithTools(reqCtx, messages, []llm.ToolDef{toolDef}, func(string) {}, nil)
+	res, err := agent.CompleteOneShot(reqCtx, cfg, client, modelID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		Tools:     []llm.ToolDef{toolDef},
+		OnFallback: func(from, to string, err error) {
+			log.Warn("pulsar daily: top-story ranking spilled providers", "from", from, "to", to, "err", err)
+		},
+	}, messages)
 	if err != nil {
 		return "", "", 0, err
 	}
-	if len(resp.ToolCalls) == 0 {
+	s.logOneShotProviderUsage(res, modelID)
+	if len(res.ToolCalls) == 0 {
 		log.Warn("pulsar daily: top-story ranking answered in plain prose instead of calling elect_top_story — defaulting to the first candidate", "fallback_key", candidates[0].Key)
-		return candidates[0].Key, "", resp.CostUSD, nil
+		return candidates[0].Key, "", res.ListCost, nil
 	}
 	var args struct {
 		WinnerKey string `json:"winner_key"`
 		Reasoning string `json:"reasoning"`
 	}
-	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
+	if err := json.Unmarshal([]byte(res.ToolCalls[0].Function.Arguments), &args); err != nil {
 		log.Warn("pulsar daily: top-story ranking returned unparseable tool-call arguments — defaulting to the first candidate", "err", err, "fallback_key", candidates[0].Key)
-		return candidates[0].Key, "", resp.CostUSD, nil
+		return candidates[0].Key, "", res.ListCost, nil
 	}
 	for _, c := range candidates {
 		if c.Key == args.WinnerKey {
-			return args.WinnerKey, strings.TrimSpace(args.Reasoning), resp.CostUSD, nil
+			return args.WinnerKey, strings.TrimSpace(args.Reasoning), res.ListCost, nil
 		}
 	}
 	log.Warn("pulsar daily: top-story ranking named a winner_key outside the candidate list — defaulting to the first candidate", "winner_key", args.WinnerKey, "fallback_key", candidates[0].Key)
-	return candidates[0].Key, "", resp.CostUSD, nil
+	return candidates[0].Key, "", res.ListCost, nil
 }
 
 // isDailyDue mirrors isRoutineDue but for the Daily singleton, which only
@@ -936,6 +984,11 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 
 	writerClient := dailyClient(cfg, cfgRow.WriterModel)
 	architectClient := dailyClient(cfg, cfgRow.ArchitectModel)
+	writerModelID := cfg.ModelByID(cfgRow.WriterModel).ID
+	architectModelID := cfg.ModelByID(cfgRow.ArchitectModel).ID
+	// Edition-scoped session for the Go header: every block, ranking,
+	// and elaboration call in this generation shares one conversation.
+	sessionID := "pulsar-daily-" + today
 
 	enabled := map[string]bool{}
 	for _, k := range cfgRow.EnabledBlocks {
@@ -1024,7 +1077,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 					log.Error("panic generating pulsar daily block", "block", spec.Key, "panic", rec)
 				}
 			}()
-			r := s.generateOneDailyBlock(reqCtx, today, cfg, writerClient, architectClient, spec, location, cfgRow.WeatherLocation, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
+			r := s.generateOneDailyBlock(reqCtx, today, cfg, writerClient, architectClient, writerModelID, architectModelID, sessionID, spec, location, cfgRow.WeatherLocation, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
 			if r != nil {
 				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL, costUSD: r.costUSD, chart: r.chart, items: r.items}
 			}
@@ -1057,7 +1110,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 	topStoryKey := ""
 	topStoryReasoning := ""
 	if len(candidates) > 0 {
-		key, reasoning, rankCost, err := dailyElectTopStory(reqCtx, architectClient, candidates)
+		key, reasoning, rankCost, err := s.dailyElectTopStory(reqCtx, cfg, architectClient, architectModelID, sessionID, candidates)
 		totalCost += rankCost
 		if err != nil {
 			log.Warn("pulsar daily: stage B ranking failed, no top story today", "err", err)
@@ -1096,7 +1149,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			if len(r.items) > 0 {
 				elabTitle, elabQuick = r.items[0].Title, r.items[0].Summary
 			}
-			elaborated, elabChart, elabImageURL, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, elabTitle, elabQuick, location)
+			elaborated, elabChart, elabImageURL, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, writerModelID, sessionID, elabTitle, elabQuick, location)
 			totalCost += elabCost
 			content := elabQuick
 			topStoryImageURL := r.imageURL
@@ -1236,7 +1289,7 @@ func dailyBlockLocation(blockKey, location, weatherLocation string) string {
 // verdict (see the plan doc: "unchanged verdicts and hard generation
 // failures both drop out here — same bucket, since both mean 'nothing
 // to show'").
-func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg *config.Config, writerClient, architectClient llm.ChatClient, spec dailyBlockSpec, location, weatherLocation, sportsTeams string, customInstructions map[string]string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
+func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg *config.Config, writerClient, architectClient *llm.Client, writerModelID, architectModelID, sessionID string, spec dailyBlockSpec, location, weatherLocation, sportsTeams string, customInstructions map[string]string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
 	var content string
 	var imageURL string
 	var cost float64
@@ -1248,10 +1301,10 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 	switch spec.Kind {
 	case dailyBlockDirect:
 		if spec.Key == "picture_of_day" {
-			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false)
-			content, imageURL, cost, err = generateDailyPictureBlock(reqCtx, writerClient, ctx, custom)
+			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false, writerModelID, sessionID)
+			content, imageURL, cost, err = s.generateDailyPictureBlock(reqCtx, cfg, writerClient, writerModelID, sessionID, ctx, custom)
 		} else {
-			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, dailyBlockLocation(spec.Key, location, weatherLocation), false)
+			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, dailyBlockLocation(spec.Key, location, weatherLocation), false, writerModelID, sessionID)
 			// Weather asks for a full week, not handleWeather's normal
 			// 3-day chat default — a Daily edition is read once a day, not
 			// mid-conversation, so the wider range chart is worth more here
@@ -1275,15 +1328,15 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		if historyErr != nil {
 			log.Warn("pulsar daily: loading pick history failed, proceeding without it", "block", spec.Key, "err", historyErr)
 		}
-		content, cost, err = generateDailyPickBlock(reqCtx, writerClient, spec.Key, custom, history)
+		content, cost, err = s.generateDailyPickBlock(reqCtx, cfg, writerClient, writerModelID, sessionID, spec.Key, custom, history)
 	case dailyBlockResearch:
 		var task string
 		task, err = dailyResearchTaskFor(spec.Key, location, sportsTeams, custom)
 		if err == nil {
-			content, items, chart, imageURL, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, task, location, dailyBlockWantsItems(spec))
+			content, items, chart, imageURL, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, writerModelID, sessionID, task, location, dailyBlockWantsItems(spec))
 		}
 	case dailyBlockCustom:
-		content, items, chart, imageURL, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.CustomTask+dailyItemsInstruction, location, dailyBlockWantsItems(spec))
+		content, items, chart, imageURL, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, writerModelID, sessionID, spec.CustomTask+dailyItemsInstruction, location, dailyBlockWantsItems(spec))
 	}
 
 	// traceErr carries a hard-failure's error text into the trace row
@@ -1338,7 +1391,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		return g
 	}
 
-	verdict, verdictCost, err := dailyDiffJudge(reqCtx, architectClient, spec.Title, yesterdayBlock.Content, content)
+	verdict, verdictCost, err := s.dailyDiffJudge(reqCtx, cfg, architectClient, architectModelID, sessionID, spec.Title, yesterdayBlock.Content, content)
 	if err != nil {
 		log.Warn("pulsar daily: diff-judge failed, treating block as normal", "block", spec.Key, "err", err)
 		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "normal", costUSD: cost, chart: chart, imageURL: imageURL, items: items}

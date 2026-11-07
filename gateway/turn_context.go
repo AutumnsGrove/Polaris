@@ -8,6 +8,7 @@ import (
 	"polaris/agent"
 	"polaris/decisions"
 	"polaris/llm"
+	"polaris/routing"
 	"polaris/store"
 	"polaris/tools"
 )
@@ -62,6 +63,24 @@ func (t *turnRun) buildAgentContext() {
 		}
 	}
 
+	// The router carries this turn's provider policy: ModelID (the
+	// registry id) resolves the attempt chain while the wire slug
+	// travels for the rewrite. Built once per turn from the turn's
+	// config generation — not shared process-wide, because SessionID
+	// must close over this turn's thread id (see routing.Build). A
+	// failover mid-turn emits provider_fallback, which the transcript
+	// chip renders (unknown to the current frontend, which ignores
+	// event types it doesn't know — Phase 3 teaches it this one).
+	t.router = routing.Build(t.cfg, routing.Options{
+		SessionID: func() string { return t.threadID },
+		UserAgent: "Polaris/" + t.s.version,
+		OnFallback: func(from, to string, err error) {
+			t.emitter.emit("provider_fallback", map[string]interface{}{
+				"from": from, "to": to, "error": err.Error(),
+			})
+		},
+		ForceOpenRouter: agent.ForceOpenRouter(),
+	})
 	t.agentCtx = &tools.Context{
 		SearXNG:                 t.s.searxng,
 		Blocklist:               t.s.blocklist,
@@ -100,6 +119,12 @@ func (t *turnRun) buildAgentContext() {
 		// {custom_instructions} to nothing rather than needing its own
 		// flag.
 		LLM: t.client,
+		// ModelID + Router: the routed path (see routing.Build and
+		// agent.novaProviderFor). Both set together or not at all — a
+		// router without a catalog id would key on the wire slug, find
+		// no route, and silently bill OpenRouter.
+		ModelID: t.modelCfg.ID,
+		Router:  t.router,
 		// SearchThreads/ListRecentThreads/ReadThread are left unset below
 		// while this thread is still ghost, same as CustomInstructions
 		// above — they back the chat_search tool (tools/catalog.go's

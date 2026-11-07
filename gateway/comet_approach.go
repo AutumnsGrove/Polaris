@@ -21,6 +21,7 @@ import (
 	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
+	"polaris/routing"
 	"polaris/store"
 	"polaris/tools"
 	"polaris/uiblocks"
@@ -255,9 +256,18 @@ func (s *Server) newApproachToolContext(cfg *config.Config, cfgRow *store.CometC
 		moods = nil
 	}
 
+	// The Approach runs on the configured Comet model, so it routes like
+	// a turn: registry id for the chain, the hidden approach thread for
+	// the Go header.
 	ctx := &tools.Context{
-		Ctx:                     context.Background(),
-		LLM:                     client,
+		Ctx:     context.Background(),
+		LLM:     client,
+		ModelID: cfg.ModelByID(cfgRow.Model).ID,
+		Router: routing.Build(cfg, routing.Options{
+			SessionID:       func() string { return approachThreadID },
+			UserAgent:       "Polaris/" + s.version,
+			ForceOpenRouter: agent.ForceOpenRouter(),
+		}),
 		ApproachRun:             true,
 		MaxTurns:                cometApproachMaxTurns,
 		ApproachCategoriesInUse: strings.Join(categories, ", "),

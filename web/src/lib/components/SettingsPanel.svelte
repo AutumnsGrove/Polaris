@@ -49,6 +49,7 @@
 	import SettingsRow from './SettingsRow.svelte';
 	import Asterism from './Asterism.svelte';
 	import ConstellationUsageModal from './ConstellationUsageModal.svelte';
+	import GoUsageModal from './GoUsageModal.svelte';
 	import PulsarUsageModal from './PulsarUsageModal.svelte';
 	import WizardButton from './WizardButton.svelte';
 	import WizardOverlay from './WizardOverlay.svelte';
@@ -97,6 +98,7 @@
 	// Usage is a wholly separate component/data fetch (see
 	// ConstellationUsageModal), just reached via a shortcut link from here.
 	let showConstellationUsage = $state(false);
+	let showGoUsage = $state(false);
 	let showPulsarUsage = $state(false);
 
 	// The sidebar normally loads Comet's config at app start (so its footer
@@ -170,6 +172,7 @@
 	// the panel was last open, without waiting for a full page reload.
 	void appState.settings.checkUpdateStatus(() => appState.busy);
 	void appState.settings.loadUsage();
+	void appState.settings.loadProviders();
 	// The Constellation toggle below reads the shared config; usually the
 	// sidebar already loaded it, this covers a cold open.
 	if (!constellationState.config) void constellationState.loadConfig();
@@ -301,6 +304,24 @@
 							)}</span
 						>
 					</div>
+					{#if usage.covered_by_subscription && (usage.covered_by_subscription.total_cost_usd > 0 || appState.settings.providers?.opencode_go?.configured)}
+						<!-- Covered is list-price value already counted in Polaris above — a breakout, never additive. -->
+						<div class="usage-stat-row sub">
+							<span class="label">Covered by Go</span>
+							<span class="value"
+								>${usage.covered_by_subscription.period_cost_usd.toFixed(2)} / ${usage.covered_by_subscription.total_cost_usd.toFixed(
+									2
+								)}</span
+							>
+						</div>
+					{/if}
+					{#if usage.billed_to_balance && usage.billed_to_balance.period_cost_usd > 0}
+						<!-- Real console money from Extra Usage being on — a misconfiguration, never a routing outcome. -->
+						<div class="usage-stat-row sub warn">
+							<span class="label">Billed to balance!</span>
+							<span class="value">${usage.billed_to_balance.period_cost_usd.toFixed(2)}</span>
+						</div>
+					{/if}
 					<div class="usage-stat-row sub">
 						<span class="label">Verification</span>
 						<span class="value"
@@ -490,6 +511,12 @@
 				     for. -->
 				<button class="constellation-usage-link" onclick={() => (showPulsarUsage = true)}>
 					&rarr; Pulsar usage
+				</button>
+				<!-- OpenCode Go's meters don't fit the cost-by-source rows (plan
+				     dollars, not list cost, and account-wide, not Polaris-only) —
+				     this opens GoUsageModal's own bars/share/policy breakdown. -->
+				<button class="constellation-usage-link" onclick={() => (showGoUsage = true)}>
+					&rarr; OpenCode Go usage
 				</button>
 			{/if}
 		{:else if showMemoryImport}
@@ -955,6 +982,10 @@
 
 {#if showPulsarUsage}
 	<PulsarUsageModal onClose={() => (showPulsarUsage = false)} />
+{/if}
+
+{#if showGoUsage}
+	<GoUsageModal onClose={() => (showGoUsage = false)} />
 {/if}
 
 {#if showInstructionsWizard}

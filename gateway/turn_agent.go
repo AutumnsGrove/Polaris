@@ -121,7 +121,7 @@ func (t *turnRun) stripAndTitle() {
 				log.Warn("failed to persist pulse title", "thread", t.threadID, "err", err)
 				t.logEvent(t.storageThreadID, "warn", "title", "persisting pulse title failed", map[string]interface{}{"err": err.Error()}, t.turnID)
 			}
-		} else if title, titleCost, err := t.s.generateTitle(t.cfg, t.modelCfg, firstNonEmpty(t.msg.TitleSeed, t.msg.Content), t.isWeaverThread); err != nil {
+		} else if title, titleCost, err := t.s.generateTitle(t.cfg, t.modelCfg, firstNonEmpty(t.msg.TitleSeed, t.msg.Content), t.isWeaverThread, t.threadID); err != nil {
 			log.Warn("thread title generation failed", "thread", t.threadID, "err", err)
 			t.logEvent(t.storageThreadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, t.turnID)
 		} else if title != "" {

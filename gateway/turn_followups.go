@@ -111,7 +111,7 @@ func (t *turnRun) spawnSuggestions() {
 					log.Error("panic generating follow-up suggestions", "thread", t.threadID, "panic", r)
 				}
 			}()
-			sug, sugCost, err := t.s.generateSuggestions(t.cfg, t.modelCfg, t.msg.Content, t.result.Answer)
+			sug, sugCost, err := t.s.generateSuggestions(t.cfg, t.modelCfg, t.msg.Content, t.result.Answer, t.threadID)
 			if err != nil {
 				log.Warn("follow-up suggestions failed", "thread", t.threadID, "err", err)
 				t.logEvent(t.storageThreadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, t.turnID)

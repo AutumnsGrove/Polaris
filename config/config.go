@@ -33,6 +33,27 @@ type Config struct {
 		BaseURL string `yaml:"base_url"`
 	} `yaml:"openrouter"`
 
+	// Providers names every chat backend Polaris can route to, keyed by a
+	// stable name the routing policy refers to. "openrouter" is the paid
+	// safety net; "opencode_go" is the OpenCode Go subscription (see
+	// docs/plans/multi-provider.md). A legacy config with only the
+	// top-level openrouter: block above keeps working: Load seeds
+	// providers["openrouter"] from it, so existing installs,
+	// compose/polaris/config.yaml.example, and install.sh don't break.
+	// Conversely, a new-style config's providers["openrouter"] is copied
+	// back onto OpenRouter above, so every existing reader (the turn
+	// loop, titles, decisions, voice) keeps working unchanged.
+	Providers map[string]ProviderConfig `yaml:"providers"`
+
+	// Routing is the global per-model backend policy — no per-thread
+	// picker. See RoutingConfig's doc comment.
+	Routing RoutingConfig `yaml:"routing"`
+
+	// ModelBackends is the per-model override, mirroring model_overrides:
+	// a model id mapped to a providers key. Absent means the routing
+	// default applies.
+	ModelBackends map[string]string `yaml:"model_backends"`
+
 	// Decisions tunes the decision-model client behind Oracle mode, the
 	// source-verification badge, and compare_sources. Reached through
 	// OpenRouter with the same api_key above, so there is nothing else to
@@ -391,6 +412,43 @@ type Config struct {
 	Oracle OracleConfig `yaml:"oracle"`
 }
 
+// ProviderConfig describes one chat backend: where it lives and which
+// credential opens it. APIKey is empty when the backend isn't configured —
+// a Go-only config boots, but decisions (jev), embeddings and voice need
+// OpenRouter, so at startup they log one loud warning each and report
+// themselves disabled in /api/providers/status rather than silently
+// no-op'ing or crashing.
+type ProviderConfig struct {
+	APIKey string `yaml:"api_key"`
+	// BaseURL overrides the backend's API root — the seam
+	// dev/fakeopenai's --limit mode uses to prove failover without
+	// spending a real subscription window.
+	BaseURL string `yaml:"base_url"`
+	// Plan is display-only ("go" | "go_plus"); the actual monthly
+	// limit comes from Nova's catalog (provider.Model.MonthlyLimitUSD),
+	// not from here.
+	Plan string `yaml:"plan"`
+}
+
+// RoutingConfig is the global per-model backend policy (see
+// docs/plans/multi-provider.md §5). Resolution is global per model only:
+// model_backends[model] (explicit choice) → default_backend ("openrouter"
+// always means OpenRouter; "auto" means Go if the model has a go_model
+// and Go is enabled, else OpenRouter; "opencode_go" means Go if the
+// model has a go_model, else OpenRouter). "auto" does not probe live
+// meters per turn — failover on a spent window is the backstop until
+// meter-aware headroom lands (plan §11 risk 9, Phase 4).
+type RoutingConfig struct {
+	// DefaultBackend is "auto" | "openrouter" | "opencode_go".
+	// Empty (legacy config) means "openrouter": no behavior change
+	// unless the operator opts in.
+	DefaultBackend string `yaml:"default_backend"`
+	// Failover is "openrouter" | "none": where a Go call that hits a
+	// limit/refusal is retried. Never OpenCode console balance — there
+	// are no credits there (plan §12).
+	Failover string `yaml:"failover"`
+}
+
 // ModelConfig describes one entry in the model selector. Provider pins
 // the OpenRouter provider order (e.g. ["xiaomi/fp8"]) so prompt caching
 // stays consistent — different providers for the same model often have
@@ -402,6 +460,16 @@ type ModelConfig struct {
 	Provider    []string `yaml:"provider"`
 	Temperature float64  `yaml:"temperature"`
 	MaxTokens   int      `yaml:"max_tokens"`
+
+	// GoModel is the model's OpenCode Go wire slug (e.g.
+	// "deepseek-v4.1-flash") — bare slug, never OpenRouter's
+	// vendor-prefixed form. Empty means the model has no Go route at
+	// all: it is OpenRouter by construction, not by policy. Only models
+	// with this set are eligible for Go, and naming a model without one
+	// under opencode_go in model_backends is a config-load error, never
+	// a silent fallback (docs/plans/multi-provider.md §5). Set in the
+	// registry (models/models.go), not config.yaml.
+	GoModel string `yaml:"-"`
 
 	// Reasoning turns on OpenRouter's unified reasoning-token support for
 	// models that do internal "thinking" before answering (DeepSeek's
@@ -523,16 +591,60 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8899
 	}
-	if cfg.OpenRouter.APIKey == "" {
-		// Virtually every feature (chat, search, voice, titles) depends on
-		// this — without it, the first real symptom would be an opaque 401
-		// from OpenRouter deep inside a request, far from the actual
-		// misconfiguration. Failing fast here means the operator sees the
-		// real problem before the server even starts.
-		return nil, fmt.Errorf("config: openrouter.api_key is required")
+	// The routing policy lives in providers/routing/model_backends (see
+	// docs/plans/multi-provider.md §5), but a legacy config with only the
+	// top-level openrouter: block keeps working: it seeds
+	// providers["openrouter"], so existing installs don't break. A
+	// new-style config's providers["openrouter"] is copied back onto
+	// OpenRouter, so every existing reader keeps working unchanged —
+	// whichever side the operator writes, both agree.
+	if len(cfg.Providers) == 0 {
+		if cfg.OpenRouter.APIKey != "" {
+			cfg.Providers = map[string]ProviderConfig{
+				"openrouter": {APIKey: cfg.OpenRouter.APIKey, BaseURL: cfg.OpenRouter.BaseURL},
+			}
+		}
+	} else if or, ok := cfg.Providers["openrouter"]; ok {
+		cfg.OpenRouter.APIKey = or.APIKey
+		cfg.OpenRouter.BaseURL = or.BaseURL
+	}
+	// Fail-fast is "at least one provider configured", not "OpenRouter
+	// required": a Go-only config boots, but decisions (jev),
+	// embeddings and voice need OpenRouter (see ProviderConfig) — those
+	// callers keep their own nil/unconfigured handling and log one loud
+	// warning each at startup rather than failing here.
+	//
+	// Virtually every feature (chat, search, voice, titles) depends on
+	// having a backend — without one, the first real symptom would be an
+	// opaque 401 deep inside a request, far from the actual
+	// misconfiguration. Failing fast here means the operator sees the
+	// real problem before the server even starts.
+	if len(cfg.Providers) == 0 {
+		return nil, fmt.Errorf("config: at least one provider is required (openrouter.api_key, or a providers block)")
+	}
+	keyed := false
+	for name, p := range cfg.Providers {
+		if p.APIKey != "" {
+			keyed = true
+		}
+		if p.BaseURL == "" {
+			switch name {
+			case "openrouter":
+				p.BaseURL = "https://openrouter.ai/api/v1"
+			case "opencode_go":
+				p.BaseURL = "https://opencode.ai/zen/go/v1"
+			}
+			cfg.Providers[name] = p
+		}
+	}
+	if !keyed {
+		return nil, fmt.Errorf("config: at least one provider needs an api_key")
 	}
 	if cfg.OpenRouter.BaseURL == "" {
 		cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+	}
+	if err := cfg.validateRouting(registry); err != nil {
+		return nil, err
 	}
 	if cfg.SearXNG.BaseURL == "" {
 		// Not fatal — web_search/nearby_search degrade gracefully without
@@ -668,6 +780,122 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// validateRouting fails fast on a misconfigured providers/routing/
+// model_backends policy, because the alternative is Nova's route.New
+// panicking on it at request time (docs/plans/multi-provider.md §5) — a
+// typo in config.yaml must break startup with a clear message, never a
+// running server. registry is the same catalog Load applies overrides to,
+// so an override naming a model that doesn't exist is caught here too.
+func (c *Config) validateRouting(registry []ModelConfig) error {
+	byID := make(map[string]ModelConfig, len(registry))
+	for _, m := range registry {
+		byID[m.ID] = m
+	}
+	// The router only knows two backend kinds; a third name has no kind
+	// to build from, so it is a load error here rather than a route.New
+	// panic later. A proxy still works: keep the canonical name and
+	// override its base_url (the fakeopenai --limit seam).
+	for name := range c.Providers {
+		switch name {
+		case "openrouter", "opencode_go":
+		default:
+			return fmt.Errorf("config: unknown provider %q (only openrouter and opencode_go are supported)", name)
+		}
+	}
+	backend := c.Routing.DefaultBackend
+	if backend == "" {
+		backend = "openrouter"
+	}
+	switch backend {
+	case "auto", "openrouter", "opencode_go":
+	default:
+		return fmt.Errorf("config: routing.default_backend must be auto, openrouter, or opencode_go (got %q)", c.Routing.DefaultBackend)
+	}
+	failover := c.Routing.Failover
+	if failover == "" {
+		failover = "openrouter"
+	}
+	switch failover {
+	case "openrouter", "none":
+	default:
+		return fmt.Errorf("config: routing.failover must be openrouter or none (got %q)", c.Routing.Failover)
+	}
+	for id, name := range c.ModelBackends {
+		m, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("config: model_backends[%q] names an unknown model", id)
+		}
+		if _, ok := c.Providers[name]; !ok {
+			return fmt.Errorf("config: model_backends[%q] names an unknown provider %q", id, name)
+		}
+		// A route carrying an OpenRouter slug to Go (or vice versa)
+		// would misbill every call it serves, so a Go assignment
+		// without a go_model is a load error, never a silent fallback.
+		if name == "opencode_go" && m.GoModel == "" {
+			return fmt.Errorf("config: model_backends[%q] selects opencode_go but the model has no go_model", id)
+		}
+	}
+	return nil
+}
+
+// GoEnabled reports whether the OpenCode Go backend is configured with a
+// credential — the gate for building any Go route at all. A providers
+// block naming opencode_go without an api_key (or no such entry) means
+// every model resolves to OpenRouter, whatever the routing policy says.
+func (c *Config) GoEnabled() bool {
+	p, ok := c.Providers["opencode_go"]
+	return ok && p.APIKey != ""
+}
+
+// BackendFor resolves the serving backend for one model id under the
+// global per-model policy: an explicit model_backends entry wins,
+// otherwise default_backend applies ("openrouter" always means
+// OpenRouter; "auto" means Go when the model is Go-eligible and Go is
+// enabled, else OpenRouter; "opencode_go" means Go when the model is
+// Go-eligible, else OpenRouter). "go-eligible" is a go_model plus an
+// enabled Go backend — never a bare policy wish. The second return is
+// false when the backend names a provider with no credential (a config
+// the validator can't see: keys arrive via env vars that may be empty at
+// runtime), so callers fall back to OpenRouter instead of failing.
+func (c *Config) BackendFor(modelID string) (backend string, ok bool) {
+	var m *ModelConfig
+	for i := range c.Models {
+		if c.Models[i].ID == modelID {
+			m = &c.Models[i]
+			break
+		}
+	}
+	eligible := m != nil && m.GoModel != "" && c.GoEnabled()
+	want := c.Routing.DefaultBackend
+	if want == "" {
+		want = "openrouter"
+	}
+	// A Go-only deployment has nowhere else to send an eligible model, so
+	// the policy default can't mean OpenRouter there. (An explicit
+	// model_backends entry still wins below, and Load rejects one naming
+	// a provider that isn't configured.)
+	if _, hasOR := c.Providers["openrouter"]; !hasOR && eligible {
+		want = "opencode_go"
+	}
+	if override, ok := c.ModelBackends[modelID]; ok {
+		want = override
+	}
+	switch want {
+	case "opencode_go":
+		if !eligible {
+			return "openrouter", true
+		}
+		return "opencode_go", true
+	case "auto":
+		if eligible {
+			return "opencode_go", true
+		}
+		return "openrouter", true
+	default:
+		return "openrouter", true
+	}
 }
 
 func applyOverrides(registry []ModelConfig, overrides map[string]ModelOverride) []ModelConfig {

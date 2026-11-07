@@ -180,6 +180,17 @@ export function applyStreamingEvent(turn: ChatTurn, e: ServerEvent): void {
 			turn.costUsd = e.cost_usd;
 			break;
 
+		case 'provider_fallback':
+			// A Go attempt spilled mid-turn — the paid retry stays visible
+			// as its own timeline chip (same convention as web_search's
+			// "[via X]" line), persisted per turn so a reopened thread
+			// rebuilds it too (see stateHelpers' buildTimelineFromEvents).
+			turn.timeline = [
+				...(turn.timeline ?? []),
+				{ kind: 'provider_fallback', from: e.from, to: e.to, error: e.error }
+			];
+			break;
+
 		case 'oracle':
 			// Oracle's verdict, arriving the moment it resolves — well
 			// before 'done' (see gateway/protocol.go's "oracle" doc
