@@ -144,6 +144,21 @@ func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// logOneShotProviderUsage records one routed one-shot call's Go spend —
+// the same rule as turns (routing.TouchedGo: OpenRouter legs get no row),
+// for ledger parity between loop calls and background calls (titles,
+// suggestions, extraction). modelID is the Polaris registry id.
+func (s *Server) logOneShotProviderUsage(res *agent.OneShotResult, modelID string) {
+	if res == nil || !routing.TouchedGo(res.Usage) {
+		return
+	}
+	if err := s.db.LogProviderUsage(routing.OpenCodeGo, modelID,
+		res.Usage.AllowanceUSD, res.ListCost, res.Usage.BillingSource,
+		res.Usage.PromptTokens, res.Usage.CompletionTokens, res.Usage.CachedTokens, res.Spilled); err != nil {
+		log.Warn("failed to record one-shot provider usage", "model", modelID, "err", err)
+	}
+}
+
 // fetchGoMeters reads the account-wide allowance windows with the
 // operator's own key and no Nova credential store. Bounded: the settings
 // panel must not hang a request on the Console.

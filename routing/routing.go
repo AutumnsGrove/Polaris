@@ -190,6 +190,15 @@ func RegisterModels(models []config.ModelConfig) {
 	}
 }
 
+// TouchedGo reports whether a call's usage shows Go involvement: a
+// present usage.opencode block (billing source set) or either dollar
+// figure nonzero. A covered free-model call has $0 allowance but a real
+// list price, so allowance alone is not the test. OpenRouter calls carry
+// none of the three and get no provider_usage row.
+func TouchedGo(u provider.Usage) bool {
+	return u.BillingSource != "" || u.AllowanceUSD != 0 || u.ListCostUSD != 0
+}
+
 // ListCost is the one expression that stays correct across all three call
 // shapes (docs/plans/multi-provider.md §6), and the failure mode of getting
 // it wrong is a number that looks plausible:

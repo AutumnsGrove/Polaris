@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -70,6 +69,7 @@ func novaProviderFor(ctx *tools.Context) (*polarisProvider, novaModel) {
 	}
 	s := sp.Settings()
 	m := novaModel{Name: s.Model, Temperature: s.Temperature, MaxTokens: s.MaxTokens, PromptCache: s.PromptCaching}
+	m.Options = providerOptionsForSettings(s)
 	if ctx.Router != nil && ctx.ModelID != "" {
 		// Routed path: the router owns the wire (attempt slugs, session
 		// header, failover). The request's Model stays the OpenRouter
@@ -77,26 +77,6 @@ func novaProviderFor(ctx *tools.Context) (*polarisProvider, novaModel) {
 		// attempt's slug, and ModelID picks the chain.
 		m.ModelID = ctx.ModelID
 		return &polarisProvider{inner: ctx.Router}, m
-	}
-	opts := map[string]any{}
-	if s.Provider != nil {
-		r := openrouter.Routing{Order: s.Provider.Order, Only: s.Provider.Only, Ignore: s.Provider.Ignore, AllowFallbacks: s.Provider.AllowFallbacks, Sort: s.Provider.Sort}
-		for k, v := range r.Options() {
-			opts[k] = v
-		}
-	}
-	if s.Reasoning != nil {
-		// OpenRouter's unified `reasoning` object, not Nova's ReasoningEffort
-		// (which emits OpenAI's reasoning_effort) — see plan §5.1.
-		if raw, err := json.Marshal(s.Reasoning); err == nil {
-			var obj map[string]any
-			if json.Unmarshal(raw, &obj) == nil {
-				opts["reasoning"] = obj
-			}
-		}
-	}
-	if len(opts) > 0 {
-		m.Options = opts
 	}
 	inner := openrouter.New(openrouter.Config{
 		APIKey:  s.APIKey,

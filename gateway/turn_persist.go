@@ -209,7 +209,7 @@ func (t *turnRun) recordProviderUsage() {
 	}
 	for _, pc := range calls {
 		u := pc.Usage
-		if u.BillingSource == "" && u.AllowanceUSD == 0 && u.ListCostUSD == 0 {
+		if !routing.TouchedGo(u) {
 			continue // never touched Go: OpenRouter calls get no row
 		}
 		if err := t.s.db.LogProviderUsage(routing.OpenCodeGo, t.modelCfg.ID,
