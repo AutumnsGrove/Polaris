@@ -73,6 +73,15 @@ func CompleteOneShot(ctx context.Context, cfg *config.Config, client *llm.Client
 		ForceOpenRouter: ForceOpenRouter(),
 		OnFallback:      opts.OnFallback,
 	})
+	// The catalog id resolves to its wire slug through Nova's catalog,
+	// registered from the config registry on every Build — but a client
+	// hand-built outside the registry (tests) still needs a mapping, or
+	// chat.Complete would send the bare catalog id to the wire. The
+	// client's own slug is the source of truth there; a registry entry
+	// always wins over it.
+	if _, ok := provider.GetModel(modelID); !ok && settings.Model != "" {
+		provider.RegisterModel(provider.Model{ID: modelID, Provider: routing.OpenRouter, Slug: settings.Model})
+	}
 	temp := settings.Temperature
 	promptCache := settings.PromptCaching
 	resp, err := chat.Complete(ctx, r, chat.Request{

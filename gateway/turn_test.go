@@ -240,7 +240,7 @@ func TestGenerateTitle(t *testing.T) {
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
 
 	s := &Server{}
-	title, _, err := s.generateTitle(cfg, modelCfg, "what is the capital of france", false)
+	title, _, err := s.generateTitle(cfg, modelCfg, "what is the capital of france", false, "test-thread")
 	if err != nil {
 		t.Fatalf("generateTitle returned error: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestGenerateTitle_TruncatesOverlongTitle(t *testing.T) {
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
 
 	s := &Server{}
-	title, _, err := s.generateTitle(cfg, modelCfg, "q", false)
+	title, _, err := s.generateTitle(cfg, modelCfg, "q", false, "test-thread")
 	if err != nil {
 		t.Fatalf("generateTitle returned error: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestRegenerateTitle(t *testing.T) {
 	}
 
 	s := &Server{}
-	title, _, err := s.regenerateTitle(cfg, modelCfg, history)
+	title, _, err := s.regenerateTitle(cfg, modelCfg, history, "test-thread")
 	if err != nil {
 		t.Fatalf("regenerateTitle returned error: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestRegenerateTitle_NoHistoryIsAnError(t *testing.T) {
 	s := &Server{}
 	cfg := &config.Config{}
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model"}
-	if _, _, err := s.regenerateTitle(cfg, modelCfg, nil); err == nil {
+	if _, _, err := s.regenerateTitle(cfg, modelCfg, nil, "test-thread"); err == nil {
 		t.Error("expected an error for empty history, got nil")
 	}
 }
