@@ -17,11 +17,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/AutumnsGrove/nova/provider/route"
 	"github.com/google/uuid"
 
 	"polaris/agent"
+	"polaris/config"
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/routing"
 	"polaris/store"
 	"polaris/tools"
 	"polaris/uiblocks"
@@ -45,7 +48,7 @@ const weaverMaxTurns = 25
 // convention gateway/turn.go's own CreateThread call uses) — needed only
 // to label the run's own hidden thread (see below), not to build client,
 // which the caller already constructed from the same id.
-func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string, embeds *embedService) error {
+func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string, embeds *embedService, cfg *config.Config, userAgent string) error {
 	// LastSuccessfulShootingStarRun, not LastShootingStarRun — see its own
 	// doc comment for the live-verified bug this avoids: basing the delta
 	// on a failed run's own last_message_id_seen made a retry with no new
@@ -126,7 +129,19 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return err
 	}())
 
-	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID, embeds)
+	// One router per shooting star: the session header must be this
+	// run's own thread, and a shared process-wide router could not carry
+	// per-thread ids (see routing.Build). Nil cfg (tests) keeps the
+	// direct path.
+	var router *route.Router
+	if cfg != nil {
+		router = routing.Build(cfg, routing.Options{
+			SessionID:       func() string { return threadID },
+			UserAgent:       userAgent,
+			ForceOpenRouter: agent.ForceOpenRouter(),
+		})
+	}
+	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID, embeds, router, modelID)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		warnOnErr("finishing failed shooting star run", db.FinishShootingStarRun(runID, "", err.Error(), true))
@@ -175,14 +190,14 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 // unrecovered panic anywhere in Weaver's loop (agent.Run, any of the five
 // tool handlers) would otherwise take down the whole Polaris process
 // instead of just failing that one shooting star.
-func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string, embeds *embedService) (err error) {
+func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string, embeds *embedService, cfg *config.Config, userAgent string) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Error("panic running shooting star", "thread_id", threadID, "panic", rec)
 			err = fmt.Errorf("shooting star: panic: %v", rec)
 		}
 	}()
-	return RunShootingStar(reqCtx, db, client, threadID, modelID, embeds)
+	return RunShootingStar(reqCtx, db, client, threadID, modelID, embeds, cfg, userAgent)
 }
 
 // turnGate lets a shooting star register with the server's shutdown-drain
@@ -466,7 +481,7 @@ func weaverToolClosures(db *store.Store, threadID string, embeds *embedService, 
 	return
 }
 
-func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID, weaverThreadID, turnID string, embeds *embedService) *tools.Context {
+func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID, weaverThreadID, turnID string, embeds *embedService, router *route.Router, modelID string) *tools.Context {
 	categories, err := db.DistinctCategories()
 	if err != nil {
 		// Not fatal — the escape hatch just falls back to guessing blind,
@@ -484,9 +499,14 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 
 	search, read, create, update, link := weaverToolClosures(db, threadID, embeds, reqCtx)
 
+	// A shooting star runs on the constellation model, so it routes like
+	// a turn: registry id for the chain, the root thread for the Go
+	// header. Nil router keeps the direct path (tests, unconfigured).
 	return &tools.Context{
 		Ctx:       reqCtx,
 		LLM:       client,
+		ModelID:   modelID,
+		Router:    router,
 		WeaverRun: true,
 		MaxTurns:  weaverMaxTurns,
 		// Two independent jobs live here now. (1) The original one: a
