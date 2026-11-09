@@ -679,7 +679,7 @@ Covered on the real deployment:
   read 99.3% of its prompt from cache.
 - Pulsar routines — `pulsar pulse fired routine=1..4 name=...` daily.
 - Pulsar Daily — full editions, most recently `blocks=10 top_story=true` on 2026-11-09.
-- `view_image` on a multimodal model — both `mode=describe` and `show`.
+- `view_image` on a multimodal model — both `mode=describe` and `mode=see`.
 - Comet and the embeddings indexer both running. Zero panics in 14 days; the nine `ERROR` lines
   were all external (TLS handshake, YouTube 429, Tavily extract, two decisions
   `max_tokens_exceeded`).
