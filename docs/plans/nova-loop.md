@@ -4,7 +4,8 @@
 
 **Status: N0-N10 built on branch `nova-loop-impl`. Nova is the default agent loop; `nova_loop:
 false` / `POLARIS_NOVA_LOOP=0` is the kill switch kept for one release (#188 deletes the old loop).
-Verified live on bare-metal, in Docker on the potato, and in a browser — see §14.**
+Verified live on bare-metal, in Docker on the potato, and in a browser — see §14; the paths still
+unproven before #188 goes are listed there too (#204).**
 
 This is the Polaris half of Nova's M8 adoption. The upstream contract is
 [AutumnsGrove/nova#22](https://github.com/AutumnsGrove/nova/issues/22) (`docs/INTEGRATION.md`,
@@ -665,8 +666,37 @@ hot-reloaded config field, not just `nova_loop`, and is now noted in `SETUP.md`.
 to mount the config *directory* rather than the file; until then, roll back with an in-place edit or
 `docker compose up -d --force-recreate`.
 
-### Not yet verified
+### Production soak (2026-11-09, #204)
 
-Nothing that blocks the flip. A real 429 *from OpenRouter itself* is still unprovoked (the scripted
-one above covers the same code path), and #188's deletion of the bespoke loop should wait for a soak
-on the flag.
+The flag has been default-on in production since 2026-10-27 (`r1037` today, i.e. through the whole
+multi-provider migration) with no rollback needed, so #188's "one release" gate is about the paths
+below, not about the flag itself. Evidence is read from the potato's own logs
+(`/data/logs`, 2026-10-27 → 2026-11-09, 3,109 lines), not inferred from tests.
+
+Covered on the real deployment:
+
+- Tool turns and prompt caching at volume — hundreds of `web_search`/`web_read` turns; a follow-up
+  read 99.3% of its prompt from cache.
+- Pulsar routines — `pulsar pulse fired routine=1..4 name=...` daily.
+- Pulsar Daily — full editions, most recently `blocks=10 top_story=true` on 2026-11-09.
+- `view_image` on a multimodal model — both `mode=describe` and `show`.
+- Comet and the embeddings indexer both running. Zero panics in 14 days; the nine `ERROR` lines
+  were all external (TLS handshake, YouTube 429, Tavily extract, two decisions
+  `max_tokens_exceeded`).
+
+Still unproven, tracked in #204:
+
+- **Deep Research fan-out.** `spawn_researchers` has no production occurrences at all. Its tests
+  also don't cover Nova: `novaLoop` defaults to `false` in-process and nothing sets it in the
+  `agent` package's test binary — the parity harness calls `runWithNova`/`runBespoke` directly, so
+  `TestSpawnResearchers_*`/`TestRunSubAgent_*` have only ever exercised the bespoke loop. (The
+  workflow's "the plain run covers Nova" comment holds only in `./gateway`, and only as an
+  order-dependent side effect of `liveConfig()` setting the global.) #188 must not delete the other
+  loop until these run on both, deliberately.
+- **`code_exec`.** One attempt since the flip, and it failed on the host-side runner, not in the
+  loop (#203). The Nova-side property — a non-parallel tool is a dispatch barrier, so nothing
+  overlaps it — stays unverified live until it runs once.
+- **Stop mid-answer from the UI.** Only the socket-drop case exists; the button press is #186's.
+
+One more unprovoked case, unchanged: a real 429 *from OpenRouter itself* (the scripted one above
+covers the same code path).
