@@ -677,3 +677,16 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   `respan/span-01*` family is listed there too and rejects Choice.)
 - Deliberately not run: `~perplexity/pplx-decider-latest`, an alias for a Perplexity model already benchmarked
   by its versioned id (an alias moving would make a result uninterpretable).
+- Deliberately not run: `nace-ai/drex-max-finance` (created 2026-11-10), the finance-tuned sibling of
+  `drex-max`. Probed live the same day: it **dropped Max's 16-question cap** (23 questions accepted in one
+  request, where Max 422s at 17), which is the one thing it does better. On the case bank it is the same
+  model with a domain tilt, not a better one: 60 cases x 3 repeats (seed 7, `--no-judge`, concurrency 1)
+  scored **84.0 against Max's 86.9**, CIs 71.4-93.0 and 75.9-94.9 and overlapping, with **93.3% per-check
+  agreement**; the drift is all on the opinionated checks (`format` 30% of comparisons, `focus` 24%,
+  `task`, `ui`) and the dangerous family is unmoved (`private_person` and `premise` agreed on all 180
+  comparisons, `high_stakes` on 177) except that it produced 1% dangerous false nudges against Max's 0%,
+  and `emotional` -32 is its one bad track. Transport only: one request instead of the split, so 420ms p50
+  / 731ms p95 and ~23% cheaper for identical work. It cannot beat Max on accuracy, so it cannot reach the
+  pin or Reflex either; a full 885-call row would buy a footnote. A 20-case sample run first (95.7 vs 90.1,
+  94.2% agreement) points the same way. Re-probe only if Max's two-request cap ever becomes the thing
+  worth fixing.
