@@ -37,8 +37,10 @@ func routedCompleteFor(db *store.Store, userAgent string, cfg *config.Config, ch
 	// An empty model id has nothing to route by, and CompleteOneShot registers
 	// a catalog entry under it (which panics on ""). A caller can legitimately
 	// hold one — a Weaver config with no model chosen means "the default" —
-	// so degrade to the direct client rather than crash.
-	if !ok || modelID == "" {
+	// so degrade to the direct client rather than crash. A nil cfg (tests)
+	// has no router to build, which routing.Build would nil-deref on; the
+	// Weaver runner documents that a nil cfg keeps the direct path.
+	if !ok || modelID == "" || cfg == nil {
 		return tools.CompleteFromClient(chatClient)
 	}
 	return func(ctx context.Context, messages []llm.ChatMessage) (string, float64, error) {

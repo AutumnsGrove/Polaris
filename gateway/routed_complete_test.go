@@ -93,3 +93,23 @@ func TestVisionDescriber_SendsTheSameImageRequestAndReturnsTextAndCost(t *testin
 		t.Errorf("no model on the wire (vision model %s)", vision.ID)
 	}
 }
+
+// RunShootingStar documents that a nil cfg (tests) keeps the direct path, and
+// routedCompleteFor did not honor it: a nil cfg with a real *llm.Client
+// nil-dereferenced inside routing.Build. pi-review spotted it; reverting the
+// guard makes this panic.
+func TestRoutedComplete_NilConfigFallsBackToDirectInsteadOfPanicking(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"direct answer"}}]}`+"\n\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0002}}`+"\n\n")
+	}))
+	defer srv.Close()
+	client := llm.NewClient(srv.URL, "k", "test/model", 0.7, 100)
+
+	complete := routedCompleteFor(nil, "Polaris/test", nil, client, "some-model", "sess", nil)
+	text, _, err := complete(context.Background(), []llm.ChatMessage{{Role: "user", Content: "hi"}})
+	if err != nil || text != "direct answer" {
+		t.Fatalf("got %q, %v; want the direct client's answer", text, err)
+	}
+}
