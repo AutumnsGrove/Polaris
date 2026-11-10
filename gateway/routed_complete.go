@@ -23,7 +23,17 @@ import (
 // turn totals use — never allowance dollars — so callers can AddCost it
 // unchanged. onFallback may be nil (a background caller with no live turn to
 // chip); a spill is logged either way.
-func (s *Server) routedComplete(cfg *config.Config, client *llm.Client, modelID, sessionID string, onFallback func(from, to string, err error)) tools.CompleteFunc {
+func (s *Server) routedComplete(cfg *config.Config, chatClient llm.ChatClient, modelID, sessionID string, onFallback func(from, to string, err error)) tools.CompleteFunc {
+	// CompleteOneShot reads its wire tuning off the concrete client. Anything
+	// else (a test double) has no settings to route with, so it stays direct.
+	client, ok := chatClient.(*llm.Client)
+	// An empty model id has nothing to route by, and CompleteOneShot registers
+	// a catalog entry under it (which panics on ""). A caller can legitimately
+	// hold one — a Weaver config with no model chosen means "the default" —
+	// so degrade to the direct client rather than crash.
+	if !ok || modelID == "" {
+		return tools.CompleteFromClient(chatClient)
+	}
 	return func(ctx context.Context, messages []llm.ChatMessage) (string, float64, error) {
 		res, err := agent.CompleteOneShot(ctx, cfg, client, modelID, agent.OneShotOptions{
 			SessionID: sessionID,

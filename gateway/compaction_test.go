@@ -8,6 +8,7 @@ import (
 	"polaris/llm"
 	"polaris/llm/llmtest"
 	"polaris/store"
+	"polaris/tools"
 )
 
 // TestCompactThread_EndsOnAUserTurn is the regression test for the bug that
@@ -40,7 +41,7 @@ func TestCompactThread_EndsOnAUserTurn(t *testing.T) {
 		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "a summary of the exchange"}}},
 	}
 	s := &Server{db: h.db}
-	if _, _, err := s.compactThread(mock, "t1", msgID); err != nil {
+	if _, _, err := s.compactThread(tools.CompleteFromClient(mock), "t1", msgID); err != nil {
 		t.Fatalf("compactThread: %v", err)
 	}
 	if len(mock.Calls) != 1 {
