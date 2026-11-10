@@ -52,3 +52,33 @@ func (s *Server) routedComplete(cfg *config.Config, chatClient llm.ChatClient, m
 		return res.Text, res.ListCost, nil
 	}
 }
+
+// visionDescriber is the tools.Context.DescribeImage closure for selectedModel's
+// vision model, sent through the same one-shot routing as every other side
+// call (see routedComplete) instead of llm.Client.DescribeImage's own HTTP
+// request, which always went straight to OpenRouter. Same prompt (llm.
+// DescribeMessages) and, deliberately, the same unpinned provider routing
+// visionClient documents. ok is false when no vision model is configured, the
+// same signal visionClient gives; sessionID is the thread (or routine) the
+// image belongs to.
+func (s *Server) visionDescriber(cfg *config.Config, selectedModel config.ModelConfig, sessionID string) (describe func(ctx context.Context, imageBase64, mimeType, instructions string) (string, float64, error), ok bool) {
+	visionModel, ok := visionModelFor(cfg, selectedModel)
+	if !ok || visionModel.ID == "" {
+		return nil, false
+	}
+	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, visionModel.Model, visionModel.Temperature, visionModel.MaxTokens)
+	return func(ctx context.Context, imageBase64, mimeType, instructions string) (string, float64, error) {
+		res, err := agent.CompleteOneShot(ctx, cfg, client, visionModel.ID, agent.OneShotOptions{
+			SessionID: sessionID,
+			UserAgent: "Polaris/" + s.version,
+			OnFallback: func(from, to string, err error) {
+				log.Warn("image description spilled providers", "model", visionModel.ID, "from", from, "to", to, "err", err)
+			},
+		}, llm.DescribeMessages(imageBase64, mimeType, instructions))
+		if err != nil {
+			return "", 0, err
+		}
+		s.logOneShotProviderUsage(res, visionModel.ID)
+		return res.Text, res.ListCost, nil
+	}, true
+}

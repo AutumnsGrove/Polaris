@@ -546,15 +546,22 @@ func moveUploadedFile(srcPath, destPath string) error {
 // support. Leaving provider routing open lets OpenRouter pick whichever
 // endpoint actually handles image input for this model.
 func visionClient(cfg *config.Config, selectedModel config.ModelConfig) (client *llm.Client, ok bool) {
-	visionModel := selectedModel
-	if !visionModel.Multimodal {
-		var found bool
-		visionModel, found = cfg.MultimodalModel()
-		if !found {
-			return nil, false
-		}
+	visionModel, ok := visionModelFor(cfg, selectedModel)
+	if !ok {
+		return nil, false
 	}
 	return llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, visionModel.Model, visionModel.Temperature, visionModel.MaxTokens), true
+}
+
+// visionModelFor picks the model that describes images: the selected one if it
+// is multimodal, else the configured multimodal fallback. Split out of
+// visionClient because the routed describer needs the registry id as well as
+// the client.
+func visionModelFor(cfg *config.Config, selectedModel config.ModelConfig) (config.ModelConfig, bool) {
+	if selectedModel.Multimodal {
+		return selectedModel, true
+	}
+	return cfg.MultimodalModel()
 }
 
 // PruneOldAttachments removes files under dir older than maxAge — a safety

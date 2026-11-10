@@ -403,8 +403,8 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client *llm.Client,
 	// Picture of the Day describes its candidates through this to vet them
 	// before picking one. Left nil when no vision model is configured, and
 	// that path degrades to a title-only pick rather than failing.
-	if visionCl, ok := visionClient(cfg, config.ModelConfig{}); ok {
-		ctx.DescribeImage = visionCl.DescribeImage
+	if describe, ok := s.visionDescriber(cfg, config.ModelConfig{}, sessionID); ok {
+		ctx.DescribeImage = describe
 	}
 	// Same gate gateway/turn.go's main chat path uses — code_exec (and by
 	// extension show/fetch_url/view_image, all gated on the same

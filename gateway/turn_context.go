@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"strings"
 	"sync"
 
@@ -246,10 +245,8 @@ func (t *turnRun) wireVision() {
 	// fallback) — nil only when neither exists, matching every other
 	// optional dependency on tools.Context (Brave/Parallel/Tavily) that's
 	// left nil rather than wired when unavailable.
-	if visionCl, ok := visionClient(t.cfg, t.modelCfg); ok {
-		t.agentCtx.DescribeImage = func(imgCtx context.Context, imageBase64, mimeType, instructions string) (string, float64, error) {
-			return visionCl.DescribeImage(imgCtx, imageBase64, mimeType, instructions)
-		}
+	if describe, ok := t.s.visionDescriber(t.cfg, t.modelCfg, t.threadID); ok {
+		t.agentCtx.DescribeImage = describe
 	}
 }
 

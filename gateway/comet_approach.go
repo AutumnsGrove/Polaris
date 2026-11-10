@@ -299,10 +299,8 @@ func (s *Server) newApproachToolContext(cfg *config.Config, cfgRow *store.CometC
 	ctx.CodeExecWorkspaceDir = cfg.CodeExec.WorkspaceDir
 	ctx.ThreadID = analyzedThreadID
 	ctx.Multimodal = cfg.ModelByID(cfgRow.Model).Multimodal
-	if visionCl, ok := visionClient(cfg, cfg.ModelByID(cfgRow.Model)); ok {
-		ctx.DescribeImage = func(imgCtx context.Context, imageBase64, mimeType, instructions string) (string, float64, error) {
-			return visionCl.DescribeImage(imgCtx, imageBase64, mimeType, instructions)
-		}
+	if describe, ok := s.visionDescriber(cfg, cfg.ModelByID(cfgRow.Model), approachThreadID); ok {
+		ctx.DescribeImage = describe
 	}
 	return ctx
 }
