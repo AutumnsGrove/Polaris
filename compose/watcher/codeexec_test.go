@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -29,7 +30,7 @@ type codeExecResult struct {
 // its paths from its own location) with a fake docker first on PATH, and
 // returns a function that runs the script once and returns its combined
 // output and error.
-func newRunner(t *testing.T) (signalDir, workspace string, run func() (string, error)) {
+func newRunner(t *testing.T) (signalDir, workspace string, run func() (string, error), newCmd func() *exec.Cmd) {
 	t.Helper()
 	for _, bin := range []string{"bash", "python3", "flock"} {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -58,13 +59,19 @@ func newRunner(t *testing.T) (signalDir, workspace string, run func() (string, e
 	// script always attempts.
 	// Every invocation's argv is appended to docker-args.log so tests can
 	// assert what the script actually asked docker to do.
-	fakeDocker := "#!/bin/sh\necho \"$@\" >> \"" + filepath.Join(root, "docker-args.log") + "\"\nif [ \"$1\" = run ]; then echo fake-sandbox-ok; fi\nexit 0\n"
+	// FAKE_DOCKER_SLEEP makes `docker run` hang for that many seconds, so a test
+	// can signal the script while a sandbox is "running".
+	fakeDocker := "#!/bin/sh\necho \"$@\" >> \"" + filepath.Join(root, "docker-args.log") + "\"\nif [ \"$1\" = run ]; then\n  [ -n \"$FAKE_DOCKER_SLEEP\" ] && sleep \"$FAKE_DOCKER_SLEEP\"\n  echo fake-sandbox-ok\nfi\nexit 0\n"
 	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte(fakeDocker), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	run = func() (string, error) {
+	newCmd = func() *exec.Cmd {
 		cmd := exec.Command("bash", scriptPath)
 		cmd.Env = append(os.Environ(), "PATH="+binDir+":"+os.Getenv("PATH"))
+		return cmd
+	}
+	run = func() (string, error) {
+		cmd := newCmd()
 		done := make(chan struct{})
 		var out []byte
 		var runErr error
@@ -77,7 +84,7 @@ func newRunner(t *testing.T) (signalDir, workspace string, run func() (string, e
 		}
 		return string(out), runErr
 	}
-	return signalDir, workspace, run
+	return signalDir, workspace, run, newCmd
 }
 
 func writeRequest(t *testing.T, signalDir, workspace, id string) {
@@ -111,7 +118,7 @@ func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 // waited out its whole timeout and blamed a missing watcher. Reverting the
 // EXIT trap makes this fail.
 func TestCodeExec_DeathMidRequestWritesErrorResultAndRemovesRequest(t *testing.T) {
-	signalDir, _, run := newRunner(t)
+	signalDir, _, run, _ := newRunner(t)
 	req := filepath.Join(signalDir, "requested-bad.json")
 	if err := os.WriteFile(req, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
@@ -134,7 +141,7 @@ func TestCodeExec_DeathMidRequestWritesErrorResultAndRemovesRequest(t *testing.T
 }
 
 func TestCodeExec_MissingWorkspaceIsAnErrorResultNotASilentExit(t *testing.T) {
-	signalDir, _, run := newRunner(t)
+	signalDir, _, run, _ := newRunner(t)
 	if err := os.WriteFile(filepath.Join(signalDir, "requested-nows.json"), []byte(`{"code":"print(1)"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +159,7 @@ func TestCodeExec_MissingWorkspaceIsAnErrorResultNotASilentExit(t *testing.T) {
 // One invocation must drain everything pending; relying on the path unit to
 // re-fire is what the old script did.
 func TestCodeExec_DrainsEveryPendingRequestInOneRun(t *testing.T) {
-	signalDir, workspace, run := newRunner(t)
+	signalDir, workspace, run, _ := newRunner(t)
 	for _, id := range []string{"a", "b", "c"} {
 		writeRequest(t, signalDir, workspace, id)
 	}
@@ -171,7 +178,7 @@ func TestCodeExec_DrainsEveryPendingRequestInOneRun(t *testing.T) {
 }
 
 func TestCodeExec_SweepsAbandonedFilesButNotFreshOnes(t *testing.T) {
-	signalDir, workspace, run := newRunner(t)
+	signalDir, workspace, run, _ := newRunner(t)
 	old := time.Now().Add(-time.Hour)
 	for _, name := range []string{"requested-stale.json", "result-stale.json"} {
 		p := filepath.Join(signalDir, name)
@@ -205,7 +212,7 @@ func TestCodeExec_SweepsAbandonedFilesButNotFreshOnes(t *testing.T) {
 // mount, so a relative host_workspace_dir (the bare-metal dev config's own
 // "./workspaces") failed every call with exit 125 before reaching the sandbox.
 func TestCodeExec_RelativeWorkspaceIsMadeAbsoluteForTheBindMount(t *testing.T) {
-	signalDir, _, run := newRunner(t)
+	signalDir, _, run, _ := newRunner(t)
 	writeRequest(t, signalDir, "./workspaces/thread-1", "rel")
 
 	if out, err := run(); err != nil {
@@ -219,5 +226,70 @@ func TestCodeExec_RelativeWorkspaceIsMadeAbsoluteForTheBindMount(t *testing.T) {
 	want := "-v " + filepath.Join(root, "workspaces/thread-1") + ":/workspace"
 	if !strings.Contains(string(logBytes), want) {
 		t.Errorf("docker run should bind-mount the absolute path, want %q in:\n%s", want, logBytes)
+	}
+}
+
+// SIGTERM is how systemd enforces TimeoutStartSec (the unit's 120s sits right on
+// top of a 120s code_exec timeout) and how a restart stops the unit. The runner
+// must (1) still hand Polaris an error result that says it was stopped, not a
+// generic failure, (2) remove the request, and (3) not leave the watchdog
+// subshell behind: it inherits the flock fd, so an orphaned one holds the lock
+// and makes every later run print "already in progress" and skip, which
+// stranded code_exec for a day once before (issue #85).
+func TestCodeExec_SigtermWritesAStoppedResultAndDoesNotStrandTheLock(t *testing.T) {
+	signalDir, workspace, run, newCmd := newRunner(t)
+	t.Setenv("FAKE_DOCKER_SLEEP", "30")
+	writeRequest(t, signalDir, workspace, "slow")
+
+	cmd := newCmd()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	// Wait until the fake sandbox is genuinely "running", then stop the script.
+	argsLog := filepath.Join(filepath.Dir(signalDir), "docker-args.log")
+	started := false
+	for i := 0; i < 200 && !started; i++ {
+		if b, err := os.ReadFile(argsLog); err == nil && strings.Contains(string(b), "run ") {
+			started = true
+		} else {
+			time.Sleep(25 * time.Millisecond)
+		}
+	}
+	if !started {
+		_ = cmd.Process.Kill()
+		t.Fatal("the fake sandbox never started")
+	}
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("the script did not exit after SIGTERM")
+	}
+
+	r := readResult(t, signalDir, "slow")
+	if !strings.Contains(r.Error, "stopped before it finished") || strings.Contains(r.Error, "failed unexpectedly") {
+		t.Errorf("error should say the runner was stopped, got %q", r.Error)
+	}
+	if exists(filepath.Join(signalDir, "requested-slow.json")) {
+		t.Error("the request file was left behind")
+	}
+
+	// The lock must be free: a fresh request has to actually run, not be skipped.
+	t.Setenv("FAKE_DOCKER_SLEEP", "")
+	writeRequest(t, signalDir, workspace, "after")
+	out, err := run()
+	if err != nil {
+		t.Fatalf("follow-up run failed: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "already in progress") {
+		t.Fatalf("the lock was left held after SIGTERM:\n%s", out)
+	}
+	if got := readResult(t, signalDir, "after"); got.Error != "" || !strings.Contains(got.Stdout, "fake-sandbox-ok") {
+		t.Errorf("the follow-up request did not run: %+v", got)
 	}
 }

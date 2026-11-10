@@ -100,7 +100,14 @@ on_exit() {
 	if [ -n "$current_req" ]; then
 		if [ ! -f "$SIGNAL_DIR/result-${current_id}.json" ]; then
 			log "request $(basename "$current_req") abandoned at step '$step' (script exit $rc); writing an error result and removing it"
-			write_error_result "$current_id" "the sandbox runner failed unexpectedly (step: $step, exit $rc) - see the host journal: journalctl -u polaris-codeexec" || true
+			if [ "$rc" -eq 143 ]; then
+				# SIGTERM: systemd's TimeoutStartSec expiring (the unit's 120s sits right
+				# on top of a 120s code_exec timeout), or a restart. Not a script bug, and
+				# "failed unexpectedly" would send someone hunting for one.
+				write_error_result "$current_id" "the sandbox runner was stopped before it finished (the service timeout TimeoutStartSec, or a restart) at step: $step - see the host journal: journalctl -u polaris-codeexec" || true
+			else
+				write_error_result "$current_id" "the sandbox runner failed unexpectedly (step: $step, exit $rc) - see the host journal: journalctl -u polaris-codeexec" || true
+			fi
 		fi
 		rm -f "$current_req"
 	fi

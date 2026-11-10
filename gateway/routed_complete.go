@@ -6,6 +6,7 @@ import (
 	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
+	"polaris/store"
 	"polaris/tools"
 )
 
@@ -24,6 +25,12 @@ import (
 // unchanged. onFallback may be nil (a background caller with no live turn to
 // chip); a spill is logged either way.
 func (s *Server) routedComplete(cfg *config.Config, chatClient llm.ChatClient, modelID, sessionID string, onFallback func(from, to string, err error)) tools.CompleteFunc {
+	return routedCompleteFor(s.db, "Polaris/"+s.version, cfg, chatClient, modelID, sessionID, onFallback)
+}
+
+// routedCompleteFor is routedComplete without a *Server, for callers that hold
+// only a store and a user agent (the Weaver runner is a free function).
+func routedCompleteFor(db *store.Store, userAgent string, cfg *config.Config, chatClient llm.ChatClient, modelID, sessionID string, onFallback func(from, to string, err error)) tools.CompleteFunc {
 	// CompleteOneShot reads its wire tuning off the concrete client. Anything
 	// else (a test double) has no settings to route with, so it stays direct.
 	client, ok := chatClient.(*llm.Client)
@@ -37,7 +44,7 @@ func (s *Server) routedComplete(cfg *config.Config, chatClient llm.ChatClient, m
 	return func(ctx context.Context, messages []llm.ChatMessage) (string, float64, error) {
 		res, err := agent.CompleteOneShot(ctx, cfg, client, modelID, agent.OneShotOptions{
 			SessionID: sessionID,
-			UserAgent: "Polaris/" + s.version,
+			UserAgent: userAgent,
 			OnFallback: func(from, to string, err error) {
 				log.Warn("tool side call spilled providers", "model", modelID, "from", from, "to", to, "err", err)
 				if onFallback != nil {
@@ -48,7 +55,7 @@ func (s *Server) routedComplete(cfg *config.Config, chatClient llm.ChatClient, m
 		if err != nil {
 			return "", 0, err
 		}
-		s.logOneShotProviderUsage(res, modelID)
+		logOneShotUsage(db, res, modelID)
 		return res.Text, res.ListCost, nil
 	}
 }
@@ -57,10 +64,17 @@ func (s *Server) routedComplete(cfg *config.Config, chatClient llm.ChatClient, m
 // vision model, sent through the same one-shot routing as every other side
 // call (see routedComplete) instead of llm.Client.DescribeImage's own HTTP
 // request, which always went straight to OpenRouter. Same prompt (llm.
-// DescribeMessages) and, deliberately, the same unpinned provider routing
-// visionClient documents. ok is false when no vision model is configured, the
-// same signal visionClient gives; sessionID is the thread (or routine) the
-// image belongs to.
+// DescribeMessages). ok is false when no vision model is configured;
+// sessionID is the thread (or routine) the image belongs to.
+//
+// Deliberately NOT pinned to the vision model's Provider the way the main chat
+// client pins its provider — that pin exists for prompt-cache consistency
+// across an ongoing conversation, which doesn't apply to this single one-off
+// call, and it actively hurts here: found live that the pinned "xiaomi/fp8"
+// endpoint 404s with "No endpoints found that support image input" even though
+// the model itself is vision-capable — some provider-specific deployments of a
+// multimodal model quietly drop vision support. Leaving provider routing open
+// lets OpenRouter pick whichever endpoint actually handles image input.
 func (s *Server) visionDescriber(cfg *config.Config, selectedModel config.ModelConfig, sessionID string) (describe func(ctx context.Context, imageBase64, mimeType, instructions string) (string, float64, error), ok bool) {
 	visionModel, ok := visionModelFor(cfg, selectedModel)
 	if !ok || visionModel.ID == "" {

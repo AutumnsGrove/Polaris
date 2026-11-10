@@ -10,6 +10,7 @@ import (
 
 	"polaris/agent"
 	"polaris/routing"
+	"polaris/store"
 )
 
 // providers_routes.go serves GET /api/providers/status — what
@@ -155,10 +156,16 @@ func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
 // for ledger parity between loop calls and background calls (titles,
 // suggestions, extraction). modelID is the Polaris registry id.
 func (s *Server) logOneShotProviderUsage(res *agent.OneShotResult, modelID string) {
+	logOneShotUsage(s.db, res, modelID)
+}
+
+// logOneShotUsage is logOneShotProviderUsage for callers that hold a store but
+// not a *Server (the Weaver runner is a free function).
+func logOneShotUsage(db *store.Store, res *agent.OneShotResult, modelID string) {
 	if res == nil || !routing.TouchedGo(res.Usage) {
 		return
 	}
-	if err := s.db.LogProviderUsage(routing.OpenCodeGo, modelID,
+	if err := db.LogProviderUsage(routing.OpenCodeGo, modelID,
 		res.Usage.AllowanceUSD, res.ListCost, res.Usage.BillingSource,
 		res.Usage.PromptTokens, res.Usage.CompletionTokens, res.Usage.CachedTokens, res.Spilled); err != nil {
 		log.Warn("failed to record one-shot provider usage", "model", modelID, "err", err)

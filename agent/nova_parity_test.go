@@ -838,6 +838,16 @@ func loadGolden(t *testing.T) loopRecord {
 	goldenMu.Lock()
 	n := goldenSeq[t.Name()]
 	goldenSeq[t.Name()]++
+	if n == 0 {
+		// The counter is keyed by test name for the life of the process, so
+		// without a reset a second run of the same test (-count=2, the normal way
+		// to look for order-dependence) would ask for fixture .1 and fail.
+		t.Cleanup(func() {
+			goldenMu.Lock()
+			delete(goldenSeq, t.Name())
+			goldenMu.Unlock()
+		})
+	}
 	goldenMu.Unlock()
 	name := strings.ReplaceAll(t.Name(), "/", "_")
 	raw, err := os.ReadFile(filepath.Join("testdata", "nova_parity", fmt.Sprintf("%s.%d.json", name, n)))

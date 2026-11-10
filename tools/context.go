@@ -325,7 +325,7 @@ type Context struct {
 
 	// DescribeImage, when non-nil, asks a vision-capable model (this
 	// thread's own, if Multimodal above, else a configured fallback — see
-	// gateway's visionClient) to describe an image and return the text —
+	// gateway's visionModelFor) to describe an image and return the text —
 	// the "describe" half of view_image's mode parameter. instructions
 	// mirrors web_read's own optional focus parameter; empty means "a full
 	// literal description". nil only when no multimodal model is

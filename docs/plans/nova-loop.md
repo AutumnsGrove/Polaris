@@ -720,7 +720,12 @@ in Docker, and the real sandbox image:
   out its timeout and blamed a missing watcher; and the bare-metal dev config's relative
   `host_workspace_dir` reached `docker run -v` as a named volume and failed every call with exit 125.
   `compose/watcher/codeexec_test.go` runs the real script against a fake docker and fails on the old
-  script. A SIGTERM mid-run now leaves no orphaned watchdog holding the flock.
+  script. Known gap, not changed here because the unit files are hash-pinned on the host (`watcher-sync-verify.sh`,
+  SECURITY.md): `polaris-codeexec.service` has `TimeoutStartSec=120`, written when the `code_exec` default
+  was 30s, while the default is now 120s. A call that runs to its own limit can be SIGTERMed by systemd at the
+  same moment the sandbox watchdog fires. The runner now reports that as "stopped before it finished" instead
+  of timing out silently, but the unit should be raised (and re-pinned on the potato) so a timeout is reported
+  as a timeout. A SIGTERM mid-run now leaves no orphaned watchdog holding the flock.
 - **Stop from the UI.** `dev/e2e/stop_midstream.cjs` presses the real Stop button in a phone-sized browser
   mid-stream: streaming halts (21 of 300 words, no growth afterwards), the composer recovers, the partial
   answer survives a reload unchanged, and a follow-up on the thread works. Identical on both loops, and
@@ -746,12 +751,18 @@ Pulsar and the Weaver. The stragglers were calling a raw `llm.Client`, which alw
 a model routed to OpenCode Go answered the turn on Go and spent OpenRouter money on the calls beside it,
 invisible to the usage ledger. Now routed (through `tools.Context.Complete` / `Server.routedComplete`,
 which also write the ledger row): the `web_read` and `search_chats` filter passes, thread compaction, the
-Weaver star reconcile, and the vision describe (`view_image`, Pulsar Daily, the Comet approach). Cost is
+Weaver star reconcile and its revisit filter pass, and the vision describe (`view_image`, Pulsar Daily,
+the Comet approach). Cost is
 the retail list cost, the currency `AddCost` already takes, so cost per turn is unchanged. Verified live:
 a filtered `web_read` ($0.0068) and a `view_image` describe on a real vision model ($0.0052). Found on the
 way: `CompleteOneShot` panics on an empty model id, which a Weaver config with no model chosen can
 legitimately hold; `routedComplete` now degrades to the direct client (regression test included).
-Deliberately **not** moved: `compare_sources` and Oracle (the separate Decisions API, not chat
+Still on the raw client, found by pi-review on the PR and left alone because changing it alters how a
+live-verified path is billed: **Deep Research sub-agents**. `newSubAgentContext` copies `LLM` but not
+`Router`, `ModelID` or `Complete`, so a researcher's whole turn, and its `web_read` filter pass, go straight
+to OpenRouter even when the thread's model is routed to OpenCode Go. It predates the migration. Fixing it is
+a one-line copy per field plus a decision about whether sub-agent spend should hit the Go allowance; it
+needs a live Go-routed Deep Research run to confirm. Deliberately **not** moved: `compare_sources` and Oracle (the separate Decisions API, not chat
 completions), Comet's monthly forced-tool synthesis (`tool_choice` wire shape wants a live check against
 real monthly data), the embedding calls, and the eval/benchmark/oraclebench harnesses, which are tooling.
 

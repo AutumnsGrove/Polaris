@@ -398,7 +398,7 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client *llm.Client,
 		ThreadID: uuid.NewString(),
 	}
 	// A zero-value ModelConfig is deliberately not Multimodal, so
-	// visionClient always lands on cfg.MultimodalModel() — a Daily writer is
+	// visionModelFor always lands on cfg.MultimodalModel() — a Daily writer is
 	// typically text-only (DeepSeek), same as chat's wireVision fallback.
 	// Picture of the Day describes its candidates through this to vet them
 	// before picking one. Left nil when no vision model is configured, and

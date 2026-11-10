@@ -25,7 +25,6 @@ import (
 	"github.com/google/uuid"
 
 	"polaris/config"
-	"polaris/llm"
 	"polaris/store"
 	"polaris/tools"
 )
@@ -527,36 +526,14 @@ func moveUploadedFile(srcPath, destPath string) error {
 	return os.Remove(srcPath)
 }
 
-// visionClient picks which model actually describes/sees an image: the
+// visionModelFor picks which model actually describes/sees an image: the
 // thread's own selected model if it's multimodal itself, otherwise
-// cfg.MultimodalModel()'s configured fallback. Shared by resolveAttachment
-// (upload-time description) and tools/view_image.go (on-demand describe/see
-// calls) so both paths pick the same model the same way, rather than two
-// copies of this logic drifting apart. ok is false only when neither the
-// selected model nor any configured fallback is multimodal — there's
-// nothing this can do about that, the caller decides how to fail.
-//
-// Deliberately NOT pinned to visionModel.Provider the way the main chat
-// client pins its provider — that pin exists for prompt-cache consistency
-// across an ongoing conversation, which doesn't apply to this single
-// one-off call, and it actively hurts here: found live that the pinned
-// "xiaomi/fp8" endpoint 404s with "No endpoints found that support image
-// input" even though the model itself is vision-capable — some
-// provider-specific deployments of a multimodal model quietly drop vision
-// support. Leaving provider routing open lets OpenRouter pick whichever
-// endpoint actually handles image input for this model.
-func visionClient(cfg *config.Config, selectedModel config.ModelConfig) (client *llm.Client, ok bool) {
-	visionModel, ok := visionModelFor(cfg, selectedModel)
-	if !ok {
-		return nil, false
-	}
-	return llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, visionModel.Model, visionModel.Temperature, visionModel.MaxTokens), true
-}
-
-// visionModelFor picks the model that describes images: the selected one if it
-// is multimodal, else the configured multimodal fallback. Split out of
-// visionClient because the routed describer needs the registry id as well as
-// the client.
+// cfg.MultimodalModel()'s configured fallback. Shared by every describe path
+// (the turn, Pulsar Daily, the Comet approach — all via visionDescriber) so
+// they pick the same model the same way, rather than copies of this logic
+// drifting apart. ok is false only when neither the selected model nor any
+// configured fallback is multimodal — nothing this can do about that, the
+// caller decides how to fail.
 func visionModelFor(cfg *config.Config, selectedModel config.ModelConfig) (config.ModelConfig, bool) {
 	if selectedModel.Multimodal {
 		return selectedModel, true

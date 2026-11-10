@@ -240,7 +240,7 @@ func (t *turnRun) wirePersonalization() {
 // wireVision attaches the image-description helper when any multimodal model
 // is available.
 func (t *turnRun) wireVision() {
-	// visionClient mirrors resolveAttachment's own model-selection logic
+	// visionModelFor picks the describe model: the thread's own if multimodal,
 	// (this thread's model if multimodal, else cfg.MultimodalModel()'s
 	// fallback) — nil only when neither exists, matching every other
 	// optional dependency on tools.Context (Brave/Parallel/Tavily) that's
