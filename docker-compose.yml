@@ -106,8 +106,7 @@ services:
       # invisible to the running container: it kept serving the old config until
       # something recreated it. That bit on a real attempt to roll the Nova loop
       # back with `sed -i` (docs/plans/nova-loop.md §14), and it applies to every
-      # field gateway/server.go's liveConfig re-reads per request, not just
-      # `nova_loop`. Mounting the directory makes the path resolve per read, so
+      # field gateway/server.go's liveConfig re-reads per request. Mounting the directory makes the path resolve per read, so
       # an in-place write and a replace both land. That moves the container's
       # config path to /data/config/config.yaml (Dockerfile CMD), so the image
       # and this file have to land together — `polaris update` does exactly that

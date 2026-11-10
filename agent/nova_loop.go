@@ -92,7 +92,7 @@ func runWithNova(reqCtx context.Context, ctx *tools.Context, history []llm.ChatM
 	system := currentContextPreamble() + loadSystemPrompt(ctx, ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch, ctx.NoResearch)
 
 	// The turn's own messages: the user message, then the mode reinforcement
-	// near the end (see runBespoke and modeReinforcement). Nova's Agent.Run
+	// near the end (see modeReinforcement; the old loop did the same). Nova's Agent.Run
 	// would append its prompt last, which would put the reinforcement before
 	// the user message, so the whole conversation goes in as history and Nova's
 	// prompt-less entry point is used.
@@ -252,7 +252,7 @@ func (s *novaRunState) build(reqCtx context.Context, res *novaagent.Result, err 
 			switch {
 			case len(w.ToolCalls) == 0 && strings.TrimSpace(w.Content) == "":
 				// Deliberately no empty-answer fallback after the wrap-up (see
-				// runBespoke): gateway's "model returned no answer" check owns
+				// the old loop): gateway's "model returned no answer" check owns
 				// that case, and Nova's own fallback text would defeat it.
 				out.Answer = ""
 			case len(w.ToolCalls) == 0 && len(parsePseudoToolCalls(w.Content)) > 0:
@@ -372,7 +372,7 @@ func (s *novaRunState) onEvent(e proto.Event) {
 			m := msg
 			s.wrapMsg = &m
 		}
-		// Live-only running total — see runBespoke's matching emit. Not after the
+		// Live-only running total — the old loop emitted it at the same point. Not after the
 		// forced wrap-up call: the bespoke loop doesn't either (the closing
 		// "done" event carries the final figure), and event parity is the bar.
 		if !wrapUp {
@@ -438,7 +438,7 @@ func (s *novaRunState) afterPlainMessage(msg message.Message) novaagent.TurnDeci
 func (s *novaRunState) afterToolBatch(msg message.Message) novaagent.TurnDecision {
 	ctx := s.ctx
 	// A handler may have just called ctx.AddCost — surface that in the same
-	// running total the per-call emit uses (see runBespoke).
+	// running total the per-call emit uses (as the old loop did).
 	ctx.Emit("cost_update", map[string]interface{}{"cost_usd": s.totalCost + ctx.ExtraCostUSD})
 	// view_image "see" calls queued real image messages; flushed after every
 	// tool result and before any nudge, never interleaved (wire-protocol rule).

@@ -5,7 +5,6 @@ import (
 
 	"github.com/AutumnsGrove/nova/provider"
 
-	"polaris/agent"
 	"polaris/routing"
 )
 
@@ -47,7 +46,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		log.Warn("models: reading per-model share failed", "err", err)
 		shareByModel = map[string]float64{}
 	}
-	router := routing.Build(cfg, routing.Options{ForceOpenRouter: agent.ForceOpenRouter()})
+	router := routing.Build(cfg, routing.Options{})
 	out := make([]modelOut, 0, len(cfg.Models))
 	for _, m := range cfg.Models {
 		mo := modelOut{ID: m.ID, Name: m.Name, Default: m.ID == defaultID, CompactionTokens: cfg.CompactionThreshold(m)}

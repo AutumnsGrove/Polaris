@@ -16,6 +16,7 @@ import (
 	"polaris/llm"
 	"polaris/prompts"
 	"polaris/store"
+	"polaris/tools"
 )
 
 func (s *Server) handleGetConstellationConfig(w http.ResponseWriter, r *http.Request) {
@@ -643,8 +644,14 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 	if err != nil {
 		return false, err
 	}
-	client := WeaverClient(s.liveConfig(), cfgRow.Model)
-	title, summary, body, invalidated, costUSD, err := reconcileStarContent(reqCtx, client, *star, correction)
+	cfg := s.liveConfig()
+	client := WeaverClient(cfg, cfgRow.Model)
+	// A star reconcile belongs to no thread; a per-star session id keeps the Go
+	// session-header requirement satisfied (see agent.OneShotOptions.SessionID).
+	// ModelByID(...).ID, not cfgRow.Model: an unset Weaver model means "the
+	// default", and routing needs the concrete registry id.
+	complete := s.routedComplete(cfg, client, cfg.ModelByID(cfgRow.Model).ID, fmt.Sprintf("star-reconcile-%d", id), nil)
+	title, summary, body, invalidated, costUSD, err := reconcileStarContent(reqCtx, complete, *star, correction)
 	if err != nil {
 		return false, err
 	}
@@ -668,18 +675,18 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 // title is "" unless the correction actually changed what the star is
 // about — see parseReconcileResponse's TITLE: handling — so a correction
 // that only adds nuance to an already-accurate title never touches it.
-func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star store.Star, correction string) (title, summary, body string, invalidated bool, costUSD float64, err error) {
+func reconcileStarContent(reqCtx context.Context, complete tools.CompleteFunc, star store.Star, correction string) (title, summary, body string, invalidated bool, costUSD float64, err error) {
 	task := fmt.Sprintf("Current title: %s\n\nCurrent summary: %s\n\nCurrent body:\n%s\n\nWhat they just said: %s", star.Title, star.Summary, star.Body, correction)
-	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
+	text, cost, err := complete(reqCtx, []llm.ChatMessage{
 		{Role: "system", Content: prompts.Get().Weaver.ReconcileSystem},
 		{Role: "user", Content: task},
-	}, func(string) {}, nil)
+	})
 	if err != nil {
 		return "", "", "", false, 0, err
 	}
-	title, summary, body, invalidated = parseReconcileResponse(resp.Content)
+	title, summary, body, invalidated = parseReconcileResponse(text)
 	if invalidated {
-		return "", "", "", true, resp.CostUSD, nil
+		return "", "", "", true, cost, nil
 	}
 	if summary == "" {
 		summary = star.Summary
@@ -687,7 +694,7 @@ func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star st
 	if body == "" {
 		body = star.Body
 	}
-	return title, summary, body, false, resp.CostUSD, nil
+	return title, summary, body, false, cost, nil
 }
 
 // parseReconcileResponse pulls INVALIDATES:/TITLE:/SUMMARY:/BODY: out of the

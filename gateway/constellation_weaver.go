@@ -90,7 +90,11 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return fmt.Errorf("shooting star: %w", err)
 	}
 
-	task, err := weaverTaskText(reqCtx, db, client, threadID, effectiveID, lastRun, msgs, runID)
+	// The filter pass takes the routed one-shot path like every other tool-side
+	// call, so a Weaver model routed to OpenCode Go does not spend OpenRouter
+	// money on it (pi-review caught this one left on the raw client).
+	complete := routedCompleteFor(db, userAgent, cfg, client, modelID, threadID, nil)
+	task, err := weaverTaskText(reqCtx, db, complete, threadID, effectiveID, lastRun, msgs, runID)
 	if err != nil {
 		warnOnErr("finishing failed shooting star run", db.FinishShootingStarRun(runID, "", err.Error(), true))
 		return fmt.Errorf("shooting star: %w", err)
@@ -136,9 +140,8 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 	var router *route.Router
 	if cfg != nil {
 		router = routing.Build(cfg, routing.Options{
-			SessionID:       func() string { return threadID },
-			UserAgent:       userAgent,
-			ForceOpenRouter: agent.ForceOpenRouter(),
+			SessionID: func() string { return threadID },
+			UserAgent: userAgent,
 		})
 	}
 	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID, embeds, router, modelID)
@@ -247,7 +250,7 @@ func (s *Server) shootingStarTurnGate() turnGate {
 // for reading actual message content — see RunShootingStar's own doc
 // comment on why these two can differ) are deliberately separate params,
 // not one id used for both.
-func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, effectiveID string, lastRun *store.ShootingStarRun, msgs []store.Message, runID int64) (string, error) {
+func weaverTaskText(reqCtx context.Context, db *store.Store, complete tools.CompleteFunc, threadID, effectiveID string, lastRun *store.ShootingStarRun, msgs []store.Message, runID int64) (string, error) {
 	if lastRun == nil {
 		// First-ever pass on this thread: no prior notes exist, so
 		// there's nothing to filter for — Weaver gets the thread's raw
@@ -309,7 +312,7 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 	}
 	instruction := fmt.Sprintf(prompts.Get().Weaver.RevisitInstruction, notes.String())
 
-	filtered, filterCost, ferr := tools.FilterExtractedText(reqCtx, client, prompts.Get().Tools.ThreadReadFilterSystem, deltaText, instruction)
+	filtered, filterCost, ferr := tools.FilterExtractedText(reqCtx, complete, prompts.Get().Tools.ThreadReadFilterSystem, deltaText, instruction)
 	if ferr != nil {
 		// Degrade to the raw delta rather than failing the whole run —
 		// the same choice web_read/search_chats' own FilterExtractedText
@@ -403,14 +406,14 @@ func weaverToolClosures(db *store.Store, threadID string, embeds *embedService, 
 	link func(starIDA, starIDB int64, reasoning string) error,
 ) {
 	// seenStarsMu guards seenStars against concurrent tool dispatch:
-	// agent.Run's dispatchToolCallsConcurrently fans out every non-
+	// agent.Run's parallel tool dispatch fans out every non-
 	// code_exec tool call from one model turn across goroutines (OpenRouter
 	// is asked for parallel_tool_calls: true — see llm/client.go), so two
 	// Weaver tool calls batched in the same turn (e.g. two search_stars, or
 	// search_stars + read_star) hit this map concurrently. An unsynchronized
 	// Go map write under concurrent access is a runtime "fatal error:
 	// concurrent map writes" — unlike a normal panic, that bypasses
-	// dispatchToolCallsConcurrently's own per-call recover() entirely and
+	// dispatchGuarded's own per-call recover() entirely and
 	// crashes the whole process, not just this one shooting star.
 	var seenStarsMu sync.Mutex
 	seenStars := map[int64]bool{}

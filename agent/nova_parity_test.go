@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -108,10 +112,14 @@ func (f *fakeRouter) serve(t *testing.T) *httptest.Server {
 
 // loopRecord is everything observable about one run.
 type loopRecord struct {
-	bodies []map[string]any
-	events []emittedEvent
-	result *Result
-	err    error
+	// goldenTranscript is the frozen transcript as decoded JSON (golden side
+	// only): llm.ChatMessage marshals multipart content but cannot unmarshal it
+	// back, and the comparison is over JSON anyway. Use transcript().
+	goldenTranscript []any
+	bodies           []map[string]any
+	events           []emittedEvent
+	result           *Result
+	err              error
 }
 
 type parityCase struct {
@@ -133,9 +141,17 @@ type parityCase struct {
 	beforeRun func()
 }
 
-// run executes the case through one loop against a fresh server.
+// run returns the record for one side of the comparison. nova=true really runs
+// the Nova loop against a fresh server. nova=false is the *golden* side: the
+// output the bespoke loop produced for this exact scenario, frozen into
+// testdata/nova_parity/ when that loop was deleted (#188), so the wire bytes,
+// events, transcript and accounting Nova is held to survive the loop they came
+// from. Fixtures are keyed by test name plus call order within the test.
 func (c parityCase) run(t *testing.T, nova bool) loopRecord {
 	t.Helper()
+	if !nova {
+		return loadGolden(t)
+	}
 	if c.beforeRun != nil {
 		c.beforeRun()
 	}
@@ -164,13 +180,7 @@ func (c parityCase) run(t *testing.T, nova bool) loopRecord {
 	if msg == "" {
 		msg = "hello"
 	}
-	var res *Result
-	var err error
-	if nova {
-		res, err = runWithNova(context.Background(), ctx, c.history, msg)
-	} else {
-		res, err = runBespoke(context.Background(), ctx, c.history, msg)
-	}
+	res, err := runWithNova(context.Background(), ctx, c.history, msg)
 	out := loopRecord{events: rec.events, result: res, err: err}
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
@@ -199,7 +209,7 @@ func normalizeBody(m map[string]any) map[string]any {
 			// skip cannot hide the field vanishing from both loops.
 			continue
 		}
-		out[k] = v
+		out[k] = scrubDates(v)
 	}
 	return out
 }
@@ -328,8 +338,8 @@ func assertParity(t *testing.T, c parityCase) (bespoke, nova loopRecord) {
 			t.Errorf("%s: bespoke %d, nova %d", name, pair[0], pair[1])
 		}
 	}
-	if !reflect.DeepEqual(transcriptJSON(br.Transcript), transcriptJSON(nr.Transcript)) {
-		t.Errorf("Transcript differs:\n--- bespoke\n%s\n--- nova\n%s", mustJSON(br.Transcript), mustJSON(nr.Transcript))
+	if !reflect.DeepEqual(bespoke.transcript(), nova.transcript()) {
+		t.Errorf("Transcript differs:\n--- golden\n%s\n--- nova\n%s", mustJSON(bespoke.transcript()), mustJSON(nova.transcript()))
 	}
 	return bespoke, nova
 }
@@ -346,6 +356,13 @@ func mustJSON(v any) string {
 
 // transcriptJSON normalizes a transcript to decoded JSON so key order — an
 // encoder detail — never counts as a difference.
+func (r loopRecord) transcript() []any {
+	if r.goldenTranscript != nil {
+		return r.goldenTranscript
+	}
+	return transcriptJSON(r.result.Transcript)
+}
+
 func transcriptJSON(msgs []llm.ChatMessage) []any {
 	b, _ := json.Marshal(msgs)
 	var out []any
@@ -481,8 +498,8 @@ func TestNovaParity_ParallelBatchKeepsCallOrder(t *testing.T) {
 	if d := diffBodies(b.bodies, n.bodies); d != "" {
 		t.Errorf("wire bodies differ:\n%s", d)
 	}
-	if !reflect.DeepEqual(transcriptJSON(b.result.Transcript), transcriptJSON(n.result.Transcript)) {
-		t.Errorf("transcripts differ:\n%s\n---\n%s", mustJSON(b.result.Transcript), mustJSON(n.result.Transcript))
+	if !reflect.DeepEqual(b.transcript(), n.transcript()) {
+		t.Errorf("transcripts differ:\n%s\n---\n%s", mustJSON(b.transcript()), mustJSON(n.transcript()))
 	}
 	// The second request must carry both tool results, in call order, with no
 	// user message between them.
@@ -785,7 +802,7 @@ func TestNova_TextOnlyModelDropsImageParts(t *testing.T) {
 // is a graceful early finish — no error, whatever streamed so far as the
 // answer — wherever the cancel lands.
 func TestNovaParity_StopMidStreamIsAGracefulFinish(t *testing.T) {
-	run := func(nova bool) (*Result, error) {
+	run := func() (*Result, error) {
 		started := make(chan struct{})
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -799,20 +816,104 @@ func TestNovaParity_StopMidStreamIsAGracefulFinish(t *testing.T) {
 		reqCtx, cancel := context.WithCancel(context.Background())
 		go func() { <-started; time.Sleep(50 * time.Millisecond); cancel() }()
 		ctx := &tools.Context{LLM: client, Emit: (&recordingEmit{}).emit, MaxTurns: 3}
-		if nova {
-			return runWithNova(reqCtx, ctx, nil, "hello")
-		}
-		return runBespoke(reqCtx, ctx, nil, "hello")
+		return runWithNova(reqCtx, ctx, nil, "hello")
 	}
-	for name, nova := range map[string]bool{"bespoke": false, "nova": true} {
-		t.Run(name, func(t *testing.T) {
-			res, err := run(nova)
-			if err != nil {
-				t.Fatalf("a stop must not be an error, got %v", err)
-			}
-			if !strings.HasPrefix(res.Answer, "Partial answer") {
-				t.Errorf("Answer = %q, want the text streamed before the stop", res.Answer)
-			}
+	res, err := run()
+	if err != nil {
+		t.Fatalf("a stop must not be an error, got %v", err)
+	}
+	if !strings.HasPrefix(res.Answer, "Partial answer") {
+		t.Errorf("Answer = %q, want the text streamed before the stop", res.Answer)
+	}
+}
+
+var (
+	goldenMu  sync.Mutex
+	goldenSeq = map[string]int{}
+)
+
+// loadGolden reads the next frozen bespoke-loop record for the running test.
+func loadGolden(t *testing.T) loopRecord {
+	t.Helper()
+	goldenMu.Lock()
+	n := goldenSeq[t.Name()]
+	goldenSeq[t.Name()]++
+	if n == 0 {
+		// The counter is keyed by test name for the life of the process, so
+		// without a reset a second run of the same test (-count=2, the normal way
+		// to look for order-dependence) would ask for fixture .1 and fail.
+		t.Cleanup(func() {
+			goldenMu.Lock()
+			delete(goldenSeq, t.Name())
+			goldenMu.Unlock()
 		})
 	}
+	goldenMu.Unlock()
+	name := strings.ReplaceAll(t.Name(), "/", "_")
+	raw, err := os.ReadFile(filepath.Join("testdata", "nova_parity", fmt.Sprintf("%s.%d.json", name, n)))
+	if err != nil {
+		t.Fatalf("no golden for %s call %d: %v", t.Name(), n, err)
+	}
+	var g struct {
+		Bodies []map[string]any `json:"bodies"`
+		Events []struct {
+			Type    string         `json:"type"`
+			Payload map[string]any `json:"payload"`
+		} `json:"events"`
+		Err    string `json:"err"`
+		Result *struct {
+			Answer           string
+			CostUSD          float64
+			PromptTokens     int
+			CompletionTokens int
+			CacheReadTokens  int
+			LastPromptTokens int
+			LLMCalls         int
+			ContextTokens    int
+			TurnCount        int
+			ResearchCalls    int
+			Transcript       []any
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("golden %s: %v", name, err)
+	}
+	rec := loopRecord{bodies: g.Bodies}
+	for _, e := range g.Events {
+		rec.events = append(rec.events, emittedEvent{eventType: e.Type, payload: e.Payload})
+	}
+	if g.Err != "" {
+		rec.err = errors.New(g.Err)
+	}
+	if r := g.Result; r != nil {
+		rec.result = &Result{
+			Answer: r.Answer, CostUSD: r.CostUSD, PromptTokens: r.PromptTokens, CompletionTokens: r.CompletionTokens,
+			CacheReadTokens: r.CacheReadTokens, LastPromptTokens: r.LastPromptTokens, LLMCalls: r.LLMCalls,
+			ContextTokens: r.ContextTokens, TurnCount: r.TurnCount, ResearchCalls: r.ResearchCalls,
+		}
+		rec.goldenTranscript = r.Transcript
+	}
+	return rec
+}
+
+var datePreamble = regexp.MustCompile(`Today's date: [A-Za-z]+, [A-Za-z]+ \d{1,2}, \d{4}`)
+
+// scrubDates replaces the system prompt's date preamble, the one wall-clock
+// value in a request, so a fixture recorded on one day matches a run on another.
+func scrubDates(v any) any {
+	switch x := v.(type) {
+	case string:
+		return datePreamble.ReplaceAllString(x, "Today's date: <DATE>")
+	case []any:
+		for i := range x {
+			x[i] = scrubDates(x[i])
+		}
+		return x
+	case map[string]any:
+		for k := range x {
+			x[k] = scrubDates(x[k])
+		}
+		return x
+	}
+	return v
 }

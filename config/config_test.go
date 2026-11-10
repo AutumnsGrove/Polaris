@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -440,26 +441,15 @@ func TestCompactionThreshold(t *testing.T) {
 	}
 }
 
-func TestLoad_NovaLoopDefaultsOnAndParses(t *testing.T) {
-	load := func(extra string) *Config {
-		t.Helper()
-		cfg, err := Load(writeTestConfig(t, "openrouter:\n  api_key: \"sk-test\"\n"+extra), testRegistry)
-		if err != nil {
-			t.Fatalf("Load returned error: %v", err)
+// The nova_loop flag was removed with the bespoke loop (#188), but operators'
+// config.yaml files still carry it (it was the documented rollback). Config
+// loading is deliberately non-strict, so a leftover key must be ignored, never
+// a startup failure.
+func TestLoad_LeftoverNovaLoopKeyIsIgnored(t *testing.T) {
+	for _, extra := range []string{"nova_loop: false\n", "nova_loop: true\n"} {
+		if _, err := Load(writeTestConfig(t, "openrouter:\n  api_key: \"sk-test\"\n"+extra), testRegistry); err != nil {
+			t.Errorf("config with %q failed to load: %v", strings.TrimSpace(extra), err)
 		}
-		return cfg
-	}
-	// N10 flipped the default: a config that never mentions the key runs on Nova.
-	if !load("").NovaLoopEnabled() {
-		t.Error("NovaLoop defaulted to off; N10 made Nova the default loop")
-	}
-	if !load("nova_loop: true\n").NovaLoopEnabled() {
-		t.Error("nova_loop: true did not parse")
-	}
-	// The kill switch: an explicit false has to survive, which is why the field
-	// is a pointer (a plain bool cannot tell "absent" from "false").
-	if load("nova_loop: false\n").NovaLoopEnabled() {
-		t.Error("nova_loop: false did not parse; the kill switch is broken")
 	}
 }
 

@@ -570,7 +570,7 @@ func (c *Client) WithReasoning(r *ReasoningParams) *Client {
 // sseToolCallDelta.Index); doRequest accumulates every index it sees, not
 // just the first, and returns them all in ChatResponse.ToolCalls in index
 // order. agent.Run dispatches that whole batch concurrently — see its
-// dispatchToolCallsConcurrently.
+// Nova's parallel tool dispatch.
 //
 // onReasoning delivers a reasoning-capable model's internal "thinking"
 // tokens as they stream, separately from onChunk's visible answer tokens

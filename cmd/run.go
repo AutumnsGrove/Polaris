@@ -13,7 +13,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"polaris/agent"
 	"polaris/backup"
 	"polaris/config"
 	"polaris/gateway"
@@ -65,7 +64,6 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	agent.SetNovaLoop(cfg.NovaLoopEnabled())
 
 	if err := logger.Init(cfg.Logging.Dir); err != nil {
 		return fmt.Errorf("initializing logger: %w", err)
@@ -111,9 +109,6 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 	gateway.ApplyTimezoneFromStore(db)
-	// The settings-panel harness pick beats config.yaml's nova_loop; applied
-	// here so it holds from the first turn, not only after a config reload.
-	agent.SetNovaLoop(gateway.NovaLoopFromStore(db, cfg.NovaLoopEnabled()))
 	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode}, "")
 
 	// Runs for the life of the process, roughly once a day (see

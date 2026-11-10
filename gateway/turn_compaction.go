@@ -7,13 +7,14 @@ import (
 
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/tools"
 )
 
 // compactThread summarizes every message up to and including throughID,
 // via one extra (non-streamed, not shown as a normal answer) LLM call,
 // and records that summary so history loading substitutes it for the raw
 // messages it covers on every subsequent turn.
-func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID int64) (summary string, cost float64, err error) {
+func (s *Server) compactThread(complete tools.CompleteFunc, threadID string, throughID int64) (summary string, cost float64, err error) {
 	history, err := s.loadAnswerHistory(threadID)
 	if err != nil {
 		return "", 0, err
@@ -37,11 +38,11 @@ func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID
 	// same way (see its doc comment); title_regenerate_task is the precedent.
 	prompt = append(prompt, llm.ChatMessage{Role: "user", Content: prompts.Get().Turn.CompactionTask})
 
-	resp, err := client.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	text, cost, err := complete(context.Background(), prompt)
 	if err != nil {
 		return "", 0, err
 	}
-	if strings.TrimSpace(resp.Content) == "" {
+	if strings.TrimSpace(text) == "" {
 		// No error, but nothing usable came back — same reasoning-exhaustion
 		// failure mode as generateTitle/generateSuggestions (see
 		// generateTitle's doc comment), except unchecked here it would be
@@ -52,13 +53,13 @@ func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID
 		// title/suggestion list. Treating it as an error routes through the
 		// caller's existing "auto-compaction failed" log + skip path, which
 		// already correctly leaves the thread's real messages untouched.
-		return "", resp.CostUSD, fmt.Errorf("compaction returned no usable summary")
+		return "", cost, fmt.Errorf("compaction returned no usable summary")
 	}
 
-	if err := s.db.CompactThread(threadID, resp.Content, throughID, resp.CostUSD, estimateTokens(resp.Content)); err != nil {
+	if err := s.db.CompactThread(threadID, text, throughID, cost, estimateTokens(text)); err != nil {
 		return "", 0, err
 	}
-	return resp.Content, resp.CostUSD, nil
+	return text, cost, nil
 }
 
 // estimateTokens is a rough tokens-per-character heuristic (English text

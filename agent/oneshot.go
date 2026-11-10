@@ -72,10 +72,9 @@ type OneShotResult struct {
 func CompleteOneShot(ctx context.Context, cfg *config.Config, client *llm.Client, modelID string, opts OneShotOptions, msgs []llm.ChatMessage) (*OneShotResult, error) {
 	settings := client.Settings()
 	r := routing.Build(cfg, routing.Options{
-		SessionID:       func() string { return opts.SessionID },
-		UserAgent:       opts.UserAgent,
-		ForceOpenRouter: ForceOpenRouter(),
-		OnFallback:      opts.OnFallback,
+		SessionID:  func() string { return opts.SessionID },
+		UserAgent:  opts.UserAgent,
+		OnFallback: opts.OnFallback,
 	})
 	// The catalog id resolves to its wire slug through Nova's catalog,
 	// registered from the config registry on every Build — but a client

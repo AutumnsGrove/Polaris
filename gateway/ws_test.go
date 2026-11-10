@@ -421,9 +421,30 @@ func TestWebSocket_DisconnectDoesNotTruncateInFlightTurn(t *testing.T) {
 		t.Errorf("assistant answer = %q, want the full untruncated \"Hello, world!\" — a dropped connection must not cut the turn short", msgs[1].Content)
 	}
 
-	dbEvents, err := h.db.ListEvents(threadID, 0)
-	if err != nil {
-		t.Fatalf("ListEvents: %v", err)
+	// "turn completed" is logged just after the assistant message is persisted,
+	// so reading events the instant the message appears raced it: on a loaded
+	// CI runner the test read first and then closed the DB under the turn
+	// ("failed to persist event ... database is closed"). Wait for the event the
+	// same way the messages were waited for. Measured before the fix: 8/60 runs
+	// failed on main under CPU contention.
+	var dbEvents []store.Event
+	eventsDeadline := time.Now().Add(5 * time.Second)
+	for {
+		var err error
+		dbEvents, err = h.db.ListEvents(threadID, 0)
+		if err != nil {
+			t.Fatalf("ListEvents: %v", err)
+		}
+		done := false
+		for _, e := range dbEvents {
+			if e.Message == "turn completed" {
+				done = true
+			}
+		}
+		if done || time.Now().After(eventsDeadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	found := false
 	for _, e := range dbEvents {

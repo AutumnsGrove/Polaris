@@ -10,6 +10,7 @@ import (
 
 	"polaris/agent"
 	"polaris/routing"
+	"polaris/store"
 )
 
 // providers_routes.go serves GET /api/providers/status — what
@@ -60,12 +61,10 @@ type ProvidersMeter struct {
 }
 
 // ProvidersPolicyStatus is the effective routing policy: the configured
-// default and failover, plus whether the kill switch currently pins
-// everything to OpenRouter regardless of the policy above.
+// default and failover.
 type ProvidersPolicyStatus struct {
 	DefaultBackend string `json:"default_backend"`
 	Failover       string `json:"failover"`
-	Pinned         bool   `json:"pinned"`
 }
 
 // ProvidersModelStatus is one registry model's effective route: the
@@ -101,7 +100,6 @@ func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
 	if out.Policy.Failover == "" {
 		out.Policy.Failover = "openrouter"
 	}
-	out.Policy.Pinned = agent.ForceOpenRouter()
 
 	if share, err := s.db.ProviderAllowanceThisMonth(); err == nil {
 		out.OpenCodeGo.PolarisShareAllowanceUSD = share
@@ -137,7 +135,7 @@ func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
 		log.Warn("providers status: reading per-model share failed", "err", err)
 		shareByModel = map[string]float64{}
 	}
-	router := routing.Build(cfg, routing.Options{ForceOpenRouter: out.Policy.Pinned})
+	router := routing.Build(cfg, routing.Options{})
 	for _, m := range cfg.Models {
 		primary, wire, _ := router.Primary(m.ID)
 		st := ProvidersModelStatus{ID: m.ID, Primary: primary, WireModel: wire}
@@ -158,10 +156,16 @@ func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
 // for ledger parity between loop calls and background calls (titles,
 // suggestions, extraction). modelID is the Polaris registry id.
 func (s *Server) logOneShotProviderUsage(res *agent.OneShotResult, modelID string) {
+	logOneShotUsage(s.db, res, modelID)
+}
+
+// logOneShotUsage is logOneShotProviderUsage for callers that hold a store but
+// not a *Server (the Weaver runner is a free function).
+func logOneShotUsage(db *store.Store, res *agent.OneShotResult, modelID string) {
 	if res == nil || !routing.TouchedGo(res.Usage) {
 		return
 	}
-	if err := s.db.LogProviderUsage(routing.OpenCodeGo, modelID,
+	if err := db.LogProviderUsage(routing.OpenCodeGo, modelID,
 		res.Usage.AllowanceUSD, res.ListCost, res.Usage.BillingSource,
 		res.Usage.PromptTokens, res.Usage.CompletionTokens, res.Usage.CachedTokens, res.Spilled); err != nil {
 		log.Warn("failed to record one-shot provider usage", "model", modelID, "err", err)

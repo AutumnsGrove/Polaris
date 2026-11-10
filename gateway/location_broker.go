@@ -20,7 +20,7 @@ var locationRequestTimeout = 8 * time.Second
 // client's answer, the timeout passes, or waitCtx is cancelled (e.g. a
 // "stop" arriving mid-wait). Zero value is ready to use.
 //
-// Safe for concurrent use: dispatchToolCallsConcurrently can have more
+// Safe for concurrent use: Nova's parallel dispatch can have more
 // than one tool call in the same turn reach ResolveLocation at once,
 // though handleTurn's sync.Once wrapping (see its requestLocation
 // closure) means only the first ever actually calls request() — this

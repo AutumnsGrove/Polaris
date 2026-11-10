@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"strings"
 	"sync"
 
@@ -46,7 +45,7 @@ func (t *turnRun) buildAgentContext() {
 	// requestLocation asks a specific browser for a fix; resolveLiveLocation
 	// is the tool-facing wrapper handed to tools.Context — sync.Once means
 	// however many location-hungry tool calls this turn makes (nearby_search
-	// and weather both could, concurrently, via dispatchToolCallsConcurrently),
+	// and weather both could, concurrently, via Nova's parallel tool dispatch),
 	// the browser only ever gets interrupted for its GPS once. Nil when
 	// requestLocation itself is nil (no live client — see ask.go), so
 	// ResolveLocation's nil check skips straight to defaultLocation above.
@@ -79,7 +78,6 @@ func (t *turnRun) buildAgentContext() {
 				"from": from, "to": to, "error": err.Error(),
 			})
 		},
-		ForceOpenRouter: agent.ForceOpenRouter(),
 	})
 	t.agentCtx = &tools.Context{
 		SearXNG:                 t.s.searxng,
@@ -119,6 +117,11 @@ func (t *turnRun) buildAgentContext() {
 		// {custom_instructions} to nothing rather than needing its own
 		// flag.
 		LLM: t.client,
+		// Tool side calls (web_read/search_chats filter passes) take the
+		// routed path with this turn's fallback chip, not the raw client.
+		Complete: t.s.routedComplete(t.cfg, t.client, t.modelCfg.ID, t.threadID, func(from, to string, err error) {
+			t.emitter.emit("provider_fallback", map[string]interface{}{"from": from, "to": to, "error": err.Error()})
+		}),
 		// ModelID + Router: the routed path (see routing.Build and
 		// agent.novaProviderFor). Both set together or not at all — a
 		// router without a catalog id would key on the wire slug, find
@@ -237,15 +240,13 @@ func (t *turnRun) wirePersonalization() {
 // wireVision attaches the image-description helper when any multimodal model
 // is available.
 func (t *turnRun) wireVision() {
-	// visionClient mirrors resolveAttachment's own model-selection logic
+	// visionModelFor picks the describe model: the thread's own if multimodal,
 	// (this thread's model if multimodal, else cfg.MultimodalModel()'s
 	// fallback) — nil only when neither exists, matching every other
 	// optional dependency on tools.Context (Brave/Parallel/Tavily) that's
 	// left nil rather than wired when unavailable.
-	if visionCl, ok := visionClient(t.cfg, t.modelCfg); ok {
-		t.agentCtx.DescribeImage = func(imgCtx context.Context, imageBase64, mimeType, instructions string) (string, float64, error) {
-			return visionCl.DescribeImage(imgCtx, imageBase64, mimeType, instructions)
-		}
+	if describe, ok := t.s.visionDescriber(t.cfg, t.modelCfg, t.threadID); ok {
+		t.agentCtx.DescribeImage = describe
 	}
 }
 

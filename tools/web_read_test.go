@@ -456,7 +456,7 @@ func TestFilterExtractedText(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "extracted answer", CostUSD: 0.0042}}},
 	}
-	result, cost, err := FilterExtractedText(context.Background(), mock, "system prompt", "page text", "an instruction")
+	result, cost, err := FilterExtractedText(context.Background(), CompleteFromClient(mock), "system prompt", "page text", "an instruction")
 	if err != nil {
 		t.Fatalf("FilterExtractedText returned error: %v", err)
 	}
@@ -973,5 +973,31 @@ func TestExtractPDFPage_MalformedPDF_ReturnsErrorInsteadOfPanicking(t *testing.T
 	}
 	if text != "" {
 		t.Errorf("text = %q, want empty alongside an error", text)
+	}
+}
+
+// A context wired with a routed Complete must use it for the filter pass, and
+// must hand back its cost untouched for AddCost; an unwired context must fall
+// back to its raw LLM client. The seam exists so a model routed to a non-
+// OpenRouter backend does not spend OpenRouter money on its side calls.
+func TestContextCompleteFunc_PrefersRoutedThenFallsBackToClient(t *testing.T) {
+	routedCalled := false
+	routed := &Context{Complete: func(context.Context, []llm.ChatMessage) (string, float64, error) {
+		routedCalled = true
+		return "routed text", 0.5, nil
+	}, LLM: &llmtest.MockClient{}}
+	text, cost, err := FilterExtractedText(context.Background(), routed.CompleteFunc(), "sys", "page", "instr")
+	if err != nil || text != "routed text" || cost != 0.5 || !routedCalled {
+		t.Fatalf("routed path: text=%q cost=%v err=%v called=%v", text, cost, err, routedCalled)
+	}
+
+	direct := &Context{LLM: &llmtest.MockClient{Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "direct text", CostUSD: 0.25}}}}}
+	text, cost, err = FilterExtractedText(context.Background(), direct.CompleteFunc(), "sys", "page", "instr")
+	if err != nil || text != "direct text" || cost != 0.25 {
+		t.Fatalf("fallback path: text=%q cost=%v err=%v", text, cost, err)
+	}
+
+	if _, _, err := (&Context{}).CompleteFunc()(context.Background(), nil); err == nil {
+		t.Error("a context with no model at all must error, not panic")
 	}
 }

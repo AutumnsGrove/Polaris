@@ -354,9 +354,8 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client *llm.Client,
 		PulsarDailyItems: wantsItems,
 		ModelID:          modelID,
 		Router: routing.Build(cfg, routing.Options{
-			SessionID:       func() string { return sessionID },
-			UserAgent:       "Polaris/" + s.version,
-			ForceOpenRouter: agent.ForceOpenRouter(),
+			SessionID: func() string { return sessionID },
+			UserAgent: "Polaris/" + s.version,
 		}),
 		// Ctx is normally set by agent.Run itself (see its doc comment on
 		// Context.Ctx) — but Weather and Picture of the Day's image_search
@@ -399,13 +398,13 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client *llm.Client,
 		ThreadID: uuid.NewString(),
 	}
 	// A zero-value ModelConfig is deliberately not Multimodal, so
-	// visionClient always lands on cfg.MultimodalModel() — a Daily writer is
+	// visionModelFor always lands on cfg.MultimodalModel() — a Daily writer is
 	// typically text-only (DeepSeek), same as chat's wireVision fallback.
 	// Picture of the Day describes its candidates through this to vet them
 	// before picking one. Left nil when no vision model is configured, and
 	// that path degrades to a title-only pick rather than failing.
-	if visionCl, ok := visionClient(cfg, config.ModelConfig{}); ok {
-		ctx.DescribeImage = visionCl.DescribeImage
+	if describe, ok := s.visionDescriber(cfg, config.ModelConfig{}, sessionID); ok {
+		ctx.DescribeImage = describe
 	}
 	// Same gate gateway/turn.go's main chat path uses — code_exec (and by
 	// extension show/fetch_url/view_image, all gated on the same

@@ -305,7 +305,7 @@ type ServerEvent struct {
 	Result   string         `json:"result,omitempty"`
 	// CallID correlates a tool_result back to its own tool_call when the
 	// model fires 2+ concurrent calls to the same tool in one turn (see
-	// agent/driver.go's dispatchToolCallsConcurrently) — positional/
+	// Nova's parallel tool dispatch (agent/nova_tools.go)) — positional/
 	// name-based matching alone is ambiguous once results can complete out
 	// of call order, which caused two concurrent memory writes' results to
 	// get cross-wired onto the wrong timeline card in the frontend.

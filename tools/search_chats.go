@@ -227,7 +227,7 @@ func handleSearchChatsRead(ctx *Context, threadID, instructions string) string {
 		if len(filterInput) > maxFilterInputChars {
 			filterInput = filterInput[:maxFilterInputChars]
 		}
-		if filtered, filterCost, ferr := FilterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.ThreadReadFilterSystem, filterInput, instructions); ferr == nil {
+		if filtered, filterCost, ferr := FilterExtractedText(ctx.Ctx, ctx.CompleteFunc(), prompts.Get().Tools.ThreadReadFilterSystem, filterInput, instructions); ferr == nil {
 			ctx.AddCost(filterCost)
 			return filtered
 		} else {

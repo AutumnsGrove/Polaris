@@ -43,12 +43,6 @@ func TestProvidersFallbackEventPersists(t *testing.T) {
 }
 
 func TestProvidersStatus_LegacyConfig(t *testing.T) {
-	// The pinned assertion below is about the un-pinned env; without this the
-	// test fails whenever the suite runs under the POLARIS_NOVA_LOOP=0 kill
-	// switch it is meant to be green under. "1", not "": ForceOpenRouter
-	// treats any set value other than 1/true — including the empty string —
-	// as the kill switch.
-	t.Setenv("POLARIS_NOVA_LOOP", "1")
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
 	resp, err := http.Get(h.url("/api/providers/status"))
@@ -75,9 +69,6 @@ func TestProvidersStatus_LegacyConfig(t *testing.T) {
 	}
 	if body.Policy.DefaultBackend != "openrouter" {
 		t.Errorf("policy.default_backend = %q, want openrouter (legacy default)", body.Policy.DefaultBackend)
-	}
-	if body.Policy.Pinned {
-		t.Error("policy.pinned = true, want false (no kill switch in test env)")
 	}
 	if len(body.Models) == 0 {
 		t.Fatal("models table empty, want the full registry")

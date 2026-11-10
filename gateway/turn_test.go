@@ -13,6 +13,7 @@ import (
 	"polaris/llm"
 	"polaris/llm/llmtest"
 	"polaris/models"
+	"polaris/tools"
 )
 
 func TestCompactThread(t *testing.T) {
@@ -30,7 +31,7 @@ func TestCompactThread(t *testing.T) {
 	}
 
 	s := &Server{db: h.db}
-	summary, cost, err := s.compactThread(mock, "t1", msgID)
+	summary, cost, err := s.compactThread(tools.CompleteFromClient(mock), "t1", msgID)
 	if err != nil {
 		t.Fatalf("compactThread returned error: %v", err)
 	}
@@ -71,7 +72,7 @@ func TestCompactThread_EmptySummaryIsAnError(t *testing.T) {
 	}
 
 	s := &Server{db: h.db}
-	if _, _, err := s.compactThread(mock, "t1", msgID); err == nil {
+	if _, _, err := s.compactThread(tools.CompleteFromClient(mock), "t1", msgID); err == nil {
 		t.Fatal("compactThread returned no error for a blank summary, want an error")
 	}
 

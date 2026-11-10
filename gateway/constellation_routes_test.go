@@ -11,6 +11,7 @@ import (
 	"polaris/llm"
 	"polaris/llm/llmtest"
 	"polaris/store"
+	"polaris/tools"
 )
 
 func TestHandleServerBusy_ReflectsInFlightShootingStarRun(t *testing.T) {
@@ -649,7 +650,7 @@ func TestReconcileStarContent_ParsesSummaryAndBody(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "INVALIDATES: false\n\nSUMMARY: Now finished, not just researching\nBODY: Full rewritten body text here."}},
 	}}
 
-	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "actually I finished this one")
+	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), tools.CompleteFromClient(mock), store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "actually I finished this one")
 	if err != nil {
 		t.Fatalf("reconcileStarContent: %v", err)
 	}
@@ -672,7 +673,7 @@ func TestReconcileStarContent_ParsesTitleWhenPremiseChanges(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "INVALIDATES: false\n\nTITLE: Reads fantasy novels\nSUMMARY: Enjoys fantasy, not sci-fi as previously recorded\nBODY: Full rewritten body text here."}},
 	}}
 
-	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "Reads science fiction", Summary: "old summary", Body: "old body"}, "actually it's fantasy, not sci-fi")
+	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), tools.CompleteFromClient(mock), store.Star{Title: "Reads science fiction", Summary: "old summary", Body: "old body"}, "actually it's fantasy, not sci-fi")
 	if err != nil {
 		t.Fatalf("reconcileStarContent: %v", err)
 	}
@@ -699,7 +700,7 @@ func TestReconcileStarContent_FlatDenialInvalidates(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "INVALIDATES: true\n\nSUMMARY: should not be read\nBODY: should not be read"}},
 	}}
 
-	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "yeah that wasn't me at all")
+	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), tools.CompleteFromClient(mock), store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "yeah that wasn't me at all")
 	if err != nil {
 		t.Fatalf("reconcileStarContent: %v", err)
 	}

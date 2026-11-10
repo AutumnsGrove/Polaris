@@ -53,7 +53,7 @@ func (t *turnRun) spawnCompaction() {
 			}
 			defer t.s.endCompaction(t.storageThreadID)
 
-			summary, compactCost, err := t.s.compactThread(t.client, t.storageThreadID, t.assistantMsgID)
+			summary, compactCost, err := t.s.compactThread(t.agentCtx.CompleteFunc(), t.storageThreadID, t.assistantMsgID)
 			if err != nil {
 				log.Warn("auto-compaction failed", "thread", t.threadID, "err", err)
 				t.logEvent(t.storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, t.turnID)
