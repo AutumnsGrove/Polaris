@@ -60,20 +60,99 @@ if ! flock -n 200; then
 	exit 0
 fi
 
-# find | sort: if more than one request file somehow exists (shouldn't
-# happen — see the mutex reasoning above), process the oldest by name
-# (uuids sort arbitrarily, so this is really just "pick one
-# deterministically") and leave the rest for the next
-# DirectoryNotEmpty trigger rather than guessing which is current.
-req_file="$(find "$SIGNAL_DIR" -maxdepth 1 -name 'requested-*.json' 2>/dev/null | sort | head -1 || true)"
-if [ -z "$req_file" ]; then
-	# The path unit's own re-check after this script exits, or a stray
-	# trigger with nothing pending — normal, not an error.
-	exit 0
-fi
+# --- failure handling (issue #203) -----------------------------------------
+#
+# Everything below runs under `set -e`, so any unexpected failure between
+# "a request file was picked up" and "its result file was written" used to
+# end the script right there: the request file stayed behind, no result was
+# ever written, and Polaris sat out its whole timeout_seconds before
+# reporting "is the host-side watcher running?" — indistinguishable from the
+# watcher not existing at all, and silent in the journal. The one real
+# attempt since the Nova flip (2026-11-05) failed exactly that way.
+#
+# The EXIT trap makes that failure mode loud and bounded: if a request was
+# in flight and no result exists yet, write an explicit error result (Polaris
+# polls for it and hands the model the message immediately), remove the
+# request file, and log the request's name to the journal. The message is
+# built only from fixed strings and numbers, never from request content, so
+# it is JSON-safe without python3 (which may itself be the thing that failed).
+current_id=""
+current_req=""
+step=""
+container_name=""
+script_path=""
+run_pid=""
+watchdog_pid=""
 
+log() { echo "codeexec: $*" >&2; }
+
+write_error_result() {
+	local id="$1" msg="$2"
+	msg="${msg//[\"\\]/}"
+	printf '{"stdout":"","stderr":"","exit_code":-1,"timed_out":false,"oom_killed":false,"error":"%s"}' \
+		"$msg" >"$SIGNAL_DIR/result-${id}.json.tmp" &&
+		mv "$SIGNAL_DIR/result-${id}.json.tmp" "$SIGNAL_DIR/result-${id}.json"
+}
+
+on_exit() {
+	local rc=$?
+	trap - EXIT
+	if [ -n "$current_req" ]; then
+		if [ ! -f "$SIGNAL_DIR/result-${current_id}.json" ]; then
+			log "request $(basename "$current_req") abandoned at step '$step' (script exit $rc); writing an error result and removing it"
+			write_error_result "$current_id" "the sandbox runner failed unexpectedly (step: $step, exit $rc) - see the host journal: journalctl -u polaris-codeexec" || true
+		fi
+		rm -f "$current_req"
+	fi
+	# A half-finished run must not leave its container, script, or background
+	# jobs behind. The watchdog subshell matters most: it inherits the flock
+	# fd, so an orphaned one (still sleeping out timeout_seconds) would hold
+	# the lock and make every later run print "already in progress" and skip
+	# — the same stranding the `set -m` comment up top describes, reached via
+	# a signal instead of a normal exit. Negative PID = its whole process
+	# group, courtesy of that same `set -m`.
+	[ -n "$watchdog_pid" ] && kill -- -"$watchdog_pid" 2>/dev/null || true
+	[ -n "$run_pid" ] && kill -- -"$run_pid" 2>/dev/null || true
+	[ -n "$container_name" ] && docker rm -f "$container_name" >/dev/null 2>&1 || true
+	[ -n "$script_path" ] && rm -f "$script_path" || true
+	exit "$rc"
+}
+trap on_exit EXIT
+# systemd's TimeoutStartSec sends SIGTERM; turn signals into a normal exit so
+# on_exit above runs for them too.
+trap 'exit 143' TERM INT HUP
+
+# Request/result files this old were abandoned: Polaris gives up on a call
+# after timeout_seconds plus a short grace (tools/code_exec.go), and removes
+# its own request file when it does. Anything past this is a leftover from a
+# crash or restart. Logged by name rather than deleted quietly, so a stuck
+# request is visible in the journal.
+STALE_MINUTES=15
+sweep_stale() {
+	local f
+	while IFS= read -r f; do
+		[ -n "$f" ] || continue
+		log "removing stale $(basename "$f") (older than ${STALE_MINUTES} min, abandoned)"
+		rm -f "$f"
+	done < <(find "$SIGNAL_DIR" -maxdepth 1 \( -name 'requested-*.json*' -o -name 'result-*.json*' \) -mmin "+$STALE_MINUTES" 2>/dev/null || true)
+}
+
+# find | sort: if more than one request file exists, process the oldest by
+# name (uuids sort arbitrarily, so this is really just "pick one
+# deterministically"). The loop at the bottom keeps going until none are
+# left, so a request that arrives while another is running is picked up by
+# this same invocation instead of depending on the path unit re-firing.
+next_request() {
+	find "$SIGNAL_DIR" -maxdepth 1 -name 'requested-*.json' 2>/dev/null | sort | head -1 || true
+}
+
+process_one() {
+req_file="$1"
+current_req="$req_file"
+step="reading the request"
 id="$(basename "$req_file" .json)"
 id="${id#requested-}"
+current_id="$id"
 result_file="$SIGNAL_DIR/result-${id}.json"
 
 # json_get prints one top-level field from the request file — a small
@@ -89,20 +168,38 @@ sys.stdout.write(str(data.get(sys.argv[2], sys.argv[3])))
 " "$req_file" "$1" "$2"
 }
 
-host_workspace_dir="$(json_get host_workspace_dir "")"
+# `docker run -v workspaces/x:/workspace` treats a path with no leading "/"
+# as a *named volume* and fails with exit 125 ("includes invalid characters
+# for a local volume name") — so the bare-metal dev config's own
+# `host_workspace_dir: "./workspaces"` (config.yaml.example, DEVELOPMENT.md)
+# never worked: every code_exec call failed before reaching the sandbox.
+# Resolve a relative path against the install dir, which is also the working
+# directory a bare-metal Polaris runs from. Absolute paths (Docker/production,
+# where it is the real host path) pass through untouched.
+abs_path() {
+	case "$1" in
+		"" | /*) printf '%s' "$1" ;;
+		*) printf '%s/%s' "$INSTALL_DIR" "${1#./}" ;;
+	esac
+}
+
+host_workspace_dir="$(abs_path "$(json_get host_workspace_dir "")")"
 # Set only for a thread inside a Field (docs/plans/fields.md) — the
 # field's shared file pool, mounted READ-ONLY at /field below.
-field_host_workspace_dir="$(json_get field_host_workspace_dir "")"
+field_host_workspace_dir="$(abs_path "$(json_get field_host_workspace_dir "")")"
 memory_mb="$(json_get memory_limit_mb 384)"
 pids_limit="$(json_get pids_limit 64)"
 timeout_s="$(json_get timeout_seconds 30)"
 
 if [ -z "$host_workspace_dir" ]; then
-	echo "requested-${id}.json has no host_workspace_dir, refusing to run it" >&2
+	log "requested-${id}.json has no host_workspace_dir, refusing to run it"
+	write_error_result "$id" "the sandbox request had no host_workspace_dir, so it was not run"
 	rm -f "$req_file"
-	exit 1
+	current_req=""
+	return 0
 fi
 
+step="writing the script"
 mkdir -p "$host_workspace_dir"
 script_name=".code_exec_${id}.py"
 script_path="$host_workspace_dir/$script_name"
@@ -118,6 +215,7 @@ with open(sys.argv[2], 'w') as f:
     f.write(data['code'])
 " "$req_file" "$script_path"
 
+step="running the sandbox container"
 stdout_file="$(mktemp)"
 stderr_file="$(mktemp)"
 exit_code=0
@@ -216,6 +314,7 @@ watchdog_pid=$!
 exit_code=0
 wait "$run_pid" || exit_code=$?
 
+step="collecting the result"
 # The watchdog either already fired (container gone, `docker kill`
 # above no-ops harmlessly on the next check) or is still sleeping and
 # no longer needed — either way, safe to tear down unconditionally.
@@ -276,3 +375,20 @@ with open(sys.argv[6], 'w') as f:
 mv "$result_file.tmp" "$result_file"
 
 rm -f "$stdout_file" "$stderr_file" "$req_file"
+current_req=""
+container_name=""
+script_path=""
+run_pid=""
+watchdog_pid=""
+}
+
+# Cap so a request that somehow regenerates itself can't spin this forever.
+processed=0
+while [ "$processed" -lt 50 ]; do
+	sweep_stale
+	pending="$(next_request)"
+	[ -n "$pending" ] || break
+	process_one "$pending"
+	processed=$((processed + 1))
+done
+exit 0
