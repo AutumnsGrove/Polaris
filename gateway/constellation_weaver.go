@@ -308,7 +308,7 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 	}
 	instruction := fmt.Sprintf(prompts.Get().Weaver.RevisitInstruction, notes.String())
 
-	filtered, filterCost, ferr := tools.FilterExtractedText(reqCtx, client, prompts.Get().Tools.ThreadReadFilterSystem, deltaText, instruction)
+	filtered, filterCost, ferr := tools.FilterExtractedText(reqCtx, tools.CompleteFromClient(client), prompts.Get().Tools.ThreadReadFilterSystem, deltaText, instruction)
 	if ferr != nil {
 		// Degrade to the raw delta rather than failing the whole run —
 		// the same choice web_read/search_chats' own FilterExtractedText

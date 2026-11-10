@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/AutumnsGrove/nova/provider/route"
@@ -33,7 +34,15 @@ type Context struct {
 	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback and its force_tavily argument are both skipped without it
 	Brave      *brave.Client            // nil if not configured — web_search's degraded-SearXNG fallback tries this first, ahead of Parallel/Tavily (see tools/web_search.go)
 	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried after Brave, before Tavily) is skipped without it
-	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
+	LLM        llm.ChatClient           // the model selected for this thread; the direct fallback behind Complete
+
+	// Complete is a tool's own side call to the thread's model (web_read's and
+	// search_chats' filter pass) through the same routed path the turn loop
+	// takes — Nova's router, the Go session header, failover and the usage
+	// ledger — instead of the raw LLM client above, which always goes straight
+	// to OpenRouter. Nil in contexts not wired for routing (tests, the
+	// benchmark); tools call CompleteFunc, which falls back to LLM then.
+	Complete CompleteFunc
 
 	// ModelID is the thread's Polaris model id (the registry id, e.g.
 	// "deepseek") — the catalog id the router resolves to an attempt
@@ -787,4 +796,37 @@ func (c *Context) DecisionsSpentThisTurn() float64 {
 	c.decisionsCostMu.Lock()
 	defer c.decisionsCostMu.Unlock()
 	return c.decisionsCostUSD
+}
+
+// CompleteFunc runs one plain, no-tools model call and returns its text and
+// cost in the currency the turn totals use (retail list cost, never allowance
+// dollars — routing.ListCost), so a caller feeds it straight into AddCost.
+type CompleteFunc func(ctx context.Context, messages []llm.ChatMessage) (text string, costUSD float64, err error)
+
+// CompleteFromClient adapts a raw chat client to CompleteFunc: the direct
+// (unrouted) call every side call made before routing, kept for contexts that
+// have no router.
+func CompleteFromClient(client llm.ChatClient) CompleteFunc {
+	return func(ctx context.Context, messages []llm.ChatMessage) (string, float64, error) {
+		resp, err := client.ChatCompletionStreaming(ctx, messages, func(string) {}, nil)
+		if err != nil {
+			return "", 0, err
+		}
+		return resp.Content, resp.CostUSD, nil
+	}
+}
+
+// CompleteFunc returns the routed completion when this context was wired for
+// one, otherwise the direct client. Never nil-panics for an unwired context
+// that still has an LLM; a context with neither returns a func that errors.
+func (c *Context) CompleteFunc() CompleteFunc {
+	if c.Complete != nil {
+		return c.Complete
+	}
+	if c.LLM != nil {
+		return CompleteFromClient(c.LLM)
+	}
+	return func(context.Context, []llm.ChatMessage) (string, float64, error) {
+		return "", 0, errors.New("no model client configured")
+	}
 }

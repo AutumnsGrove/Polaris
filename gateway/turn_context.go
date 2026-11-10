@@ -118,6 +118,11 @@ func (t *turnRun) buildAgentContext() {
 		// {custom_instructions} to nothing rather than needing its own
 		// flag.
 		LLM: t.client,
+		// Tool side calls (web_read/search_chats filter passes) take the
+		// routed path with this turn's fallback chip, not the raw client.
+		Complete: t.s.routedComplete(t.cfg, t.client, t.modelCfg.ID, t.threadID, func(from, to string, err error) {
+			t.emitter.emit("provider_fallback", map[string]interface{}{"from": from, "to": to, "error": err.Error()})
+		}),
 		// ModelID + Router: the routed path (see routing.Build and
 		// agent.novaProviderFor). Both set together or not at all — a
 		// router without a catalog id would key on the wire slug, find
