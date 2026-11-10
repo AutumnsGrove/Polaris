@@ -9,7 +9,10 @@ on:
     types: [created]
 
 concurrency:
-  group: pi-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: >-
+    ${{ (((github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && contains(github.event.comment.body, '@pi') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) && github.event.comment.user.type != 'Bot')))
+    && format('pi-review-{0}', github.event.pull_request.number || github.event.issue.number)
+    || format('pi-review-ignored-{0}', github.run_id) }}
   cancel-in-progress: true
 
 permissions:
@@ -96,13 +99,13 @@ jobs:
           fi
           echo "PI_REVIEW_DEPS=installed" >> "$GITHUB_ENV"
       - name: Install pi
-        run: npm install -g @earendil-works/pi-coding-agent@1.5.0
+        run: npm install -g @earendil-works/pi-coding-agent@1.5.2
       - name: Check out pi-review
         run: |
           set -euo pipefail
           git init "$RUNNER_TEMP/pi-review-src"
           git -C "$RUNNER_TEMP/pi-review-src" remote add origin https://github.com/AutumnsGrove/pi-extensions.git
-          git -C "$RUNNER_TEMP/pi-review-src" fetch --depth 1 origin 'a2fa7070655ad960072c22a8284705aca008569d'
+          git -C "$RUNNER_TEMP/pi-review-src" fetch --depth 1 origin '1185c5abc5c241f5b5e6cd322c8495996fff7b7a'
           git -C "$RUNNER_TEMP/pi-review-src" checkout --detach FETCH_HEAD
       - name: Require a same-repo pull request
         if: github.event_name == 'issue_comment'
