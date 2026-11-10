@@ -2,10 +2,10 @@
 
 **Added 2026-10-26 on branch `nova-loop`.**
 
-**Status: N0-N10 built on branch `nova-loop-impl`. Nova is the default agent loop; `nova_loop:
-false` / `POLARIS_NOVA_LOOP=0` is the kill switch kept for one release (#188 deletes the old loop).
-Verified live on bare-metal, in Docker on the potato, and in a browser — see §14; the paths still
-unproven before #188 goes are listed there too (#204).**
+**Status: done. Nova is the only agent loop; the bespoke loop was deleted in #188 (archived, uncompiled,
+in `docs/archive/bespoke-loop/`) after the soak gates in #204 were closed live (see "Closing the
+migration" at the end of §14). Open follow-ups: tool-by-tool `tool.Result` ports (#190, deferred with a
+design below) and the TTS/STT work, which is tracked in Nova.**
 
 This is the Polaris half of Nova's M8 adoption. The upstream contract is
 [AutumnsGrove/nova#22](https://github.com/AutumnsGrove/nova/issues/22) (`docs/INTEGRATION.md`,
@@ -700,3 +700,79 @@ Still unproven, tracked in #204:
 
 One more unprovoked case, unchanged: a real 429 *from OpenRouter itself* (the scripted one above
 covers the same code path).
+
+### Closing the migration (2026-11-10)
+
+All three #204 gates were driven live, with a real OpenRouter key through a real `polaris run`, SearXNG
+in Docker, and the real sandbox image:
+
+- **Deep Research fan-out.** One real turn: `spawn_researchers` fanned out four researchers (one per
+  open-weight family plus licensing), 154 tool calls, a 10.7K-character synthesized answer with
+  citations, $0.064, ~20 minutes. Three researchers finished `done` (106, 74 and 60 citations). The
+  fourth, on the Llama angle, ran 59 tool calls and ended `failed: context deadline exceeded`; the
+  orchestrator reported the failure as a finding and still synthesized. The deadline is most likely
+  `novaRequestTimeout` (3 minutes per provider call, deliberately matching the old client) hit by an
+  oversized context, but the log was overwritten before it could be confirmed. Not a loop bug, but a
+  researcher that runs 59 calls deserves a look (sub-agent turn cap, or a compaction between waves).
+- **`code_exec`.** A real turn computed the sum of the first 1,000 primes in the sandbox: 3,682,913 and
+  7,919, which matches an independent calculation. $0.0006. The same session found and fixed two real
+  runner bugs (#203): a failure after pickup left the request behind with no result, so Polaris waited
+  out its timeout and blamed a missing watcher; and the bare-metal dev config's relative
+  `host_workspace_dir` reached `docker run -v` as a named volume and failed every call with exit 125.
+  `compose/watcher/codeexec_test.go` runs the real script against a fake docker and fails on the old
+  script. A SIGTERM mid-run now leaves no orphaned watchdog holding the flock.
+- **Stop from the UI.** `dev/e2e/stop_midstream.cjs` presses the real Stop button in a phone-sized browser
+  mid-stream: streaming halts (21 of 300 words, no growth afterwards), the composer recovers, the partial
+  answer survives a reload unchanged, and a follow-up on the thread works. Identical on both loops, and
+  re-run on the post-deletion binary.
+
+**#188, the deletion.** `agent/driver.go` went from 1,071 to 578 lines. Gone: `runBespoke` and its
+dispatcher, the `nova_loop` flag and `POLARIS_NOVA_LOOP`, the Settings "Agent harness" picker, the second
+CI run, and the routing pin (`ForceOpenRouter`, providers-status `pinned`), which existed only as the kill
+switch. Before deleting, the `agent`, `gateway`, `tools`, `cmd` and `routing` suites were run forced onto
+Nova: all green, including the agent tests that had only ever exercised the old loop. A leftover
+`nova_loop:` key in an operator's `config.yaml` is ignored (there is a test).
+
+What the old loop produced is kept. `agent/testdata/nova_parity/*.json` are its recorded request bytes,
+events, transcripts and cost accounting for each parity scenario, captured from the old loop immediately
+before it was deleted, and `agent/nova_parity_test.go` holds Nova to them. The system prompt's date
+preamble is scrubbed on both sides so the fixtures do not go stale. Do not regenerate them to make a test
+pass; a difference is a decision to be recorded under "Accepted differences". The old
+`code_exec`-runs-one-at-a-time tests were rewritten as real Nova turns (a barrier, not a semaphore) and
+verified to fail if `code_exec` is made parallel.
+
+**#189, side model calls.** `agent.CompleteOneShot` already carried titles, suggestions, memory import,
+Pulsar and the Weaver. The stragglers were calling a raw `llm.Client`, which always goes to OpenRouter, so
+a model routed to OpenCode Go answered the turn on Go and spent OpenRouter money on the calls beside it,
+invisible to the usage ledger. Now routed (through `tools.Context.Complete` / `Server.routedComplete`,
+which also write the ledger row): the `web_read` and `search_chats` filter passes, thread compaction, the
+Weaver star reconcile, and the vision describe (`view_image`, Pulsar Daily, the Comet approach). Cost is
+the retail list cost, the currency `AddCost` already takes, so cost per turn is unchanged. Verified live:
+a filtered `web_read` ($0.0068) and a `view_image` describe on a real vision model ($0.0052). Found on the
+way: `CompleteOneShot` panics on an empty model id, which a Weaver config with no model chosen can
+legitimately hold; `routedComplete` now degrades to the direct client (regression test included).
+Deliberately **not** moved: `compare_sources` and Oracle (the separate Decisions API, not chat
+completions), Comet's monthly forced-tool synthesis (`tool_choice` wire shape wants a live check against
+real monthly data), the embedding calls, and the eval/benchmark/oraclebench harnesses, which are tooling.
+
+**#191, `agent/sub` and Nova's compaction: not adopted.** `RunSubAgent` already runs on Nova, because it
+calls `agent.Run`. `sub.Spawner` would spawn from a bare Nova agent and bypass what `Run` wraps around it:
+the system prompt assembly, research nudges, the shared `ResearchBudget` and `SearchDedup`, evidence
+folding, and event tagging. It also defaults to 4 concurrent children per depth where Polaris runs 8. What
+it would replace is a ~20-line semaphore. Polaris's compaction is 69 lines: summarize everything through a
+message id and record it in the database. Nova's is a coding-agent compactor (a keep-recent window,
+read/modified-file tracking) over a different message type, and adopting it would change what the model
+sees after a compaction and risk the prompt-cache prefix. Revisit if Nova grows a general-purpose
+compactor or a sub-agent runner that takes a run function.
+
+**#190, tools as `tool.Result`: deferred, with a design.** Not a drive-by, for a concrete reason: every
+Polaris tool emits its own `tool_call`/`tool_result` events from inside its handler, with tool-specific
+payloads the UI renders as cards, and the loop drops Nova's equivalents on purpose (§5.4). If Nova
+validated a call's arguments first and rejected a bad one, no handler would run and the card would never
+appear. A faithful port therefore needs the wrapper to emit the `tool_call`/`tool_result` pair itself from
+Nova's `tool_start`/`tool_end` for ported tools, including the rejected-arguments path, with payload parity
+against the handler's own events. Suggested pilot: `calculator` (its schema is already in
+`calculatorDef`), a per-tool opt-in so nothing else changes, and a parity test that the rejected-arguments
+call still produces the same two events. Then `view_image` for `Result.Parts`. The generic wrapper already
+gives parallel dispatch, the code_exec barrier and panic recovery, so what a port buys is argument
+validation, `Result.Parts` and `Progress`, not new correctness.
