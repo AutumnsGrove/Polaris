@@ -43,6 +43,10 @@ func (c *taskAwareClient) ChatCompletionStreaming(reqCtx context.Context, messag
 }
 
 func TestSpawnResearchers_ReturnsOneReportPerTask(t *testing.T) {
+	eachLoop(t, testSpawnResearchers_ReturnsOneReportPerTask)
+}
+
+func testSpawnResearchers_ReturnsOneReportPerTask(t *testing.T) {
 	tasks := []tools.SubAgentTask{
 		{Objective: "task A"},
 		{Objective: "task B"},
@@ -63,6 +67,10 @@ func TestSpawnResearchers_ReturnsOneReportPerTask(t *testing.T) {
 }
 
 func TestSpawnResearchers_FailedSubAgentReportedNotDropped(t *testing.T) {
+	eachLoop(t, testSpawnResearchers_FailedSubAgentReportedNotDropped)
+}
+
+func testSpawnResearchers_FailedSubAgentReportedNotDropped(t *testing.T) {
 	tasks := []tools.SubAgentTask{
 		{Objective: "task A"},
 		{Objective: "task B — SHOULD_FAIL"},
@@ -89,6 +97,10 @@ func TestSpawnResearchers_FailedSubAgentReportedNotDropped(t *testing.T) {
 }
 
 func TestSpawnResearchers_LazilyInitializesSharedBudgetAndDedup(t *testing.T) {
+	eachLoop(t, testSpawnResearchers_LazilyInitializesSharedBudgetAndDedup)
+}
+
+func testSpawnResearchers_LazilyInitializesSharedBudgetAndDedup(t *testing.T) {
 	baseCtx := &tools.Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
 	if baseCtx.ResearchBudget != nil || baseCtx.SearchDedup != nil {
 		t.Fatal("test setup invalid: expected nil budget/dedup before the call")
@@ -105,6 +117,10 @@ func TestSpawnResearchers_LazilyInitializesSharedBudgetAndDedup(t *testing.T) {
 }
 
 func TestSpawnResearchers_ReusesExistingBudgetRatherThanReplacing(t *testing.T) {
+	eachLoop(t, testSpawnResearchers_ReusesExistingBudgetRatherThanReplacing)
+}
+
+func testSpawnResearchers_ReusesExistingBudgetRatherThanReplacing(t *testing.T) {
 	budget := tools.NewResearchBudget()
 	budget.RecordCall(false) // give it some pre-existing state to check for
 	baseCtx := &tools.Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, ResearchBudget: budget}
@@ -159,6 +175,10 @@ func (c *concurrencyTrackingClient) currentCount() int {
 }
 
 func TestSpawnResearchers_BoundsConcurrency(t *testing.T) {
+	eachLoop(t, testSpawnResearchers_BoundsConcurrency)
+}
+
+func testSpawnResearchers_BoundsConcurrency(t *testing.T) {
 	numTasks := maxConcurrentSubAgents * 2 // deliberately more than the cap
 	tasks := make([]tools.SubAgentTask, numTasks)
 	for i := range tasks {
@@ -225,6 +245,10 @@ func captureEmit() (func(string, map[string]interface{}), func() []recordedEvent
 // researcher streams reaches the turn untagged — in particular its final
 // answer ("token") must not be appended to the orchestrator's visible answer.
 func TestSpawnResearchers_TagsSubAgentEventsAndAnnouncesLifecycle(t *testing.T) {
+	eachLoop(t, testSpawnResearchers_TagsSubAgentEventsAndAnnouncesLifecycle)
+}
+
+func testSpawnResearchers_TagsSubAgentEventsAndAnnouncesLifecycle(t *testing.T) {
 	emit, snapshot := captureEmit()
 	baseCtx := &tools.Context{Ctx: context.Background(), Emit: emit}
 	tasks := []tools.SubAgentTask{
@@ -265,6 +289,10 @@ func TestSpawnResearchers_TagsSubAgentEventsAndAnnouncesLifecycle(t *testing.T) 
 }
 
 func TestSpawnResearchers_FailedSubAgentEndsWithFailedStatus(t *testing.T) {
+	eachLoop(t, testSpawnResearchers_FailedSubAgentEndsWithFailedStatus)
+}
+
+func testSpawnResearchers_FailedSubAgentEndsWithFailedStatus(t *testing.T) {
 	emit, snapshot := captureEmit()
 	baseCtx := &tools.Context{Ctx: context.Background(), Emit: emit}
 
@@ -294,6 +322,10 @@ func (c *costClient) ChatCompletionWithTools(ctx context.Context, m []llm.ChatMe
 }
 
 func TestSpawnResearchers_FoldsSubAgentCostIntoTurnTotal(t *testing.T) {
+	eachLoop(t, testSpawnResearchers_FoldsSubAgentCostIntoTurnTotal)
+}
+
+func testSpawnResearchers_FoldsSubAgentCostIntoTurnTotal(t *testing.T) {
 	baseCtx := &tools.Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
 	tasks := []tools.SubAgentTask{{Objective: "a", ParentCallID: "c", Index: 0}, {Objective: "b", ParentCallID: "c", Index: 1}, {Objective: "c", ParentCallID: "c", Index: 2}}
 
