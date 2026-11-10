@@ -229,7 +229,7 @@ type Response struct {
 	// here, ~10 per call); it scored 78.4 on the Oracle bench versus Jev's 87.8,
 	// so it is not in use. Decoding this field is the prerequisite for adopting
 	// it at all — the sources would otherwise be paid for and thrown away. See
-	// docs/benchmarks/oracle-decision-models/README.md's "Parallel Decisions
+	// docs/benchmarks/oracle-decision-models/notes.md's "Parallel Decisions
 	// Fast".
 }
 

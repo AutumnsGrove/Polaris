@@ -195,7 +195,8 @@ two-model run is well under a dollar; `--all-decisions` runs the live OpenRouter
 Scoring weights and the latency budget are in `oraclebench/weights.yaml` (`--weights` overrides);
 adding cases is documented in `oraclebench/AUTHORING.md`, and `go test ./oraclebench/` validates every
 label against `prompts.yaml`'s real options. Design and decisions: `docs/plans/oracle-benchmark.md`.
-Results and how to read them: `docs/benchmarks/oracle-decision-models/README.md`.
+Results and how to read them: `docs/benchmarks/oracle-decision-models/README.md`; per-model detail,
+method and caveats: `docs/benchmarks/oracle-decision-models/notes.md`.
 
 Every finished run saves its leaderboard to `docs/benchmarks/oracle-decision-models/runs/` (commit
 it); `polaris oracle-bench report --run <a.json>,<b.json> --calls '<calls.jsonl glob>'` regenerates
