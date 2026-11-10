@@ -284,9 +284,8 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 		LLM:           client,
 		ModelID:       modelCfg.ID,
 		Router: routing.Build(cfg, routing.Options{
-			SessionID:       func() string { return sessionID },
-			UserAgent:       "Polaris/" + s.version,
-			ForceOpenRouter: agent.ForceOpenRouter(),
+			SessionID: func() string { return sessionID },
+			UserAgent: "Polaris/" + s.version,
 		}),
 		Emit:     func(string, map[string]interface{}) {}, // no live client to stream to
 		MaxTurns: cfg.MaxAgentTurns,

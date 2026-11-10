@@ -264,9 +264,8 @@ func (s *Server) newApproachToolContext(cfg *config.Config, cfgRow *store.CometC
 		LLM:     client,
 		ModelID: cfg.ModelByID(cfgRow.Model).ID,
 		Router: routing.Build(cfg, routing.Options{
-			SessionID:       func() string { return approachThreadID },
-			UserAgent:       "Polaris/" + s.version,
-			ForceOpenRouter: agent.ForceOpenRouter(),
+			SessionID: func() string { return approachThreadID },
+			UserAgent: "Polaris/" + s.version,
 		}),
 		ApproachRun:             true,
 		MaxTurns:                cometApproachMaxTurns,

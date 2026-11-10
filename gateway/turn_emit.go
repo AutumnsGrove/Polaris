@@ -23,7 +23,7 @@ type turnEmitter struct {
 	// mutation isn't otherwise safe for concurrent use, and neither is
 	// interleaving arbitrary tool_call/tool_result events with it. Needed
 	// now that agent.Run dispatches a turn's tool calls concurrently (see
-	// dispatchToolCallsConcurrently): several handlers can call ctx.Emit
+	// Nova's parallel tool dispatch): several handlers can call ctx.Emit
 	// at the same instant. send() has its own separate mutex already
 	// (ws.go) for the WebSocket write specifically; this one covers
 	// everything else emit() does around that write.

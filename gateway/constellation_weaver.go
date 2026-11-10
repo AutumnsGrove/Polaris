@@ -136,9 +136,8 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 	var router *route.Router
 	if cfg != nil {
 		router = routing.Build(cfg, routing.Options{
-			SessionID:       func() string { return threadID },
-			UserAgent:       userAgent,
-			ForceOpenRouter: agent.ForceOpenRouter(),
+			SessionID: func() string { return threadID },
+			UserAgent: userAgent,
 		})
 	}
 	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID, embeds, router, modelID)
@@ -403,14 +402,14 @@ func weaverToolClosures(db *store.Store, threadID string, embeds *embedService, 
 	link func(starIDA, starIDB int64, reasoning string) error,
 ) {
 	// seenStarsMu guards seenStars against concurrent tool dispatch:
-	// agent.Run's dispatchToolCallsConcurrently fans out every non-
+	// agent.Run's parallel tool dispatch fans out every non-
 	// code_exec tool call from one model turn across goroutines (OpenRouter
 	// is asked for parallel_tool_calls: true — see llm/client.go), so two
 	// Weaver tool calls batched in the same turn (e.g. two search_stars, or
 	// search_stars + read_star) hit this map concurrently. An unsynchronized
 	// Go map write under concurrent access is a runtime "fatal error:
 	// concurrent map writes" — unlike a normal panic, that bypasses
-	// dispatchToolCallsConcurrently's own per-call recover() entirely and
+	// dispatchGuarded's own per-call recover() entirely and
 	// crashes the whole process, not just this one shooting star.
 	var seenStarsMu sync.Mutex
 	seenStars := map[int64]bool{}

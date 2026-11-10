@@ -7,8 +7,7 @@
 //
 //	go run ./dev/fakeopenrouter -addr 127.0.0.1:18901 -chunk-delay 60ms &
 //	# config.yaml: openrouter.base_url: "http://127.0.0.1:18901", server.port: 8898
-//	polaris run --dev --config config.yaml &                       # Nova loop (the default)
-//	POLARIS_NOVA_LOOP=0 polaris run --dev --config config.yaml &   # the bespoke loop, to compare
+//	polaris run --config config.yaml &   # --dev would skip serving the embedded UI the browser needs
 //	node dev/e2e/stop_midstream.cjs http://127.0.0.1:8898 http://127.0.0.1:18901
 //
 // -chunk-delay is what makes this possible: with 0 the whole answer arrives before

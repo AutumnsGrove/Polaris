@@ -35,7 +35,7 @@ func (t polarisTool) Run(_ context.Context, args json.RawMessage, tctx *tool.Con
 }
 
 // dispatchGuarded is tools.Dispatch with the same per-call recover the bespoke
-// loop's dispatchToolCallsConcurrently gave every call. Nova's registry already
+// loop's concurrent dispatcher gave every call (docs/archive/bespoke-loop). Nova's registry already
 // recovers a panic inside Run; this keeps the bespoke wording for it, and also
 // covers the pseudo-tool-call path, which dispatches from a hook rather than
 // through the registry.

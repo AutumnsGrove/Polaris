@@ -58,10 +58,6 @@ func TestNewSubAgentContext_ScopesAndShares(t *testing.T) {
 // orchestrator-supplied objective always winning over anything in the
 // model's own JSON.
 func TestRunSubAgent_ReturnsParsedReport(t *testing.T) {
-	eachLoop(t, testRunSubAgent_ReturnsParsedReport)
-}
-
-func testRunSubAgent_ReturnsParsedReport(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{
 			{
@@ -92,10 +88,6 @@ func testRunSubAgent_ReturnsParsedReport(t *testing.T) {
 // TestRunSubAgent_PropagatesRunError confirms a failed underlying Run
 // call surfaces as an error rather than a silently empty report.
 func TestRunSubAgent_PropagatesRunError(t *testing.T) {
-	eachLoop(t, testRunSubAgent_PropagatesRunError)
-}
-
-func testRunSubAgent_PropagatesRunError(t *testing.T) {
 	wantErr := errors.New("llm unavailable")
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{{Err: wantErr}},
@@ -114,10 +106,6 @@ func testRunSubAgent_PropagatesRunError(t *testing.T) {
 // LLM must be restricted to web_search/web_read/think, not the full
 // catalog a normal turn would get.
 func TestRunSubAgent_OnlyOffersSubAgentTools(t *testing.T) {
-	eachLoop(t, testRunSubAgent_OnlyOffersSubAgentTools)
-}
-
-func testRunSubAgent_OnlyOffersSubAgentTools(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{
 			{Resp: &llm.ChatResponse{Content: `{"findings":[]}`}, Chunks: []string{`{"findings":[]}`}},

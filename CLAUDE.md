@@ -410,11 +410,11 @@ the user asks to bump, update, or pick up a Nova version:
    `tool` or `message`, the packages `agent/nova_*.go` use.
 2. `go get github.com/AutumnsGrove/nova@vX.Y.Z && go mod tidy` (set `GOPRIVATE`/`GONOSUMDB` for
    `github.com/AutumnsGrove/*` if the sum database has not seen the tag yet). Confirm `go.mod` shows the tag.
-3. Run `go build ./... && go vet ./...`, then `go test ./...` **twice**: once as is (Nova, the default) and
-   once with `POLARIS_NOVA_LOOP=0` (the bespoke loop, still shipped as the kill switch until #188).
-   `agent/nova_parity_test.go` compares the new request bytes with the bespoke loop, so a
-   Nova wire change shows up there; fix the adapter, or normalize a difference only with a note in
-   `docs/plans/nova-loop.md`.
+3. Run `go build ./... && go vet ./... && go test ./...`.
+   `agent/nova_parity_test.go` compares Nova's request bytes, events and transcripts with fixtures
+   recorded from the old bespoke loop (`agent/testdata/nova_parity/`), so a Nova wire change shows
+   up there; fix the adapter, or normalize a difference only with a note in
+   `docs/plans/nova-loop.md`. Do not regenerate the fixtures to make a test pass.
 4. Commit as `deps: bump nova to vX.Y.Z` and say what the upgrade notes required. Dependabot also opens these
    PRs weekly; treat its PR the same way.
 5. If a fix is needed in Nova itself, file an issue there and fix it there first (Nova's own `AGENTS.md`

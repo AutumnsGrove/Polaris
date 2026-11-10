@@ -354,9 +354,8 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client *llm.Client,
 		PulsarDailyItems: wantsItems,
 		ModelID:          modelID,
 		Router: routing.Build(cfg, routing.Options{
-			SessionID:       func() string { return sessionID },
-			UserAgent:       "Polaris/" + s.version,
-			ForceOpenRouter: agent.ForceOpenRouter(),
+			SessionID: func() string { return sessionID },
+			UserAgent: "Polaris/" + s.version,
 		}),
 		// Ctx is normally set by agent.Run itself (see its doc comment on
 		// Context.Ctx) — but Weather and Picture of the Day's image_search

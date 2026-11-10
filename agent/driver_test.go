@@ -1325,94 +1325,104 @@ func TestRun_ExtraToolCostIncludedInResultCost(t *testing.T) {
 	}
 }
 
-// TestDispatchToolCallsConcurrently_CodeExecRunsSequentially is the
-// regression test for issue #85's dispatch-side fix: a batch containing
-// multiple code_exec calls must run them one at a time, never fanned out
-// like every other tool, so Polaris itself can never produce the fast
-// burst of code-exec-signal/ file transitions that once wedged
-// polaris-codeexec.service via systemd's start-limit (see
-// polaris-codeexec.service's StartLimitIntervalSec comment). This
-// overrides the real code_exec handler for this test process only —
-// tools.Register just overwrites a package-level map entry, and no other
-// test in this package touches "code_exec".
-func TestDispatchToolCallsConcurrently_CodeExecRunsSequentially(t *testing.T) {
+// code_exec calls must never run at the same time as each other: they share
+// one sandbox runner and one set of host resources (docs/plans/
+// code-execution.md's "Concurrency"). Nova expresses that as a barrier — a
+// non-parallel tool (novaToolRegistry) runs alone, with nothing overlapping
+// it — so three code_exec calls the model batches into one response must
+// still all run, one after another. (This replaced a test of the old
+// dispatcher's per-tool semaphore; the guarantee, not the mechanism, is what
+// matters.)
+func TestNova_CodeExecCallsNeverOverlap(t *testing.T) {
 	var mu sync.Mutex
-	inFlight := 0
-	maxInFlight := 0
-
-	tools.Register("code_exec", func(argsJSON string, ctx *tools.Context, callID string) string {
+	inFlight, maxInFlight, ran := 0, 0, 0
+	stubTool(t, "code_exec", func(argsJSON string, ctx *tools.Context, callID string) string {
 		mu.Lock()
 		inFlight++
+		ran++
 		if inFlight > maxInFlight {
 			maxInFlight = inFlight
 		}
 		mu.Unlock()
-
-		// Wide enough that a real overlap (if dispatch ever fanned these
-		// out like every other tool) would reliably show up as
+		// Wide enough that a real overlap would reliably show up as
 		// maxInFlight > 1 rather than being a timing coin-flip.
 		time.Sleep(20 * time.Millisecond)
-
 		mu.Lock()
 		inFlight--
 		mu.Unlock()
 		return "ok"
 	})
 
-	calls := []llm.ToolCall{
-		{ID: "c1", Function: llm.FunctionCall{Name: "code_exec", Arguments: `{}`}},
-		{ID: "c2", Function: llm.FunctionCall{Name: "code_exec", Arguments: `{}`}},
-		{ID: "c3", Function: llm.FunctionCall{Name: "code_exec", Arguments: `{}`}},
+	setup := func(ctx *tools.Context) {
+		// code_exec is only offered when a sandbox is configured (catalog.go's
+		// docker_only gate); without it the registry has no such tool at all.
+		ctx.CodeExecEnabled = true
+		ctx.CodeExecHostWorkspaceDir = t.TempDir()
+		ctx.CodeExecSignalDir = t.TempDir()
 	}
-	ctx := &tools.Context{Ctx: context.Background()}
+	rec := parityCase{setup: setup, script: []string{
+		toolBody(0.0003, [3]string{"c1", "code_exec", `{}`}, [3]string{"c2", "code_exec", `{}`}, [3]string{"c3", "code_exec", `{}`}),
+		answerBody("done", 0.0001),
+	}}.run(t, true)
 
-	results := dispatchToolCallsConcurrently(calls, ctx)
-
-	if len(results) != 3 {
-		t.Fatalf("got %d results, want 3", len(results))
+	if rec.err != nil {
+		t.Fatalf("turn failed: %v", rec.err)
+	}
+	if ran != 3 {
+		t.Errorf("code_exec ran %d times, want 3 (a barrier must serialize calls, not drop them)", ran)
 	}
 	if maxInFlight != 1 {
-		t.Errorf("max concurrent code_exec handlers in flight = %d, want 1 (code_exec calls must never run concurrently with each other)", maxInFlight)
+		t.Errorf("max concurrent code_exec handlers in flight = %d, want 1", maxInFlight)
 	}
 }
 
-// TestDispatchToolCallsConcurrently_CodeExecDoesNotBlockOtherTools checks
-// the other half of the same fix: forcing code_exec calls to run
-// sequentially must not also serialize every OTHER tool in the same
-// batch behind them — only code_exec calls are serialized relative to
-// each other, everything else still dispatches in parallel as before.
-func TestDispatchToolCallsConcurrently_CodeExecDoesNotBlockOtherTools(t *testing.T) {
-	release := make(chan struct{})
-	tools.Register("code_exec", func(argsJSON string, ctx *tools.Context, callID string) string {
-		<-release // blocks until the test explicitly lets it through
-		return "ok"
-	})
-
-	otherDone := make(chan struct{})
-	tools.Register("think", func(argsJSON string, ctx *tools.Context, callID string) string {
-		close(otherDone)
-		return "ok"
-	})
-
-	calls := []llm.ToolCall{
-		{ID: "c1", Function: llm.FunctionCall{Name: "code_exec", Arguments: `{}`}},
-		{ID: "c2", Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"x"}`}},
-	}
-	ctx := &tools.Context{Ctx: context.Background()}
-
-	done := make(chan []toolCallResult)
-	go func() { done <- dispatchToolCallsConcurrently(calls, ctx) }()
-
-	select {
-	case <-otherDone:
-		// The "think" call finished without waiting for the blocked
-		// code_exec call — exactly what should happen.
-	case <-time.After(2 * time.Second):
-		t.Fatal("the non-code_exec call in this batch never ran — code_exec appears to be blocking it")
+// The other half: a code_exec in the middle of a mixed batch must not stall or
+// drop its neighbours, and every result still goes back in call order. Nova's
+// barrier is stricter than the old dispatcher (nothing overlaps code_exec, not
+// just other code_exec calls), so what is pinned here is completeness and
+// order, not that the neighbours run concurrently with it.
+func TestNova_CodeExecInAMixedBatchKeepsEveryCallAndTheirOrder(t *testing.T) {
+	var mu sync.Mutex
+	ran := map[string]bool{}
+	for _, name := range []string{"mixed_before", "code_exec", "mixed_after"} {
+		name := name
+		stubTool(t, name, func(argsJSON string, ctx *tools.Context, callID string) string {
+			mu.Lock()
+			ran[name] = true
+			mu.Unlock()
+			return name + " result"
+		})
 	}
 
-	close(release)
-	<-done
+	setup := func(ctx *tools.Context) {
+		// code_exec is only offered when a sandbox is configured (catalog.go's
+		// docker_only gate); without it the registry has no such tool at all.
+		ctx.CodeExecEnabled = true
+		ctx.CodeExecHostWorkspaceDir = t.TempDir()
+		ctx.CodeExecSignalDir = t.TempDir()
+	}
+	rec := parityCase{setup: setup, script: []string{
+		toolBody(0.0003, [3]string{"a", "mixed_before", `{}`}, [3]string{"b", "code_exec", `{}`}, [3]string{"c", "mixed_after", `{}`}),
+		answerBody("done", 0.0001),
+	}}.run(t, true)
+
+	if rec.err != nil {
+		t.Fatalf("turn failed: %v", rec.err)
+	}
+	for _, name := range []string{"mixed_before", "code_exec", "mixed_after"} {
+		if !ran[name] {
+			t.Errorf("%s never ran", name)
+		}
+	}
+	var ids []string
+	for _, m := range rec.bodies[1]["messages"].([]any) {
+		if mm := m.(map[string]any); mm["role"] == "tool" {
+			ids = append(ids, mm["tool_call_id"].(string))
+		}
+	}
+	if got := strings.Join(ids, ","); got != "a,b,c" {
+		t.Errorf("tool results returned as %q, want a,b,c (call order)", got)
+	}
 }
 
 // The preamble is byte ~30 of every request, and providers cache on an

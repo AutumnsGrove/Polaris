@@ -46,7 +46,7 @@ func (t *turnRun) buildAgentContext() {
 	// requestLocation asks a specific browser for a fix; resolveLiveLocation
 	// is the tool-facing wrapper handed to tools.Context — sync.Once means
 	// however many location-hungry tool calls this turn makes (nearby_search
-	// and weather both could, concurrently, via dispatchToolCallsConcurrently),
+	// and weather both could, concurrently, via Nova's parallel tool dispatch),
 	// the browser only ever gets interrupted for its GPS once. Nil when
 	// requestLocation itself is nil (no live client — see ask.go), so
 	// ResolveLocation's nil check skips straight to defaultLocation above.
@@ -79,7 +79,6 @@ func (t *turnRun) buildAgentContext() {
 				"from": from, "to": to, "error": err.Error(),
 			})
 		},
-		ForceOpenRouter: agent.ForceOpenRouter(),
 	})
 	t.agentCtx = &tools.Context{
 		SearXNG:                 t.s.searxng,

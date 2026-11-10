@@ -16,8 +16,6 @@
 //     of default; model_backends[m]: opencode_go → Go-first (a load error
 //     if the id has no go_model, never a silent fallback)
 //   - failover: none → omit the second attempt (there is no separate flag)
-//   - POLARIS_NOVA_LOOP=0 → ForceProvider = "openrouter": the only use of
-//     the pin, the kill switch that keeps the bespoke loop fully OpenRouter
 //   - the thread id → Config.SessionID, read fresh per call (exactly the
 //     x-opencode-session header requirement)
 //
@@ -72,10 +70,6 @@ type Options struct {
 	// attempt, and the classified error — the hook that makes a paid
 	// retry visible (transcript chip) instead of silent.
 	OnFallback func(from, to string, err error)
-	// ForceOpenRouter pins every call to OpenRouter: the kill switch
-	// (POLARIS_NOVA_LOOP=0). The only use of the pin — all other policy
-	// is route-building.
-	ForceOpenRouter bool
 	// Headroom is the Phase 4 seam (plan §11 risk 9): under
 	// default_backend auto, a model reporting no headroom resolves to
 	// OpenRouter up front instead of spending a Go attempt to discover
@@ -179,15 +173,10 @@ func Build(cfg *config.Config, opts Options) *route.Router {
 		// gets Go's own model-not-found error instead of a crash.
 		defaultProvider = OpenCodeGo
 	}
-	force := ""
-	if opts.ForceOpenRouter {
-		force = OpenRouter
-	}
 	return route.New(route.Config{
 		Providers:       decls,
 		Routes:          routes,
 		DefaultProvider: defaultProvider,
-		ForceProvider:   force,
 		SessionID:       opts.SessionID,
 		UserAgent:       opts.UserAgent,
 	})

@@ -591,7 +591,7 @@ type Context struct {
 	// nearby_search calls during this turn, so the gateway can attach
 	// them to the final answer once the model replies. citationsMu guards
 	// it — agent.Run dispatches every tool call from one model turn
-	// concurrently (see dispatchToolCallsConcurrently), so two handlers
+	// concurrently (see Nova's parallel tool dispatch, agent/nova_tools.go), so two handlers
 	// can call AddCitation at the same instant.
 	citationsMu sync.Mutex
 	Citations   []Citation
