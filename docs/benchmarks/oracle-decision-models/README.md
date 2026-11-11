@@ -32,13 +32,20 @@ latency in front of the first token.
   ran as `:free`; Baseten has since replaced that with a paid build.
 - **Gone since the run:** `perplexity/pplx-decider-v1.1-27b` (second place, `HTTP 404` since 2026-10-26)
   and both Mercury entries (404 as of 2026-11-10). Those rows are records, not options.
+- **New and disqualified (2026-11-11): `google/gemini-decision-1`** — the calls that answered were fast
+  (402ms median, every one inside the 2.5s timeout) and scored 80.3, but 19% of them never answered at
+  all: OpenRouter's shared Google quota returns `429 Rate limit exceeded` in bursts, and four attempts
+  across two concurrencies landed between 19% and 39% errors. See [the shared Google
+  quota](notes.md#gemini-decision-1-and-the-shared-google-quota).
 
 ## Results
 
-Runs of 2026-10-16 to 2026-11-06: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
-reported separately), 3 repeats each, 2 calls in flight (the Drex models ran at 1), weights
-`a6cbc140bd53`. The whole thing cost **$6.70**, about $0.46 of it the judge. Raw leaderboards for every
-invocation are in [`runs/`](runs/), and [notes.md#runs](notes.md#runs) lists which models ran when.
+Runs of 2026-10-16 to 2026-11-11: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
+reported separately), 3 repeats each, 2 calls in flight (the Drex models and Gemini ran at 1), weights
+`a6cbc140bd53`. The whole thing cost **$7.80**, about $0.54 of it the judge and $1.07 of it the four
+Gemini attempts — of which the 429s themselves are free, but not the calls that then re-sent them. Raw
+leaderboards for every invocation are in [`runs/`](runs/), and [notes.md#runs](notes.md#runs) lists which
+models ran when.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
 |--:|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
@@ -68,12 +75,15 @@ invocation are in [`runs/`](runs/), and [notes.md#runs](notes.md#runs) lists whi
 | 24 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
 | 25 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
 | 26 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| x | `google/gemini-decision-1` † | **80.3** (74.8-85.6) | 92% | 96% | 84% | 0% | 19% | 402ms | 643ms | 81.4% | $0.334 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.175 |
 | x | `inception/mercury-decide` (retired) § | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 
-**x** is disqualified: over 5% errors or refusals, which in both cases traces to the provider (`429` /
-`429 Model busy`), not the question set. **†** ran at concurrency 1 rather than 2, so its latency and
-under-2.5s share are a best case; accuracy is unaffected. **§** predates per-call cost capture, so its
+**x** is disqualified: over 5% errors or refusals, which in every case traces to the provider (`429`
+quota, `429 Model busy`, `429 rate_limit_exceeded`) rather than the question set. Gemini's row is the best
+of four attempts; every answered call in all four was inside the 2.5s timeout, so its latency columns are
+sound, and its score is what it managed on the calls the provider let through. **†** ran at concurrency 1
+rather than 2, so its latency and under-2.5s share are a best case; accuracy is unaffected. **§** predates per-call cost capture, so its
 cost is the average over identical repeats and may run a few percent low for a cache-capable model.
 **‡** is "not billed", not free: every call came back with `usage.cost: 0`, while the catalog price would
 put it near $0.93 per 1,000 turns.
@@ -95,8 +105,8 @@ within a tier means nothing. Four tiers:
 - **Luna, Elephant, Drex 1.5, D1.1, D1, Clef, Flash v1.2, Classify 1** — 75 to 82.
 - **Clef Flash, Tev1, Clef Omni, Kev, Solar Flash, Joey 1** — 55 to 74.
 
-Drex 2.0 is in no tier: 22% of its calls failed upstream (`429 Model busy`), so it is disqualified rather
-than ranked.
+Drex 2.0 and Gemini 1 are in no tier: 22% and 19% of their calls respectively failed upstream (`429 Model
+busy`, `429 Rate limit exceeded`), so both are disqualified rather than ranked.
 
 Only two things separate the leaders, and neither is in the score: **speed** (Jev is 10x faster at the
 median than Reflex) and **focus actions**, the one check that changes what Oracle actually does rather
@@ -112,11 +122,12 @@ decides nothing here. It is reported because a model whose catalog price and mea
 
 <p align="center"><img src="tracks.svg" alt="Score for each model on each family of questions, best in each row boxed" width="860"></p>
 
-## Roster status (checked 2026-11-10)
+## Roster status (checked 2026-11-11)
 
-`GET /api/v1/models?output_modalities=decisions` returned **36 entries**: 22 ids that are rows in the
-table, 5 `~` aliases, and 9 ids with no row. The filter is on output modality, not on "can answer Choice
-questions", so each of the 9 is a judgment rather than an omission:
+`GET /api/v1/models?output_modalities=decisions` returned **37 entries**: 23 ids that are rows in the
+table (22 scored, plus Gemini 1's disqualified one), 5 `~` aliases, and 9 ids with no row. The filter is
+on output modality, not on "can answer Choice questions", so each of the 9 is a judgment rather than an
+omission:
 
 | Model | Why it has no row |
 |---|---|
@@ -131,7 +142,9 @@ questions", so each of the 9 is a judgment rather than an omission:
 Free and paid have swapped in both directions since the runs, which is why the table names the build it
 measured: Mammoth and Elephant moved `:free` → paid, Parallel moved paid → `:free`. Both Mercury entries and
 Perplexity v1.1 now return `HTTP 404 No endpoints found`, so their rows are records. `liquid/d1` is still
-listed beside `d1.1`.
+listed beside `d1.1`. Google's entry is new on 2026-11-11 and has a row, so it does not appear in that
+table — but it is worth re-checking once the launch-week quota pressure in
+[notes](notes.md#gemini-decision-1-and-the-shared-google-quota) subsides.
 
 ## Where things are
 

@@ -873,5 +873,39 @@
     },
     "fresh_calls": 295,
     "input_tokens": 6314122
+  },
+  "google/gemini-decision-1": {
+    "calls": 885,
+    "answered": 720,
+    "under_2_5s": 720,
+    "under_5s": 720,
+    "refused": 0,
+    "failed": 165,
+    "calls_by_track": {
+      "chips": 48,
+      "claim_check": 24,
+      "clarify": 36,
+      "contested": 27,
+      "deep_research": 42,
+      "depth": 18,
+      "emotional": 45,
+      "focus": 120,
+      "format": 33,
+      "high_stakes": 87,
+      "intent": 66,
+      "locale": 15,
+      "premise": 39,
+      "private_person": 33,
+      "recall": 21,
+      "recency": 24,
+      "research": 60,
+      "source_type": 60,
+      "task": 33,
+      "ui": 54
+    },
+    "cost_usd_fresh": 0.09845390000000005,
+    "fresh_calls": 295,
+    "input_tokens": 3166388,
+    "cached_tokens": 0
   }
 }
