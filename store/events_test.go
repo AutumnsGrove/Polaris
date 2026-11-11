@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestLogEvent_GlobalAndThreadScoped(t *testing.T) {
@@ -93,35 +92,40 @@ func TestLogEvent_TruncatesOversizedStringFields(t *testing.T) {
 	}
 }
 
-func TestPruneEvents_RemovesOnlyOldEvents(t *testing.T) {
+// Events are never pruned on a timer (see the "no PruneEvents" note in
+// events.go) — they live exactly as long as their thread. The UI's delete is
+// a soft delete, which must leave the trail intact; a hard delete (the ghost
+// cleanup path) is the only thing that cascades events away with the row.
+func TestEventsSurviveSoftDeleteAndCascadeOnHardDelete(t *testing.T) {
 	s := openTestStore(t)
-	s.LogEvent("", "info", "startup", "recent event", nil, "")
-
-	// Backdate a second event directly, since LogEvent always stamps "now".
-	if _, err := s.db.Exec(
-		`INSERT INTO events (thread_id, level, source, message, data, created_at) VALUES (NULL, 'info', 'startup', 'old event', '{}', ?)`,
-		time.Now().AddDate(0, 0, -100).Format("2006-01-02 15:04:05"),
-	); err != nil {
-		t.Fatalf("inserting backdated event: %v", err)
+	if err := s.CreateThread("kept", "Kept", "m", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
 	}
+	if err := s.CreateGhostThread("ghost", "", "m", "web"); err != nil {
+		t.Fatalf("CreateGhostThread: %v", err)
+	}
+	s.LogEvent("kept", "info", "turn", "reasoning", map[string]interface{}{"content": "kept thinking"}, "turn-1")
+	s.LogEvent("ghost", "info", "turn", "reasoning", map[string]interface{}{"content": "ghost thinking"}, "turn-2")
 
-	before, err := s.ListRecentEvents(0)
+	if err := s.DeleteThread("kept"); err != nil {
+		t.Fatalf("DeleteThread: %v", err)
+	}
+	kept, err := s.ListEvents("kept", 0)
 	if err != nil {
-		t.Fatalf("ListRecentEvents: %v", err)
+		t.Fatalf("ListEvents after soft delete: %v", err)
 	}
-	if len(before) != 2 {
-		t.Fatalf("got %d events before prune, want 2", len(before))
-	}
-
-	if err := s.PruneEvents(90); err != nil {
-		t.Fatalf("PruneEvents: %v", err)
+	if len(kept) != 1 {
+		t.Errorf("got %d events for a soft-deleted thread, want 1 — a soft delete must not drop the audit trail", len(kept))
 	}
 
-	after, err := s.ListRecentEvents(0)
+	if _, err := s.DeleteAllGhostThreads(); err != nil {
+		t.Fatalf("DeleteAllGhostThreads: %v", err)
+	}
+	gone, err := s.ListEvents("ghost", 0)
 	if err != nil {
-		t.Fatalf("ListRecentEvents: %v", err)
+		t.Fatalf("ListEvents after hard delete: %v", err)
 	}
-	if len(after) != 1 || after[0].Message != "recent event" {
-		t.Errorf("after prune = %+v, want only \"recent event\" to survive", after)
+	if len(gone) != 0 {
+		t.Errorf("got %d events for a hard-deleted thread, want 0 (events.thread_id should cascade)", len(gone))
 	}
 }

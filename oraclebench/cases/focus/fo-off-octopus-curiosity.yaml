@@ -1,0 +1,11 @@
+id: fo-off-octopus-curiosity
+track: focus
+rationale: >-
+  Casual curiosity request with no brevity ask, no deep-dive ask. `off`.
+state:
+  latest: "tell me something interesting about octopuses"
+expect:
+  focus: {answer: "off"}
+quiet:
+  - emotional
+  - high_stakes

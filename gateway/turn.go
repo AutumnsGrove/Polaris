@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/AutumnsGrove/nova/provider/route"
 	"github.com/google/uuid"
 
 	"polaris/agent"
@@ -43,6 +44,7 @@ type turnRun struct {
 	isNewThread        bool
 	isFirstMessageEdit bool
 	isWeaverThread     bool
+	threadSource       string // the thread's persisted source ("web", "pulsar", ...); see resolveThreadFlags
 	ghost              bool
 	fieldID            string
 	field              *store.Field
@@ -50,6 +52,11 @@ type turnRun struct {
 	requestedModel string
 	modelCfg       config.ModelConfig
 	client         *llm.Client
+	// router is this turn's Nova provider router, built once from the
+	// turn's config generation (routing.Build) — not one shared
+	// process-wide, because SessionID must close over this turn's thread
+	// id. Nil only when routing is unavailable; agent runs direct then.
+	router *route.Router
 
 	history         []llm.ChatMessage
 	prevUserMessage string
@@ -62,6 +69,7 @@ type turnRun struct {
 	oracleResult          OracleResult
 	oracleFocusModeSource string
 	oracleAttempted       bool
+	deepResearchCarried   bool // see carryDeepResearch; survives RunOracle replacing oracleResult
 	oracleResultForEvent  *OracleResult
 	appliedFocusMode      string
 
@@ -165,6 +173,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	t.emitter = newTurnEmitter(s, send, t.threadID, t.storageThreadID, t.turnID)
 	t.appendPulsarReport()
 	t.buildAgentContext()
+	t.carryDeepResearch()
 	t.runOracleStage()
 	t.announceOracle()
 	if !t.runAgent() {

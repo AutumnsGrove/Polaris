@@ -1,6 +1,8 @@
 package r2
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -42,14 +44,15 @@ func TestNewClientNonNilWhenFullyConfigured(t *testing.T) {
 }
 
 func TestUploadSignsAndSendsRequest(t *testing.T) {
-	var gotMethod, gotPath, gotAuth, gotPayloadHash, gotBody string
+	var gotMethod, gotPath, gotAuth, gotPayloadHash, gotEncoding string
+	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		gotPayloadHash = r.Header.Get("x-amz-content-sha256")
-		body, _ := io.ReadAll(r.Body)
-		gotBody = string(body)
+		gotEncoding = r.Header.Get("Content-Encoding")
+		gotBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -58,7 +61,8 @@ func TestUploadSignsAndSendsRequest(t *testing.T) {
 
 	dir := t.TempDir()
 	src := filepath.Join(dir, "polaris-20260823-101010.db")
-	if err := os.WriteFile(src, []byte("fake sqlite contents"), 0o644); err != nil {
+	contents := strings.Repeat("fake sqlite contents ", 100)
+	if err := os.WriteFile(src, []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,9 +85,95 @@ func TestUploadSignsAndSendsRequest(t *testing.T) {
 	if gotPayloadHash != unsignedPayload {
 		t.Errorf("x-amz-content-sha256 = %s, want %s", gotPayloadHash, unsignedPayload)
 	}
-	if gotBody != "fake sqlite contents" {
-		t.Errorf("body = %q, want the source file's contents", gotBody)
+
+	// The object key stays plain (no .gz) so backup.parseTime and
+	// PruneRemote keep working; compression lives in the body.
+	if gotEncoding != "gzip" {
+		t.Errorf("Content-Encoding = %q, want gzip", gotEncoding)
 	}
+	if len(gotBody) >= len(contents) {
+		t.Errorf("uploaded body = %d bytes, want fewer than the %d-byte source (not compressed)", len(gotBody), len(contents))
+	}
+	ungzipped, err := gunzip(gotBody)
+	if err != nil {
+		t.Fatalf("uploaded body is not valid gzip: %v", err)
+	}
+	if string(ungzipped) != contents {
+		t.Error("decompressed upload body doesn't match the source file")
+	}
+
+	// No leftover temp file from the compress step.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != filepath.Base(src) {
+			t.Errorf("unexpected leftover file in backup dir: %s", e.Name())
+		}
+	}
+}
+
+// TestUploadSweepsStaleTempFiles covers the crash case documented on
+// sweepStaleTemps: a container recreate mid-upload strands a temp file that
+// nothing else will ever clean up (backup.List and backup.Prune both skip
+// names that aren't backups). A fresh temp must survive, since it may belong
+// to a concurrent upload still compressing.
+func TestUploadSweepsStaleTempFiles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClientForTest("acct", "key", "secret", "bucket", srv.URL)
+	dir := t.TempDir()
+
+	stale := filepath.Join(dir, tempPrefix+"stranded"+tempSuffix)
+	if err := os.WriteFile(stale, []byte("stale gzip bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * staleTempAge)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	fresh := filepath.Join(dir, tempPrefix+"inflight"+tempSuffix)
+	if err := os.WriteFile(fresh, []byte("in-flight gzip bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	unrelated := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(unrelated, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	src := filepath.Join(dir, "polaris-20260823-101010.db")
+	if err := os.WriteFile(src, []byte(strings.Repeat("pages ", 1000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Upload(context.Background(), "polaris-20260823-101010.db", src); err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale temp file survived the sweep, stat err = %v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("fresh temp file was swept, should have been left alone: %v", err)
+	}
+	if _, err := os.Stat(unrelated); err != nil {
+		t.Errorf("unrelated file was removed, stat err = %v", err)
+	}
+}
+
+func gunzip(b []byte) ([]byte, error) {
+	zr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	return io.ReadAll(zr)
 }
 
 func TestUploadNonOKStatusReturnsError(t *testing.T) {
@@ -136,6 +226,74 @@ func TestDownloadWritesFileAtomically(t *testing.T) {
 	// No leftover .downloading temp file after a clean finish.
 	if _, err := os.Stat(dest + ".downloading"); !os.IsNotExist(err) {
 		t.Errorf("expected .downloading temp file to be gone, stat err = %v", err)
+	}
+}
+
+// TestDownloadDecompressesGzipObject covers the shape every object written by
+// Upload now has. The bucket also still holds plain objects from before
+// compression existed — TestDownloadWritesFileAtomically above is that case,
+// and it must keep passing.
+func TestDownloadDecompressesGzipObject(t *testing.T) {
+	want := strings.Repeat("SQLite format 3\x00 and some pages ", 500)
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write([]byte(want)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	compressed := buf.Bytes()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Mirrors how R2 returns an object stored with
+		// Content-Encoding: gzip. Go's transport may decompress this
+		// before Download sees it, which must also work — that path is
+		// covered by the plain-body test above plus this same sniff.
+		w.Header().Set("Content-Encoding", "identity")
+		w.Write(compressed)
+	}))
+	defer srv.Close()
+
+	c := NewClientForTest("acct", "key", "secret", "bucket", srv.URL)
+	dest := filepath.Join(t.TempDir(), "restored.db")
+	if err := c.Download(context.Background(), "polaris-20260823-101010.db", dest); err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Errorf("downloaded %d bytes, want the decompressed %d bytes", len(got), len(want))
+	}
+}
+
+// TestDownloadCorruptGzipLeavesNoFile guards the reason Download writes to a
+// .downloading temp file at all: a truncated object must not land at destPath
+// looking like a restorable backup.
+func TestDownloadCorruptGzipLeavesNoFile(t *testing.T) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	zw.Write([]byte(strings.Repeat("pages ", 1000)))
+	zw.Close()
+	truncated := buf.Bytes()[:buf.Len()/2]
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(truncated)
+	}))
+	defer srv.Close()
+
+	c := NewClientForTest("acct", "key", "secret", "bucket", srv.URL)
+	dest := filepath.Join(t.TempDir(), "restored.db")
+	if err := c.Download(context.Background(), "polaris-20260823-101010.db", dest); err == nil {
+		t.Fatal("expected an error for a truncated gzip object")
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("expected no file at destPath, stat err = %v", err)
+	}
+	if _, err := os.Stat(dest + ".downloading"); !os.IsNotExist(err) {
+		t.Errorf("expected the .downloading temp file to be removed, stat err = %v", err)
 	}
 }
 

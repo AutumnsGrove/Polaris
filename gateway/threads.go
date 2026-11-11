@@ -424,7 +424,7 @@ func (s *Server) handleRegenerateTitle(w http.ResponseWriter, r *http.Request) {
 	cfg := s.liveConfig()
 	modelCfg := cfg.ModelByID(thread.Model)
 
-	title, cost, err := s.regenerateTitle(cfg, modelCfg, history)
+	title, cost, err := s.regenerateTitle(cfg, modelCfg, history, effectiveID)
 	if err != nil {
 		log.Warn("thread title regeneration failed", "thread", id, "err", err)
 		s.db.LogEvent(id, "warn", "title", "thread title regeneration failed", map[string]interface{}{"err": err.Error()}, "")

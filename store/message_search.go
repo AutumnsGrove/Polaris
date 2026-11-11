@@ -10,6 +10,11 @@ import (
 // wants to see where each hit actually landed (a thread can match more
 // than once), not just which threads contain a match somewhere.
 type MessageSearchResult struct {
+	// MessageID identifies the matched message row itself — needed by the
+	// hybrid path to fuse keyword and semantic rankings, which are both
+	// per-message. Additive to the JSON, so existing consumers are
+	// unaffected.
+	MessageID   int64  `json:"message_id"`
 	ThreadID    string `json:"thread_id"`
 	ThreadTitle string `json:"thread_title"`
 	Role        string `json:"role"`
@@ -41,6 +46,38 @@ func buildFTSQuery(query string) string {
 	}
 	return strings.Join(parts, " AND ")
 }
+
+// searchableThreadJoin resolves each message's owning thread and its root.
+// Shared by every read path over thread content so they agree on *which*
+// thread a message effectively belongs to — see SearchMessages' doc
+// comment on hidden variant threads (fork_root_id/active_variant_id).
+const searchableThreadJoin = `
+		 JOIN threads t ON t.id = m.thread_id
+		 JOIN threads root ON root.id = COALESCE(NULLIF(t.fork_root_id, ''), t.id)`
+
+// searchableThreadWhere is the single eligibility predicate over thread
+// content: disabled, ghost, internal threads, Atlas visibility, active
+// variant resolution, and Field opt-out. Deliberately one shared value, not
+// a copy per caller, shared by the FTS path (SearchMessages), the semantic
+// candidate scan, and the embedding indexer's own "what may be indexed"
+// and "what is no longer eligible" queries.
+//
+// Two copies of a rule this subtle will drift, and every failure mode is
+// bad in a way that's hard to notice: a leak shows a ghost or opted-out
+// thread in results, and an omission silently under-indexes one.
+//
+// A var rather than a const only because notInFieldWhere is a function call;
+// treat it as immutable. Requires the searchableThreadJoin aliases (m, t,
+// root).
+var searchableThreadWhere = `
+		   root.disabled = 0
+		   AND root.ghost = 0
+		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
+		   AND root.source != 'pulsar'
+		   AND root.source != 'weaver'
+		   AND root.source != 'comet_approach'
+		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
+		   AND ` + notInFieldWhere(`root.field_id`, `exclude_from_chat_search = 1`)
 
 // SearchMessages does a full-text search over every message's content via
 // messages_fts (kept in sync by triggers — see the schema comment),
@@ -76,20 +113,12 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 	}
 
 	rows, err := s.db.Query(
-		`SELECT root.id, root.title, m.role, m.created_at,
+		`SELECT m.id, root.id, root.title, m.role, m.created_at,
 			snippet(messages_fts, 0, char(2), char(3), '…', 12)
 		 FROM messages_fts
-		 JOIN messages m ON m.id = messages_fts.rowid
-		 JOIN threads t ON t.id = m.thread_id
-		 JOIN threads root ON root.id = COALESCE(NULLIF(t.fork_root_id, ''), t.id)
+		 JOIN messages m ON m.id = messages_fts.rowid`+searchableThreadJoin+`
 		 WHERE messages_fts MATCH ?
-		   AND root.disabled = 0
-		   AND root.ghost = 0
-		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
-		   AND root.source != 'pulsar'
-		   AND root.source != 'weaver'
-		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
-		   AND `+notInFieldWhere(`root.field_id`, `exclude_from_chat_search = 1`)+`
+		   AND `+searchableThreadWhere+`
 		 ORDER BY rank LIMIT ?`,
 		ftsQuery, limit,
 	)
@@ -101,7 +130,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 	results := []MessageSearchResult{}
 	for rows.Next() {
 		var r MessageSearchResult
-		if err := rows.Scan(&r.ThreadID, &r.ThreadTitle, &r.Role, &r.CreatedAt, &r.Snippet); err != nil {
+		if err := rows.Scan(&r.MessageID, &r.ThreadID, &r.ThreadTitle, &r.Role, &r.CreatedAt, &r.Snippet); err != nil {
 			return nil, err
 		}
 		results = append(results, r)

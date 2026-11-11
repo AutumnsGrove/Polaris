@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
 	"polaris/prompts"
@@ -51,7 +52,7 @@ const maxSuggestionLen = 140
 // same way the main client does: leaving that off routes to whatever
 // OpenRouter picks by default, which can land on a degraded/no-reasoning
 // endpoint for the same model slug and come back with near-empty content.
-func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelConfig, userMessage, answer string) ([]string, float64, error) {
+func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelConfig, userMessage, answer string, sessionID string) ([]string, float64, error) {
 	// 500, not a tighter cap — a reasoning model (this app's own default,
 	// "deepseek") spends part of any completion budget on hidden
 	// reasoning tokens before it ever emits visible content. A cap too
@@ -92,13 +93,20 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 		{Role: "user", Content: p.Turn.SuggestionsTask},
 	}
 
-	resp, err := sugClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	res, err := agent.CompleteOneShot(context.Background(), cfg, sugClient, modelCfg.ID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		OnFallback: func(from, to string, err error) {
+			log.Warn("suggestions generation spilled providers", "from", from, "to", to, "err", err)
+		},
+	}, prompt)
 	if err != nil {
 		return nil, 0, err
 	}
+	s.logOneShotProviderUsage(res, modelCfg.ID)
 
 	var suggestions []string
-	for _, line := range strings.Split(resp.Content, "\n") {
+	for _, line := range strings.Split(res.Text, "\n") {
 		line = suggestionListPrefix.ReplaceAllString(strings.TrimSpace(line), "")
 		line = strings.Trim(line, "\"")
 		// Requiring a trailing question mark is a belt-and-suspenders
@@ -118,5 +126,5 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 			break
 		}
 	}
-	return suggestions, resp.CostUSD, nil
+	return suggestions, res.ListCost, nil
 }

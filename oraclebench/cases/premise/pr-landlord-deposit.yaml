@@ -1,0 +1,10 @@
+id: pr-landlord-deposit
+track: premise
+rationale: >-
+  Presupposes a landlord may keep a deposit for normal wear and tear; in most jurisdictions that
+  is not allowed. Unverifiable without location, but the embedded assumption should be checked
+  first. premise=yes.
+state:
+  latest: "Why is my landlord legally allowed to keep my security deposit for normal wear and tear?"
+expect:
+  premise: {answer: "yes"}

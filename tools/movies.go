@@ -88,6 +88,9 @@ const (
 	// carousel's 108px display width with room for retina density without
 	// pulling the full "original" size for a thumbnail.
 	tmdbPosterSize = "w342"
+	// tmdbLargePosterSize backs Card.FullImageURL, what show's hand-picked
+	// gallery loads instead of the small thumbnail.
+	tmdbLargePosterSize = "w780"
 )
 
 func handleMovies(argsJSON string, ctx *Context, callID string) string {
@@ -131,7 +134,6 @@ func handleMovies(argsJSON string, ctx *Context, callID string) string {
 		"tool":      "movies",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
-		"cards":     ctx.CardsSnapshot(),
 		"call_id":   callID,
 	})
 	return result
@@ -197,19 +199,22 @@ func lookupMovieRecommendations(ctx *Context, title, mediaType string, year int)
 	if overview := strings.TrimSpace(resolved.Overview); overview != "" {
 		ctx.AddEvidence(tmdbPageURL(mediaType, resolved.ID), overview)
 	}
-	for _, r := range recs {
-		ctx.AddCard(Card{
-			Title:    r.displayTitle(mediaType),
-			Subtitle: r.year(mediaType),
-			ImageURL: tmdbPosterURL(r.PosterPath),
-			URL:      tmdbPageURL(mediaType, r.ID),
-		})
+	cards := make([]Card, len(recs))
+	for i, r := range recs {
+		cards[i] = Card{
+			Title:        r.displayTitle(mediaType),
+			Subtitle:     r.year(mediaType),
+			ImageURL:     tmdbPosterURL(r.PosterPath),
+			FullImageURL: tmdbLargePosterURL(r.PosterPath),
+			URL:          tmdbPageURL(mediaType, r.ID),
+		}
 	}
+	numbers := poolRecommendations(ctx, cards)
 
-	return formatMoviesResult(resolved, mediaType, genres, recs, supplemented), nil
+	return formatMoviesResult(resolved, mediaType, genres, recs, numbers, supplemented), nil
 }
 
-func formatMoviesResult(source tmdbTitle, mediaType string, genres []string, recs []tmdbTitle, supplemented bool) string {
+func formatMoviesResult(source tmdbTitle, mediaType string, genres []string, recs []tmdbTitle, numbers []int, supplemented bool) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s\n", source.citationLabel(mediaType))
 	if len(genres) > 0 {
@@ -228,9 +233,12 @@ func formatMoviesResult(source tmdbTitle, mediaType string, genres []string, rec
 		sb.WriteString("(none found)\n")
 	}
 	for i, r := range recs {
-		fmt.Fprintf(&sb, "%d. %s", i+1, r.citationLabel(mediaType))
+		fmt.Fprintf(&sb, "%d. %s", recNumber(numbers, i), r.citationLabel(mediaType))
 		if overview := strings.TrimSpace(r.Overview); overview != "" {
 			fmt.Fprintf(&sb, " — %s", overview)
+		}
+		if r.PosterPath == "" {
+			sb.WriteString(coverNote(Card{}))
 		}
 		sb.WriteString("\n")
 	}
@@ -239,7 +247,7 @@ func formatMoviesResult(source tmdbTitle, mediaType string, genres []string, rec
 			"are supplemented via genre/keyword-based similar titles, a weaker \"same kind of thing\" signal " +
 			"rather than \"people who watched this also watched\".)\n")
 	}
-	return strings.TrimSpace(sb.String())
+	return withRecommendationsFooter(sb.String(), numbers)
 }
 
 // --- TMDB API ---
@@ -503,6 +511,13 @@ func tmdbPageURL(mediaType string, id int) string {
 // poster_path (uncommon but confirmed live for some very obscure/new
 // titles) returns "", same "no thumbnail, never a broken one" contract as
 // fetchDeezerCoverArt.
+func tmdbLargePosterURL(posterPath string) string {
+	if posterPath == "" {
+		return ""
+	}
+	return "https://image.tmdb.org/t/p/" + tmdbLargePosterSize + posterPath
+}
+
 func tmdbPosterURL(posterPath string) string {
 	if posterPath == "" {
 		return ""

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"polaris/store"
+	"polaris/tz"
+	"polaris/uiblocks"
 )
 
 // pulsarSchedulerInterval is how often the scheduler re-checks every
@@ -48,7 +50,7 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 		// need a second ticker of its own.
 		if cfgRow, err := s.db.GetDailyConfig(); err != nil {
 			log.Warn("loading pulsar daily config failed", "err", err)
-		} else if isDailyDue(cfgRow, time.Now()) {
+		} else if isDailyDue(cfgRow, tz.Now()) {
 			if !s.startDailyGenerationIfIdle() {
 				// A manual "Generate now" click won this instant's race —
 				// see startDailyGenerationIfIdle's doc comment. Nothing to
@@ -59,12 +61,18 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 			}
 		}
 
+		// Comet's monthly due-check piggybacks on this same once-a-minute
+		// tick rather than running a second ticker — see
+		// gateway/comet_scheduler.go's package comment. Zero AI calls unless
+		// Comet is enabled and the month's slot is actually due.
+		s.maybeCometScheduled()
+
 		routines, err := s.db.ListActivePulsarRoutines()
 		if err != nil {
 			log.Warn("listing active pulsar routines failed", "err", err)
 			return
 		}
-		now := time.Now()
+		now := tz.Now()
 		for _, r := range routines {
 			if isRoutineDue(r, now) {
 				// Concurrent, not sequential — firePulse already calls
@@ -266,6 +274,12 @@ func pulseClientMessage(r store.PulsarRoutine) ClientMessage {
 		NoOracle:          !r.UseOracle,
 		PulsarRoutineID:   r.ID,
 		PulsarRoutineName: r.Name,
+		// A pulse is a real thread opened in the normal chat view, which
+		// renders Prism blocks; the Pulsar pages themselves only link to it.
+		// Oracle already runs here, so its ui check can nudge toward a block
+		// the same way it does in chat. (An earlier version of this left it
+		// off on the assumption Pulsar had its own layout; it doesn't.)
+		OffersVisuals: true,
 	}
 }
 
@@ -302,7 +316,10 @@ func (s *Server) firePulse(r store.PulsarRoutine) {
 	if report, at, ok, err := s.db.LatestPulseReport(r.ID); err != nil {
 		log.Warn("loading previous pulse report failed, continuing without it", "routine", r.ID, "err", err)
 	} else if ok {
-		msg.PulsarPreviousReport = report
+		// Flattened: the routine is told what it said last time so it states
+		// only what's new. That report may hold a Prism block's JSON lines;
+		// the readable text of it is what the comparison is actually about.
+		msg.PulsarPreviousReport = uiblocks.Flatten(report)
 		msg.PulsarPreviousReportAt = at
 	}
 

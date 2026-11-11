@@ -5,6 +5,23 @@
 **Status: shipped (2026-09-06, `2606fb1`, "Render mermaid diagrams inline with copy/source
 toggle") — see `web/src/lib/mermaid.ts` and `ChatTurnView.svelte`.**
 
+**Renderer swapped to Pele (2026-10-18).** Everything below describes the original design and is
+still accurate for the fence → DOM-pass → wrapper/toolbar/lightbox shape, but the engine behind
+`mermaid.ts` is now [Pele](https://pele.run) (`pele` on npm), not `mermaid`. Why: ~240 kB gzipped
+against mermaid's ~1.6 MB, and width-aware layout — on a 390px phone mermaid scaled an 8-node
+`flowchart LR` to a 342×25px unreadable strip while Pele stacks it vertically at full text size.
+What changed in the code: `getPele` replaces `getMermaid`; `initialize({securityLevel, theme})` is
+gone (links/images off per render, theming is `--pele-*` CSS variables mapped onto the app's tokens
+in `ChatTurnView.svelte`, so the stale-theme re-render pass was deleted); rendering is synchronous;
+a `ResizeObserver` re-lays out a diagram when its width changes; the lightbox renders at natural
+size instead of reusing the inline SVG; `mermaid.parse()` is gone from the streaming path because
+Pele's `render()` throws on an invalid prefix exactly where mermaid's parse failed. Kept:
+`autoQuoteLabels` (Pele's grammar fails on the same unquoted-label input) and `ensureStyleContrast`
+(Pele leaves a custom `fill` label at the theme text color, so a dark fill in the light theme is
+dark-on-dark). Known differences: no HTML labels beyond `<br/>`, bold and italic; no external
+Mermaid plugins (ZenUML); `click` callbacks ignored; node positions and edge routing differ from
+mermaid.js.
+
 Rendering ` ```mermaid ` code fences as live diagrams in assistant replies. **No tool call
 involved** — the model just writes a mermaid fence and the frontend renders it, the same way
 GitHub/Obsidian render mermaid in markdown. This doc records why that's the right shape versus a

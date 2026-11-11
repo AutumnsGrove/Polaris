@@ -38,6 +38,9 @@ no server fetch), or `image_indices` (a hand-picked subset, ≤8; one renders la
 `ImageGallery` inline). `show` also dropped its `docker_only` gate, since only its `path` source
 needs the workspace. The sections below describe the original path-only design.
 
+**Extended again 2026-10-06.** `books`/`movies`/`music` results join the same candidate pool and
+are displayed only via `show`/`highlight` — see `docs/plans/recommendation-candidates.md`.
+
 ## The gap
 
 Confirmed directly in the frontend code (`web/src/lib/components/ChatTurnView.svelte`): every

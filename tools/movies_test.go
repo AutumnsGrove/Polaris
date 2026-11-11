@@ -103,11 +103,15 @@ func TestHandleMovies_Success(t *testing.T) {
 	if ctx.Citations[0].ImageURL != "https://image.tmdb.org/t/p/w342/martian.jpg" {
 		t.Errorf("citation image = %q", ctx.Citations[0].ImageURL)
 	}
-	if len(ctx.Cards) != 2 {
-		t.Fatalf("cards = %+v, want 2", ctx.Cards)
+	cands := ctx.ImageCandidatesSnapshot()
+	if len(ctx.Cards) != 0 {
+		t.Errorf("Cards = %+v, want none: recommendations display only once the model picks them", ctx.Cards)
 	}
-	if ctx.Cards[0].Title != "Interstellar" || ctx.Cards[0].Subtitle != "2014" {
-		t.Errorf("cards[0] = %+v", ctx.Cards[0])
+	if len(cands) != 2 {
+		t.Fatalf("cards = %+v, want 2", cands)
+	}
+	if cands[0].Title != "Interstellar" || cands[0].Subtitle != "2014" {
+		t.Errorf("cards[0] = %+v", cands[0])
 	}
 }
 

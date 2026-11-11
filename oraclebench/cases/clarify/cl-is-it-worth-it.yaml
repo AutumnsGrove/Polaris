@@ -1,0 +1,14 @@
+id: cl-is-it-worth-it
+track: clarify
+rationale: >-
+  No referent at all on a first message ("it" could be anything), so the answer would differ
+  wildly depending on what was meant. clarify=yes (1.00 on every model in spike round 3). The
+  mid-thread twin of this message is deliberately not labeled for clarify; see
+  in-followup-thinkpad-after-framework.
+state:
+  latest: "is it worth it?"
+expect:
+  clarify: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

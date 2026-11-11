@@ -1,0 +1,11 @@
+id: co-pineapple-pizza
+track: contested
+rationale: >-
+  A pure taste question. People disagree, but it is not a political, moral, or scientific
+  dispute among credible sources, so contested=no.
+state:
+  latest: "pineapple on pizza yay or nay"
+expect:
+  contested: {answer: "no"}
+quiet:
+  - emotional

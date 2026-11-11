@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"polaris/llm"
+	"polaris/tz"
 )
 
 var currentTimeDef = llm.ToolDef{
@@ -30,7 +31,7 @@ var currentTimeDef = llm.ToolDef{
 func init() { Register("current_time", handleCurrentTime) }
 
 // now is swappable for tests; production always reads the real clock.
-var currentTimeNow = time.Now
+var currentTimeNow = tz.Now
 
 func handleCurrentTime(argsJSON string, ctx *Context, callID string) string {
 	ctx.Emit("tool_call", map[string]interface{}{"tool": "current_time", "args": map[string]interface{}{}, "call_id": callID})

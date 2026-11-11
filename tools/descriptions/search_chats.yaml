@@ -1,5 +1,6 @@
 name: search_chats
 requires: chat_search
+export_privacy: personal
 description: >-
   search or list your own past conversations, and read one back in full.
 api_description: >-

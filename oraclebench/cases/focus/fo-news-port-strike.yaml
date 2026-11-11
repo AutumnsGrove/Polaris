@@ -1,0 +1,11 @@
+id: fo-news-port-strike
+track: focus
+rationale: >-
+  "Today" plus an ongoing event: fresh coverage matters more than reference pages. `news`.
+state:
+  latest: "whats happening with the port strike today"
+expect:
+  focus: {answer: news}
+  research: {answer: "yes"}
+quiet:
+  - emotional

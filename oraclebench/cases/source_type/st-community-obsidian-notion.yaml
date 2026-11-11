@@ -1,0 +1,11 @@
+id: st-community-obsidian-notion
+track: source_type
+rationale: >-
+  "What do people think ... after using them for a year" is lived experience: community. Near-miss
+  twin of st-academic-handwriting-notes (same domain, but there the ask is for study evidence).
+state:
+  latest: "what do people think of obsidian vs notion for personal notes after using them for a year or more"
+expect:
+  source_type: {answer: community}
+quiet:
+  - emotional

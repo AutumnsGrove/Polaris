@@ -5,18 +5,15 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"runtime/debug"
 	"strings"
-	"sync"
-	"time"
 
 	"polaris/llm"
 	"polaris/logger"
 	"polaris/prompts"
 	"polaris/tools"
+	"polaris/tz"
 )
 
 var log = logger.WithPrefix("agent")
@@ -207,6 +204,17 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		return system
 	}
 
+	if ctx.ApproachRun {
+		// Comet's Approach classifier — a completely different task from
+		// the main assistant's own persona: read one past conversation and
+		// classify it on four axes, then end via record_classification.
+		// Returned as-is (no {tools}/mode-instruction appends), same as the
+		// Weaver and Wizard branches below. Its two %s verbs are the live
+		// topic/mood vocabularies already in use — see
+		// tools.Context.ApproachCategoriesInUse/ApproachMoodsInUse.
+		return fmt.Sprintf(p.Comet.ApproachSystem, ctx.ApproachCategoriesInUse, ctx.ApproachMoodsInUse)
+	}
+
 	if ctx.Wizard != nil {
 		// A completely different task from "Polaris the research
 		// assistant" — a narrow writing interview with its own 2-3 tool
@@ -253,6 +261,14 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		// tools it would need are already stripped from {tools}, but there's
 		// no reason to make that combination an error either).
 		prompt += "\n\n" + p.Agent.NoResearchInstruction
+	}
+	// Appended rather than a {placeholder} in prompt.md: prompt.md is
+	// operator-editable and bind-mounted over the image's copy, so a
+	// placeholder would silently vanish from any install whose prompt.md
+	// predates it. "" for Off and for every entry point that never sets
+	// ctx.Visuals (see tools.Context.Visuals), so those get nothing.
+	if fragment := p.UIFragment(ctx.Visuals); fragment != "" {
+		prompt += "\n\n" + fragment
 	}
 	if ctx.OracleSection != "" {
 		prompt += "\n\n" + ctx.OracleSection
@@ -381,6 +397,15 @@ func applyCodeExecThemePlaceholder(prompt string, ctx *tools.Context) string {
 const deepResearchTurnMultiplier = 2
 const deepResearchCheckInMultiplier = 2
 
+// wrapUpInstruction/wrapUpFallback are the exact human-facing strings of the
+// forced wrap-up at the turn budget; both loops use them so the text cannot
+// drift between implementations.
+const (
+	wrapUpInstruction = "Wrap up now — give your best answer with what you've gathered so far. Do not call any more tools."
+	wrapUpFallback    = "I wasn't able to finish researching this in time to give a complete answer — " +
+		"try asking again, or narrow the question a bit."
+)
+
 // currentContextPreamble grounds the model in today's real date — without
 // this, a model has no way to know "today" beyond its training cutoff, and
 // will confidently answer with a stale date or search for news anchored to
@@ -395,7 +420,7 @@ const deepResearchCheckInMultiplier = 2
 // genuinely need the time (see tools/current_time.go and
 // docs/plans/verbatim-turn-transcripts.md).
 func currentContextPreamble() string {
-	now := time.Now()
+	now := tz.Now()
 	return fmt.Sprintf(
 		"Today's date: %s (timezone: %s). Treat this as ground truth for anything relative — "+
 			"\"today\", \"this week\", \"latest\", \"currently\", how old something is — rather "+
@@ -460,6 +485,11 @@ type Result struct {
 	// early-exit shape as WizardFinal, just carrying a structured item
 	// list instead of a single drafted prompt.
 	DailyItemsFinal *tools.DailyItemsFinal
+	// TrailClassification is non-nil when the turn ended early because
+	// record_classification was called — only possible on a Comet Approach
+	// run (see tools.Context.ApproachRun). Same early-exit shape as
+	// DailyItemsFinal, carrying one thread's finished classification.
+	TrailClassification *tools.TrailClassification
 	// TurnCount is how many iterations of the main loop below actually
 	// ran before this Result was produced (1 for a plain first-turn
 	// answer, more for each tool-call round-trip) — including the forced
@@ -497,6 +527,12 @@ type Result struct {
 	// LLMCalls is how many model calls the loop made this turn — what
 	// PromptTokens is a sum over, so the sheet can say "32K across 2 calls".
 	LLMCalls int
+	// ProviderCalls attributes every completed model call this turn to
+	// the backend that served it, in order (usually exactly one entry;
+	// a spilled turn has one per attempt). The provider_usage ledger
+	// and messages.provider persist this; Usage events alone cannot say
+	// who ran the call.
+	ProviderCalls []ProviderCall
 	// Transcript is every message this turn put on the wire, in order,
 	// after the replayed history — the model-facing user message (with any
 	// attachment notes or Pulsar report folded in), mode reinforcement,
@@ -508,389 +544,6 @@ type Result struct {
 	// provider's prefix cache cover the whole conversation (see
 	// docs/plans/verbatim-turn-transcripts.md).
 	Transcript []llm.ChatMessage
-}
-
-// Run executes one turn of the agent loop: given prior conversation
-// history plus a new user message, it streams progress (thinking/
-// tool_call/tool_result/token events) via ctx.Emit and returns once the
-// model has produced its final answer. ctx must have LLM and Emit set;
-// SearXNG/Foursquare/DefaultLocation are optional per-tool dependencies.
-//
-// reqCtx cancels the whole turn (the "stop" button) — a cancellation
-// isn't treated as an error, since the LLM client already turns it into a
-// graceful early finish with whatever content streamed so far.
-func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Result, error) {
-	client := ctx.LLM
-	ctx.Ctx = reqCtx
-	warmUpEmbedClient(ctx)
-
-	messages := make([]llm.ChatMessage, 0, len(history)+3)
-	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx, ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch, ctx.NoResearch)})
-	messages = append(messages, history...)
-	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
-	// Re-anchor the focus/voice-mode instruction near the end of the
-	// message list, not just at position 0 above — see modeReinforcement's
-	// doc comment. Gated on non-empty history: on a conversation's first
-	// turn position 0 is already maximally recent, so this would just
-	// duplicate identical text for no benefit (and would make
-	// TestRun_FocusModeInstructionReachesSystemPrompt's nil-history case
-	// send the same instruction twice for nothing).
-	if len(history) > 0 {
-		if reinforcement := modeReinforcement(prompts.Get(), ctx.VoiceMode, ctx.FocusMode); reinforcement != "" {
-			messages = append(messages, llm.ChatMessage{Role: "user", Content: reinforcement})
-		}
-		if ctx.OracleSection != "" {
-			messages = append(messages, llm.ChatMessage{Role: "user", Content: ctx.OracleSection})
-		}
-	}
-
-	toolDefs := tools.Defs(ctx)
-	var totalCost float64
-	// promptTokens/cacheReadTokens sum every LLM call this loop makes (a
-	// tool-calling turn makes several), so the caller can report what
-	// fraction of this turn's input was served from the provider's prompt
-	// cache — issue #107. Only the loop's own calls: a tool's side call
-	// (web_read's filter pass, a spawned sub-agent) has its own unrelated
-	// prefix and would just blur the number.
-	var promptTokens, cacheReadTokens, completionTokens int
-	var lastPromptTokens, llmCalls int
-	// turnStart is where this turn's own messages begin — everything
-	// before it is the system prompt plus replayed history.
-	turnStart := 1 + len(history)
-	finish := func(r *Result) *Result {
-		r.PromptTokens = promptTokens
-		r.CacheReadTokens = cacheReadTokens
-		r.CompletionTokens = completionTokens
-		r.LastPromptTokens = lastPromptTokens
-		r.LLMCalls = llmCalls
-		transcript := make([]llm.ChatMessage, 0, len(messages)-turnStart+1)
-		transcript = append(transcript, messages[turnStart:]...)
-		r.Transcript = append(transcript, llm.ChatMessage{Role: "assistant", Content: r.Answer})
-		return r
-	}
-	var answer strings.Builder
-
-	maxTurns := ctx.MaxTurns
-	if maxTurns <= 0 {
-		maxTurns = defaultMaxTurns
-	}
-	checkInInterval := researchCheckInInterval
-	staleThreshold := staleStreakThreshold
-	// Researcher focus mode gets the same widened leash Deep Research
-	// grants (Tier 1 of docs/plans/deep-research-two-tier.md) — a sharper
-	// single-agent mode reached via the focus-mode picker instead of the
-	// dedicated toggle, without spawning anything.
-	if ctx.DeepResearch || ctx.FocusMode == FocusModeResearcher {
-		maxTurns *= deepResearchTurnMultiplier
-		checkInInterval *= deepResearchCheckInMultiplier
-		staleThreshold *= deepResearchCheckInMultiplier
-	}
-	researchCalls := 0
-	lastCitationCount := 0
-	staleStreak := 0
-	queryTracker := searchQueryTracker{}
-
-	for turn := 0; turn < maxTurns; turn++ {
-		answer.Reset()
-		sniff := &streamSniffer{
-			emit:     func(s string) { ctx.Emit("token", map[string]interface{}{"content": s}) },
-			prefixes: pseudoToolCallPrefixes,
-		}
-		resp, err := client.ChatCompletionWithTools(reqCtx, messages, toolDefs, func(chunk string) {
-			answer.WriteString(chunk)
-			sniff.onChunk(chunk)
-		}, func(chunk string) {
-			ctx.Emit("reasoning", map[string]interface{}{"content": chunk})
-		})
-		if err != nil {
-			// Still return whatever the loop already spent, not just the
-			// error — a mid-turn failure (network reset, a truncated
-			// tool-call stream) after several real, billed calls previously
-			// discarded that cost entirely (`return nil, err`), which is
-			// how a benchmark/production turn that errored out could
-			// report $0.00 despite having made real, paid LLM calls first.
-			// Callers that only check err and ignore result on failure are
-			// unaffected either way.
-			return finish(&Result{
-				Citations:     ctx.Citations,
-				Cards:         ctx.Cards,
-				Chart:         ctx.Chart,
-				CostUSD:       totalCost + ctx.ExtraCostUSD,
-				TurnCount:     turn + 1,
-				ResearchCalls: researchCalls,
-			}), err
-		}
-		sniff.flush()
-		totalCost += resp.CostUSD
-		promptTokens += resp.PromptTokens
-		cacheReadTokens += resp.CacheReadTokens
-		completionTokens += resp.CompletionTokens
-		lastPromptTokens = resp.PromptTokens
-		llmCalls++
-		// Live-only running total, not persisted (logTurnEvent has no case
-		// for it) and not additive — the footer used to sit at $0.00 for
-		// the entire turn, only learning the real spend from "done" once
-		// everything was already over. See gateway/protocol.go's doc
-		// comment on "cost_update".
-		ctx.Emit("cost_update", map[string]interface{}{"cost_usd": totalCost + ctx.ExtraCostUSD})
-
-		if len(resp.ToolCalls) == 0 {
-			if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {
-				emitCommentary(ctx, resp.Content)
-				for i, pc := range calls {
-					result := tools.Dispatch(pc.name, pc.argsJSON, ctx, fmt.Sprintf("pseudo-%d", i))
-					messages = append(messages, llm.ChatMessage{
-						Role: "user",
-						Content: fmt.Sprintf("[%s result]\n%s\n\nContinue answering the original question using this — "+
-							"use the real tool-calling mechanism if you need to search again, not text-formatted "+
-							"tool call syntax.", pc.name, result),
-					})
-					if isResearchTool(pc.name) {
-						for _, nudge := range trackResearchCall(ctx, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
-							messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
-						}
-					}
-					if pc.name == "web_search" {
-						if q := extractSearchQuery(pc.argsJSON); q != "" {
-							if nudge, fired := trackSearchQuery(ctx, &queryTracker, q); fired {
-								messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
-							}
-						}
-					}
-				}
-				continue
-			}
-			if strings.TrimSpace(resp.Content) == "" {
-				// No tool call AND no answer text — the model spent this
-				// whole turn on private reasoning (visible only via
-				// onReasoning, never onChunk) without ever committing to
-				// output, and stopped before producing anything. Returning
-				// this as a "final answer" would silently hand back an
-				// empty Result with a nil error — indistinguishable from a
-				// real, considered response. Nudge and let it try again
-				// instead; bounded by maxTurns like every other branch of
-				// this loop, so a model that keeps doing this still
-				// terminates via the wrap-up path below rather than
-				// looping forever.
-				emitNudge(ctx, "empty_answer", researchCalls, len(ctx.Citations))
-				messages = append(messages, llm.ChatMessage{Role: "user", Content: prompts.Get().Agent.EmptyAnswerRetry})
-				continue
-			}
-			// Plain content = the final answer. It was already streamed
-			// token-by-token via the onChunk callback above.
-			return finish(&Result{
-				Answer:        resp.Content,
-				Citations:     ctx.Citations,
-				Cards:         ctx.Cards,
-				Chart:         ctx.Chart,
-				CostUSD:       totalCost + ctx.ExtraCostUSD,
-				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
-				TurnCount:     turn + 1,
-				ResearchCalls: researchCalls,
-			}), nil
-		}
-
-		emitCommentary(ctx, resp.Content)
-
-		// The OpenAI-compatible wire protocol requires one assistant
-		// message carrying every tool call from this turn (not one
-		// message per call), immediately followed by ALL of that batch's
-		// "tool" role result messages with nothing else interleaved
-		// between them — confirmed the hard way: DeepSeek 400s with
-		// "insufficient tool messages following tool_calls message" if a
-		// nudge (a "user" role message) lands between tool-result #2 and
-		// #3 of a 3-call batch. So every result message gets appended
-		// first, in one pass, and only THEN any nudges from the whole
-		// batch — never interleaved per-call the way a single-call turn
-		// could safely do it.
-		calls := resp.ToolCalls
-		messages = append(messages, llm.ChatMessage{Role: "assistant", ToolCalls: calls})
-
-		results := dispatchToolCallsConcurrently(calls, ctx)
-		for _, r := range results {
-			messages = append(messages, llm.ChatMessage{Role: "tool", Content: r.result, ToolCallID: r.call.ID})
-		}
-		// A tool handler may have just called ctx.AddCost (web_read's filter
-		// pass, view_image's description call, ...) — surface that in the
-		// same running total the loop's own per-LLM-call emit above uses,
-		// so a batch of paid tool calls shows up live too, not just the
-		// model's own completions.
-		ctx.Emit("cost_update", map[string]interface{}{"cost_usd": totalCost + ctx.ExtraCostUSD})
-		// Any view_image "see" calls in this batch queued a real image
-		// message via ctx.AddPendingImageMessage — flushed only now, after
-		// every tool-result message above, never interleaved with them, for
-		// the same wire-protocol reason nudges aren't interleaved either
-		// (see the comment above this block).
-		messages = append(messages, ctx.FlushPendingImageMessages()...)
-
-		// finalize_wizard_prompt was called — end the turn the same way
-		// PendingQuestion does below, checked first: it means "actually
-		// done", which takes precedence over a hypothetical
-		// ask_user_question call landing in the same batch (shouldn't
-		// happen in practice, but keeps the precedence sane if it ever did).
-		if ctx.WizardFinal != nil {
-			ctx.Emit("token", map[string]interface{}{"content": ctx.WizardFinal.Prompt})
-			return finish(&Result{
-				Answer:        ctx.WizardFinal.Prompt,
-				Citations:     ctx.Citations,
-				Cards:         ctx.Cards,
-				Chart:         ctx.Chart,
-				CostUSD:       totalCost + ctx.ExtraCostUSD,
-				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
-				TurnCount:     turn + 1,
-				ResearchCalls: researchCalls,
-				WizardFinal:   ctx.WizardFinal,
-			}), nil
-		}
-
-		// finalize_daily_items was called — same early-exit shape as
-		// WizardFinal above, just for a Pulsar Daily list-block generation.
-		// Answer is a flattened prose join of the items (title/summary/
-		// source, one per line), not the structured list itself — callers
-		// that only look at Answer (the diff-judge, trace records, a model
-		// that never went down this path) still get sane text; a caller
-		// that wants the structured shape reads DailyItemsFinal directly.
-		if ctx.DailyItemsFinal != nil {
-			flattened := flattenDailyItems(ctx.DailyItemsFinal.Items)
-			ctx.Emit("token", map[string]interface{}{"content": flattened})
-			return finish(&Result{
-				Answer:          flattened,
-				Citations:       ctx.Citations,
-				Cards:           ctx.Cards,
-				Chart:           ctx.Chart,
-				CostUSD:         totalCost + ctx.ExtraCostUSD,
-				ContextTokens:   resp.PromptTokens + resp.CompletionTokens,
-				TurnCount:       turn + 1,
-				ResearchCalls:   researchCalls,
-				DailyItemsFinal: ctx.DailyItemsFinal,
-			}), nil
-		}
-
-		// ask_user_question was called — end the turn now instead of
-		// looping back to the model. See tools.PendingQuestion's doc
-		// comment for why this is a clean early return rather than a
-		// blocking wait: the answer is just whatever message the user
-		// sends next, handled by a brand-new Run call on the next turn,
-		// not by anything still alive in this goroutine.
-		if ctx.PendingQuestion != nil {
-			// The question text never streamed as "token" chunks the way a
-			// normal final answer does — it came from the tool call's
-			// arguments (a different part of the SSE stream), not a content
-			// completion onChunk ever saw. Without this, a live session's
-			// turn.content stays empty until the next reload re-reads it
-			// from the persisted message instead — the question would be
-			// invisible in the very session that just asked it.
-			ctx.Emit("token", map[string]interface{}{"content": ctx.PendingQuestion.Question})
-			return finish(&Result{
-				Answer:          ctx.PendingQuestion.Question,
-				Citations:       ctx.Citations,
-				Cards:           ctx.Cards,
-				Chart:           ctx.Chart,
-				CostUSD:         totalCost + ctx.ExtraCostUSD,
-				ContextTokens:   resp.PromptTokens + resp.CompletionTokens,
-				TurnCount:       turn + 1,
-				ResearchCalls:   researchCalls,
-				PendingQuestion: ctx.PendingQuestion,
-			}), nil
-		}
-
-		for _, r := range results {
-			if isResearchTool(r.call.Function.Name) {
-				for _, nudge := range trackResearchCall(ctx, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
-					messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
-				}
-			}
-			if r.call.Function.Name == "web_search" {
-				if q := extractSearchQuery(r.call.Function.Arguments); q != "" {
-					if nudge, fired := trackSearchQuery(ctx, &queryTracker, q); fired {
-						messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
-					}
-				}
-			}
-		}
-	}
-
-	// Ran out of turns — force a wrap-up instead of failing outright. No
-	// more tool dispatching allowed past this point (that's the whole
-	// point of the bound), so if the model still tries to emit a pseudo
-	// tool call here, that's treated as "couldn't produce a real answer
-	// in time" rather than given yet another turn.
-	//
-	// Recorded as a nudge event too (see emitNudge) — this firing often is
-	// the strongest possible signal that maxTurns is tuned too low for
-	// what's actually being asked.
-	emitNudge(ctx, "max_turns_wrapup", researchCalls, len(ctx.Citations))
-	messages = append(messages, llm.ChatMessage{
-		Role:    "user",
-		Content: "Wrap up now — give your best answer with what you've gathered so far. Do not call any more tools.",
-	})
-	wrapSniff := &streamSniffer{
-		emit:     func(s string) { ctx.Emit("token", map[string]interface{}{"content": s}) },
-		prefixes: pseudoToolCallPrefixes,
-	}
-	resp, err := client.ChatCompletionStreaming(reqCtx, messages, func(chunk string) {
-		wrapSniff.onChunk(chunk)
-	}, func(chunk string) {
-		ctx.Emit("reasoning", map[string]interface{}{"content": chunk})
-	})
-	if err != nil {
-		// Same reasoning as the main loop's error return above — don't
-		// discard the cost the loop itself already accrued just because
-		// this final forced wrap-up call failed too.
-		return finish(&Result{
-			Citations:     ctx.Citations,
-			Cards:         ctx.Cards,
-			Chart:         ctx.Chart,
-			CostUSD:       totalCost + ctx.ExtraCostUSD,
-			TurnCount:     maxTurns + 1,
-			ResearchCalls: researchCalls,
-		}), err
-	}
-	wrapSniff.flush()
-	totalCost += resp.CostUSD
-	promptTokens += resp.PromptTokens
-	cacheReadTokens += resp.CacheReadTokens
-	completionTokens += resp.CompletionTokens
-	lastPromptTokens = resp.PromptTokens
-	llmCalls++
-
-	answerText := resp.Content
-	if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {
-		// Even told explicitly not to, the model tried to call a tool one
-		// more time — it genuinely doesn't have enough to answer yet, and
-		// there's no turn budget left to give it. An honest "couldn't
-		// finish in time" beats showing raw pseudo-tool-call syntax.
-		//
-		// resp.Content (the aborted attempt) was already streamed live as
-		// "token" via wrapSniff above — emitCommentary demotes it into the
-		// timeline and clears the frontend's answer buffer first, so the
-		// replacement message below starts clean instead of concatenating
-		// onto the abandoned attempt (see emitCommentary's doc comment).
-		emitCommentary(ctx, resp.Content)
-		answerText = "I wasn't able to finish researching this in time to give a complete answer — " +
-			"try asking again, or narrow the question a bit."
-		ctx.Emit("token", map[string]interface{}{"content": answerText})
-	}
-	// Deliberately no empty-answerText fallback here (unlike the main
-	// loop's mid-turn retry above) — this is the last LLM call Run makes,
-	// so there's no budget left to nudge-and-retry, and callers already
-	// have their own contract for a genuinely empty Result.Answer:
-	// gateway/turn.go's handleTurn checks for it and surfaces a proper
-	// "error" event plus a warn-level log instead of persisting a blank
-	// assistant turn (see TestWebSocket_EmptyAnswerSurfacesAsErrorEvent).
-	// Rewriting it into placeholder text here would silently defeat that
-	// downstream check for every caller, not just the ones lacking it.
-
-	return finish(&Result{
-		Answer:        answerText,
-		Citations:     ctx.Citations,
-		Cards:         ctx.Cards,
-		Chart:         ctx.Chart,
-		CostUSD:       totalCost + ctx.ExtraCostUSD,
-		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
-		TurnCount:     maxTurns + 1, // every loop iteration ran, plus this forced wrap-up call
-		ResearchCalls: researchCalls,
-	}), nil
 }
 
 // emitCommentary sends whatever a turn said before deciding to call a tool
@@ -919,84 +572,4 @@ func emitCommentary(ctx *tools.Context, content string) {
 		return
 	}
 	ctx.Emit("commentary", map[string]interface{}{"content": content})
-}
-
-// toolCallResult pairs a tool call with the string tools.Dispatch returned
-// for it, so results can be matched back up to their ToolCallID after
-// running concurrently and in unpredictable completion order.
-type toolCallResult struct {
-	call   llm.ToolCall
-	result string
-}
-
-// dispatchToolCallsConcurrently runs every tool call from one model turn
-// in parallel — three independent web_search calls the model queued up in
-// the same turn all fire their outbound requests at once instead of
-// waiting for each to finish before the next starts. Results are returned
-// in the same order as calls regardless of which finishes first, so the
-// message history Run builds from them stays deterministic across runs
-// even though the underlying dispatch order isn't.
-//
-// code_exec calls are the one exception: they run sequentially, on their
-// own goroutine, never fanned out alongside each other the way every other
-// tool is. tools.codeExecGlobalLock already makes concurrent calls safe
-// (only one sandbox actually runs at a time, everything else blocks), but
-// safe isn't the same as harmless here — N goroutines all queuing up on
-// that lock still each write and then remove their own request file in
-// code-exec-signal/ back to back the instant the lock frees, which is
-// exactly the kind of fast, genuine burst of DirectoryNotEmpty
-// transitions that once drove polaris-codeexec.path to retrigger
-// polaris-codeexec.service faster than systemd's start-limit tolerates,
-// wedging it (unit-start-limit-hit) until a human noticed — see
-// polaris-codeexec.service's StartLimitIntervalSec comment and issue
-// #85. Dispatching this batch's code_exec calls one at a time, in order,
-// removes that burst at the source instead of only tolerating it once it
-// reaches the host.
-//
-// Each call runs with its own recover regardless of which path it takes:
-// ws.go's panic recovery wraps the whole turn's goroutine, which protects
-// that goroutine's own call stack, but NOT goroutines spawned underneath
-// it — an unrecovered panic in any goroutine crashes the whole process
-// regardless of a recover() elsewhere. Without this, one tool handler
-// panicking (a bug three calls deep) would take down every other in-flight
-// thread on the server instead of just failing that one call.
-func dispatchToolCallsConcurrently(calls []llm.ToolCall, ctx *tools.Context) []toolCallResult {
-	results := make([]toolCallResult, len(calls))
-	var wg sync.WaitGroup
-
-	runOne := func(i int, call llm.ToolCall) {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Error("panic in tool dispatch", "tool", call.Function.Name, "panic", r, "stack", string(debug.Stack()))
-				results[i] = toolCallResult{call: call, result: fmt.Sprintf("error: internal error running %s", call.Function.Name)}
-			}
-		}()
-		results[i] = toolCallResult{call: call, result: tools.Dispatch(call.Function.Name, call.Function.Arguments, ctx, call.ID)}
-	}
-
-	var codeExecIdx []int
-	for i, call := range calls {
-		if call.Function.Name == "code_exec" {
-			codeExecIdx = append(codeExecIdx, i)
-			continue
-		}
-		wg.Add(1)
-		go func(i int, call llm.ToolCall) {
-			defer wg.Done()
-			runOne(i, call)
-		}(i, call)
-	}
-
-	if len(codeExecIdx) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for _, i := range codeExecIdx {
-				runOne(i, calls[i])
-			}
-		}()
-	}
-
-	wg.Wait()
-	return results
 }

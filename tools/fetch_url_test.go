@@ -86,6 +86,27 @@ func TestHandleFetchURL_URLNotACitationRejected(t *testing.T) {
 	}
 }
 
+// web_read prints a page's ImageURL to the model as "[Page image: ...]"; the
+// model then passes exactly that to fetch_url, which must accept it even though
+// it was never a citation's own URL.
+func TestHandleFetchURL_PageImageURLAccepted(t *testing.T) {
+	srv := fakeCSVServer(t, "a,b\n1,2\n", "text/csv")
+
+	workspaceRoot := t.TempDir()
+	ctx := newTestContext()
+	ctx.CodeExecWorkspaceDir = workspaceRoot
+	ctx.ThreadID = "thread-1"
+	ctx.AddCitation(Citation{Title: "page", URL: "https://example.com/page", ImageURL: srv.URL})
+
+	result := handleFetchURL(`{"url":"`+srv.URL+`","filename":"data.csv"}`, ctx, "call-1")
+	if strings.Contains(result, "hasn't appeared as a citation") {
+		t.Fatalf("result = %q, want a citation's ImageURL accepted", result)
+	}
+	if _, err := os.ReadFile(filepath.Join(workspaceRoot, "thread-1", "data.csv")); err != nil {
+		t.Errorf("expected data.csv to exist in the workspace: %v", err)
+	}
+}
+
 func TestHandleFetchURL_BlockedSourceRejectedWithoutFetching(t *testing.T) {
 	fetched := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,12 @@
+id: rc-remember-to-buy-milk
+track: recall
+rationale: >-
+  False friend: "remember" as an imperative (remember to do something), not a reference to a past
+  conversation. recall=no.
+state:
+  latest: "remind me to remember to buy milk and eggs on the way home"
+expect:
+  recall: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,15 @@
+id: ui-claim-napoleon-short
+track: ui
+rationale: >-
+  One specific true/false claim to check with evidence on both sides: claim. Near-miss with
+  views (not a contested question of policy) and procon (nothing is being decided).
+  claim_check is the paired yes.
+state:
+  latest: "was napoleon actually short or is that just a myth"
+expect:
+  ui: {answer: claim, accept: [claim, "none"]}
+  claim_check: {answer: "yes"}
+  contested: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

@@ -2,7 +2,7 @@ package config
 
 // oracle.go holds Oracle mode's tuning: the numbers and lists that decide
 // *when* a check fires or a focus mode is allowed to change (docs/plans/
-// oracle-mode.md). What Jev is asked and what gets injected into the
+// oracle-mode.md). What the decision model is asked and what gets injected into the
 // system prompt stays in prompts.yaml — that's wording, this is policy.
 // The split exists so prompts.yaml holds only text a person would edit as
 // prose, and so a threshold can be retuned from config.yaml (hot-reloaded
@@ -58,12 +58,31 @@ type OracleCheckRules struct {
 	// as a form letter. Only a *fired* answer suppresses; a check that
 	// merely ran and lost the bar leaves the others alone.
 	Suppresses []string `yaml:"suppresses,omitempty"`
+	// VisualsLowOffset is added to Threshold while the Prism dial is Low, so
+	// the same check asks for more confidence before nudging toward a visual
+	// block (docs/plans/intelligent-ui.md). nil for every other check; only
+	// the ui check reads it. Normal uses Threshold as-is, Off never asks. A
+	// pointer so an explicit `visuals_low_offset: 0` (Low behaves like Normal)
+	// is distinguishable from an absent field, which keeps the default.
+	VisualsLowOffset *float64 `yaml:"visuals_low_offset,omitempty"`
 }
 
 // OnlyFirstMessage reports FirstMessageOnly with nil meaning false.
 func (r OracleCheckRules) OnlyFirstMessage() bool {
 	return r.FirstMessageOnly != nil && *r.FirstMessageOnly
 }
+
+// LowOffset reports VisualsLowOffset with nil meaning zero, so callers don't
+// have to nil-check before adding it to a threshold.
+func (r OracleCheckRules) LowOffset() float64 {
+	if r.VisualsLowOffset == nil {
+		return 0
+	}
+	return *r.VisualsLowOffset
+}
+
+// floatPtr is used to give a *float64 rule field its shipped default.
+func floatPtr(f float64) *float64 { return &f }
 
 // OracleChipRules is one offer chip's policy — just its firing bar.
 type OracleChipRules struct {
@@ -87,16 +106,27 @@ func DefaultOracle() OracleConfig {
 				Sticky:              []string{"safari"},
 				NeverWithHighStakes: []string{"brief"},
 			},
-			"research":    {Threshold: 0.85},
-			"high_stakes": {Threshold: 0.75},
+			"research": {Threshold: 0.85},
+			// Promotes the turn to Deep Research — the multi-agent fan-out, many times
+			// the cost of a normal answer — so the bar is high. Brief wants a short
+			// answer and Safari runs its own pacing.
+			"deep_research": {Threshold: 0.85, SkipForFocus: []string{"safari", "brief"}},
+			"high_stakes":   {Threshold: 0.75},
 			// Shopper mode already carries its own product guidance.
 			"intent": {Threshold: 0.65, SkipOptionForFocus: map[string][]string{"product": {"shopper"}}},
 			// Safari's Embark step already asks its own clarifying question.
-			"clarify": {Threshold: 0.85, FirstMessageOnly: &firstOnly, SkipForFocus: []string{"safari"}},
+			"clarify": {Threshold: 0.85, FirstMessageOnly: &firstOnly, SkipForFocus: []string{"safari"}, Suppresses: []string{"deep_research"}},
 			"recall":  {Threshold: 0.80},
 			// Answer shape. Safari owns its own format; Brief is already short.
 			"format": {Threshold: 0.75, SkipForFocus: []string{"safari"}},
-			"depth":  {Threshold: 0.80, SkipForFocus: []string{"safari", "brief"}},
+			// Whether a visual block (Prism) would beat prose. Brief is a few
+			// sentences and Safari runs its own pacing, so both skip it. When it
+			// fires it holds back `format`: both are answer-shape nudges, and
+			// "give numbered steps" stacked on "write a steps block" contradicts
+			// itself. A wrong firing costs a block nobody needed, so on Low the
+			// bar rises by VisualsLowOffset.
+			"ui":    {Threshold: 0.70, SkipForFocus: []string{"safari", "brief"}, Suppresses: []string{"format"}, VisualsLowOffset: floatPtr(0.15)},
+			"depth": {Threshold: 0.80, SkipForFocus: []string{"safari", "brief"}},
 			// Source and evidence guidance. Academic mode already carries its
 			// own source guidance.
 			"recency":     {Threshold: 0.75},
@@ -108,7 +138,7 @@ func DefaultOracle() OracleConfig {
 			// teach the same way an "explain" nudge would ask for.
 			"task": {Threshold: 0.75, SkipForFocus: []string{"safari"}, SkipOptionForFocus: map[string][]string{"explain": {"first_principles", "socratic"}}},
 			// Sensitivity: wrongly firing these changes tone, so the bar is high.
-			"emotional":      {Threshold: 0.85, Suppresses: []string{"format", "depth", "source_type", "task", "clarify"}},
+			"emotional":      {Threshold: 0.85, Suppresses: []string{"format", "depth", "source_type", "task", "clarify", "ui", "deep_research"}},
 			"private_person": {Threshold: 0.85},
 			"premise":        {Threshold: 0.85},
 		},
@@ -166,6 +196,10 @@ func mergeOracle(set OracleConfig) OracleConfig {
 		if rules.Suppresses != nil {
 			base.Suppresses = rules.Suppresses
 		}
+		base.VisualsLowOffset = nil
+		if rules.VisualsLowOffset != nil {
+			base.VisualsLowOffset = floatPtr(pickOffset(fmt.Sprintf("oracle.checks.%s.visuals_low_offset", key), *rules.VisualsLowOffset, base.LowOffset()))
+		}
 		out.Checks[key] = base
 	}
 
@@ -179,6 +213,18 @@ func mergeOracle(set OracleConfig) OracleConfig {
 		out.Chips[key] = base
 	}
 	return out
+}
+
+// pickOffset validates a configured VisualsLowOffset. Unlike a threshold, 0 is
+// meaningful here (the Low dial behaves like Normal), so only a value outside
+// [0,1] is rejected — the default applies exactly when the field is absent,
+// which the *float64 makes distinguishable from an explicit 0.
+func pickOffset(path string, configured, def float64) float64 {
+	if configured < 0 || configured > 1 {
+		log.Warn("visuals_low_offset must be between 0 and 1, using the default", "path", path, "configured", configured, "default", def)
+		return def
+	}
+	return configured
 }
 
 // pickThreshold returns configured when it's a usable probability, def when

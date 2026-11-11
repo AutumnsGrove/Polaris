@@ -1,0 +1,12 @@
+id: dp-standard-why-bread-stale
+track: depth
+rationale: >-
+  A short but real why-question; a normal paragraph or two covers it. Neither quick (not
+  casual) nor thorough (not open-ended or multi-part). Lowercase terse.
+state:
+  latest: "why does bread go stale faster in the fridge"
+expect:
+  depth: {answer: standard}
+quiet:
+  - emotional
+  - private_person

@@ -10,8 +10,10 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -197,7 +199,7 @@ func lookupArxiv(ctx *Context, query string, maxResults int) (string, error) {
 	q.Set("start", "0")
 	q.Set("max_results", fmt.Sprintf("%d", maxResults))
 
-	body, err := referenceHTTPGet(ctx.Ctx, arxivAPIBaseURL+"?"+q.Encode())
+	body, err := arxivHTTPGet(ctx.Ctx, arxivAPIBaseURL+"?"+q.Encode())
 	if err != nil {
 		return "", fmt.Errorf("fetching arxiv: %w", err)
 	}
@@ -226,9 +228,63 @@ func lookupArxiv(ctx *Context, query string, maxResults int) (string, error) {
 	return sb.String(), nil
 }
 
+// arxivTimeout and arxivRetryDelay are vars so tests can shrink them.
+//
+// Live (2026-10): export.arxiv.org either answers 429 "Rate exceeded" from
+// its Google Frontend or accepts the connection and sits on it for 10s+
+// before sending headers — the "context deadline exceeded (Client.Timeout
+// exceeded while awaiting headers)" failures seen in the transcript. The
+// URL and params are unchanged (arXiv's Nov 2025 API replacement kept them),
+// so this is throttling/latency, not a breaking API change: give it a longer
+// window and one spaced retry rather than the 10s Wikipedia-tuned default.
+var (
+	arxivTimeout    = 30 * time.Second
+	arxivRetryDelay = 3 * time.Second // arXiv's ToU asks for 1 request / 3s
+)
+
+// arxivHTTPGet retries once on a timeout, 429, or 5xx. A second failure
+// is returned as-is so the model sees the real error and can fall back to
+// web_search instead of us hammering an already-throttled service.
+func arxivHTTPGet(ctx context.Context, rawURL string) ([]byte, error) {
+	body, err := referenceHTTPGetTimeout(ctx, rawURL, arxivTimeout)
+	if err == nil || !arxivRetryable(err) {
+		return body, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, err
+	case <-time.After(arxivRetryDelay):
+	}
+	return referenceHTTPGetTimeout(ctx, rawURL, arxivTimeout)
+}
+
+func arxivRetryable(err error) bool {
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	var se *referenceStatusError
+	return errors.As(err, &se) && (se.code == http.StatusTooManyRequests || se.code >= 500)
+}
+
+// referenceStatusError carries the HTTP status so callers can decide
+// whether a retry makes sense; its message matches the old plain error.
+type referenceStatusError struct {
+	code int
+	body string
+}
+
+func (e *referenceStatusError) Error() string {
+	return fmt.Sprintf("status %d: %s", e.code, e.body)
+}
+
 // referenceHTTPGet is a small shared GET helper for the two lookups
 // above, mirroring youtube_transcript.go's httpGetBody.
 func referenceHTTPGet(ctx context.Context, rawURL string) ([]byte, error) {
+	return referenceHTTPGetTimeout(ctx, rawURL, 10*time.Second)
+}
+
+func referenceHTTPGetTimeout(ctx context.Context, rawURL string, timeout time.Duration) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -236,7 +292,7 @@ func referenceHTTPGet(ctx context.Context, rawURL string) ([]byte, error) {
 	req.Header.Set("User-Agent", "Polaris/1.0 (personal search assistant)")
 	req.Header.Set("Accept", "application/json, application/atom+xml")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -251,7 +307,7 @@ func referenceHTTPGet(ctx context.Context, rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+		return nil, &referenceStatusError{code: resp.StatusCode, body: string(body)}
 	}
 	return body, nil
 }

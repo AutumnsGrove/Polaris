@@ -1,0 +1,14 @@
+id: dr-name-my-cat
+track: deep_research
+rationale: >-
+  Casual conversation and a light brainstorm. The thanks and the cat-naming ask are exactly the
+  "casual conversation" the no option names.
+state:
+  previous: "whats a good way to get a shy kitten to eat"
+  latest: "thanks that actually worked! ok next question, what should i name him, he's orange and kind of grumpy"
+expect:
+  deep_research: {answer: "no"}
+  task: {answer: brainstorm}
+quiet:
+  - emotional
+  - private_person

@@ -173,6 +173,14 @@ pattern for new work here, not just the Docker-specific cases above.
   comment's "Plain FIFO breaks down..." section.
 - `prompts.yaml` / `prompts/prompts.go` — every LLM prompt fragment except `prompt.md` itself,
   hot-reloaded with compiled-in defaults as a fallback
+- `embed/` — every embedding in Polaris: a provider abstraction (OpenRouter hosted model or local
+  Ollama), batch embedding, int8 vector encoding, and the `livecheck`-tagged real-API test
+- `store/embeddings.go` — the polymorphic `embeddings` table, eligibility queries, coverage, and
+  the purge/epoch primitives; `store/embedding_search.go` fetches rows by id for the fusion path
+- `gateway/embedsvc.go` — the background indexer, the in-memory vector cache, and the service
+  methods; `gateway/embedding_search.go` holds RRF fusion; `gateway/embeddings_routes.go` the admin
+  endpoints behind `polaris embeddings`
+- `cmd/embeddings.go` — `polaris embeddings status|backfill|reindex`
 - `search/searxng.go` — SearXNG's own engines (Brave, Google, DuckDuckGo, Startpage) do rate-limit
   a self-hosted instance under real usage; `SearXNGClient` detects a full outage (every
   general-category engine unresponsive at once, not just one) and enters an hour-long cooldown
@@ -182,12 +190,13 @@ pattern for new work here, not just the Docker-specific cases above.
   `tools/web_search.go` reaches for once SearXNG confirms itself degraded (Brave first, since it's
   the only one returning real multi-result listings rather than an AI-pre-summarized answer — a
   better fit for anything Atlas surfaces, not just the assistant's own citations; then Parallel,
-  since its free tier of 5,000/mo is 5x Tavily's 1,000/mo; then Tavily). Brave has no ongoing free
-  tier at all (a one-time $5/mo signup credit only) and Parallel's account has a card on file, so
-  `store.Store`'s `api_usage` table enforces a hard monthly cap for each (`brave.MonthlyCap`,
-  `parallelMonthlyCap` in `tools/web_search.go`) before ever calling them — never raise or bypass
-  either cap without confirming real usage with the user first. Every result set is tagged
-  `[via <provider>]` so a fallback firing is visible in the transcript, not just server logs. Atlas's
+  since its free tier of 5,000/mo is 5x Tavily's 1,000/mo; then Tavily). Brave's free allowance is
+  a recurring $5/mo credit (~1,000 queries), not an unmetered tier, and both it and Parallel have a
+  card on file, so `store.Store`'s `api_usage` table enforces a hard monthly cap for each
+  (`brave.MonthlyCap`, `parallelMonthlyCap` in `tools/web_search.go`) before ever calling them —
+  never raise or bypass either cap without confirming real usage with the user first. Every result
+  set is tagged `[via <provider>]` so a fallback firing is visible in the transcript, not just
+  server logs. Atlas's
   own results-browsing page (`gateway/search.go`'s `handleSearch`) has a *separate* Brave fallback
   from the assistant's `web_search` tool, with its own virtual sub-pagination: one real Brave fetch
   (`count=20`, Brave's own per-request max) is split into two 10-result Atlas pages
@@ -250,6 +259,71 @@ Relevant code beyond `gateway/pulsar_scheduler.go` above: `gateway/pulsar_routes
 `gateway/pulsar_daily_routes.go`, `store/pulsar.go`, `store/pulsar_daily.go`. README's
 Pulsar/Pulsar Daily bullets are the user-facing description; this section is only the "where the
 code lives" pointer.
+
+## Comet
+
+"Comet" (`/comet`) is the monthly retrospective: a once-a-month pass classifies each conversation
+into a `trails` row (topic/mood/intent/resolved) via an "Approach" — an `agent.Run` over a hidden
+`threads.source = 'comet_approach'` thread — then `gateway/comet_generate.go` assembles one
+`comet_editions` page from straight aggregation plus a single forced-tool synthesis call (hook,
+highlights, spike/fade). Design doc: `docs/plans/comet.md`. Code: `store/comet.go`,
+`gateway/comet_*.go` (the due-check piggybacks on the Pulsar scheduler's tick), `cmd/comet.go`,
+`web/src/routes/comet/`.
+
+- **A new thread listing/search that excludes `'weaver'` must exclude `'comet_approach'` too** —
+  Approach threads are internal transcripts, not conversations.
+- **`cometGenerationRunning` is Comet's single-flight flag *and* the update watcher's busy signal**
+  (`handleServerBusy`). Anything that runs a long Comet job — the scheduler pipeline, the blocking
+  classify/backfill endpoints (via `claimCometRun`) — must hold it, or a self-update can recreate
+  the container mid-run.
+- Comet never generates for the month in progress (`cometPeriodOf` is the last *complete* month);
+  `cometMonthOf` is the month containing a timestamp. Don't swap them.
+
+## Embeddings and the semantic index
+
+Every embedding in Polaris goes through `embed/` (a provider abstraction: a hosted OpenRouter model
+or a local Ollama) and, for the persisted index, through `store/embeddings.go` +
+`gateway/embedsvc.go`. `docs/plans/embeddings.md` is the design record and its "Implementation
+notes" sections are the deltas between plan and code — read those before changing behavior here.
+
+What the index is for: `search_chats`, the `stars` tool, the Library's search box, and Weaver's
+`search_stars` all fuse FTS5 results with semantic ones via RRF (`gateway/embedding_search.go`),
+because the two tiers fail in complementary ways — FTS5 returns *nothing* for a paraphrased
+question, while semantic retrieval is useless on a bare single-word query. Neither tier is
+sufficient alone; that's measured, not assumed.
+
+Invariants worth knowing before touching it:
+
+- **Ghost threads are never embedded.** Two belts, both load-bearing: `MessagesNeedingEmbedding`
+  can't return one (ghost is in the eligibility predicate), and `deleteGhostThreads` purges
+  embeddings inside its own transaction, because the `embeddings` table is polymorphic
+  (`kind`, `ref_id`) with no foreign key it could cascade through — so a forgotten conversation's
+  vectors would otherwise survive its messages on disk. Reverting just that purge makes
+  `TestEmbeddings_GhostHardDeleteRemovesVectors` fail.
+- **There is exactly one eligibility predicate**: `searchableThreadWhere` +
+  `searchableThreadJoin` in `store/message_search.go`. The FTS path, the indexer's "what may be
+  indexed", its "what is no longer eligible" purge, and the semantic re-fetch all use it. **If you
+  add a new exclusion rule, add it there** — anywhere else means two copies that will drift, and
+  both failure modes are bad (a leak shows a hidden thread; an omission silently under-indexes).
+  `TestEmbeddings_EligibilityParityWithSearch` compares the paths by thread id.
+- **The in-memory vector cache is invalidated by `store.EmbeddingsEpoch`**, an atomic bumped by
+  *every* mutation of the embeddings table. Do not infer freshness from "did my own sweep write
+  anything" — rows also disappear via `UpdateField`'s opt-out purge and the ghost cleanup, and
+  the first version of this code left an opted-out vector resident and still searchable.
+  Any new code path that mutates the table must bump the epoch (after commit, not inside the tx).
+- **A model swap fails closed.** Vectors are tagged with the model that produced them; a mismatch
+  means semantic retrieval is off (keyword search keeps working) until `polaris embeddings reindex
+  --yes`. Never auto-backfill on boot — that's a surprise API spend and a load spike on an SBC.
+- **`embed.Client.Local` exists for one reason**: the per-turn warm-up in `agent/query_similarity.go`
+  only helps a local model with a cold-start load. Warming up a hosted provider is a wasted paid
+  API call per turn.
+- The Library/sidebar search *box* is deliberately keyword-only (`handleSearchThreads`); hybrid is
+  for the model's paraphrased queries.
+
+Operational entry points: `polaris embeddings status|backfill|reindex` (thin clients over
+`/api/embeddings/*`; both jobs are single-flight and hold `embeddingBackfillRunning`, which
+`handleServerBusy` consults so a self-update can't recreate the container mid-run). Spend lands in
+`CostBySource.Embeddings` via aux_usage kind `embedding`.
 
 ## The prompt-writing wizard
 
@@ -324,3 +398,25 @@ inconsistent with the rest of the file.
   `--z-*` for stacking, `--radius-*` for corner rounding, `--space-*` for padding/margin/gap —
   instead of a new raw px literal. Pick the nearest existing step rather than inventing a value;
   only add a new token when nothing on the scale actually fits.
+
+## Bumping Nova
+
+Nova (`github.com/AutumnsGrove/nova`) is the library the agent loop runs on (`docs/plans/nova-loop.md`). Polaris
+requires a **tagged** release in `go.mod`, never a commit pseudo-version and never a committed `replace`. When
+the user asks to bump, update, or pick up a Nova version:
+
+1. Read Nova's `CHANGELOG.md` for every version between the pinned one and the target, especially the
+   **upgrade notes** (Nova is `v0.x`, so a minor bump may break callers) and anything touching `agent`, `provider`,
+   `tool` or `message`, the packages `agent/nova_*.go` use.
+2. `go get github.com/AutumnsGrove/nova@vX.Y.Z && go mod tidy` (set `GOPRIVATE`/`GONOSUMDB` for
+   `github.com/AutumnsGrove/*` if the sum database has not seen the tag yet). Confirm `go.mod` shows the tag.
+3. Run `go build ./... && go vet ./... && go test ./...`.
+   `agent/nova_parity_test.go` compares Nova's request bytes, events and transcripts with fixtures
+   recorded from the old bespoke loop (`agent/testdata/nova_parity/`), so a Nova wire change shows
+   up there; fix the adapter, or normalize a difference only with a note in
+   `docs/plans/nova-loop.md`. Do not regenerate the fixtures to make a test pass.
+4. Commit as `deps: bump nova to vX.Y.Z` and say what the upgrade notes required. Dependabot also opens these
+   PRs weekly; treat its PR the same way.
+5. If a fix is needed in Nova itself, file an issue there and fix it there first (Nova's own `AGENTS.md`
+   describes releasing a version). To try unreleased Nova locally, use an uncommitted `go.work`
+   (`go work init . ../nova`), never a `replace` in `go.mod`.

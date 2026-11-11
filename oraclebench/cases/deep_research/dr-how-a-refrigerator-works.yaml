@@ -1,0 +1,15 @@
+id: dr-how-a-refrigerator-works
+track: deep_research
+rationale: >-
+  The "however interesting it is" trap. How a refrigerator works is a rich topic but a focused
+  explanation a normal search-and-answer handles well; nothing about it has competing views or
+  needs many sources compared. A model that equates "explain" or "interesting" with "deep" fails
+  this one.
+state:
+  latest: "How does a refrigerator actually work? I've always wondered how it makes things cold."
+expect:
+  deep_research: {answer: "no"}
+  task: {answer: explain}
+quiet:
+  - emotional
+  - private_person

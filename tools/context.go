@@ -2,13 +2,15 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"sync"
 
+	"github.com/AutumnsGrove/nova/provider/route"
 	"golang.org/x/sync/singleflight"
 
 	"polaris/brave"
+	"polaris/decisions"
 	"polaris/embed"
-	"polaris/jev"
 	"polaris/llm"
 	"polaris/parallel"
 	"polaris/places"
@@ -34,7 +36,31 @@ type Context struct {
 	Brave      *brave.Client            // nil if not configured — web_search's degraded-SearXNG fallback tries this first, ahead of Parallel/Tavily (see tools/web_search.go)
 	Reddit     *reddit.Client           // nil is fine — web_read builds an RSS-only client on demand, so Reddit URLs are readable without any key (see the reddit package)
 	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried after Brave, before Tavily) is skipped without it
-	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
+	LLM        llm.ChatClient           // the model selected for this thread; the direct fallback behind Complete
+
+	// Complete is a tool's own side call to the thread's model (web_read's and
+	// search_chats' filter pass) through the same routed path the turn loop
+	// takes — Nova's router, the Go session header, failover and the usage
+	// ledger — instead of the raw LLM client above, which always goes straight
+	// to OpenRouter. Nil in contexts not wired for routing (tests, the
+	// benchmark); tools call CompleteFunc, which falls back to LLM then.
+	Complete CompleteFunc
+
+	// ModelID is the thread's Polaris model id (the registry id, e.g.
+	// "deepseek") — the catalog id the router resolves to an attempt
+	// chain. The wire slug alone cannot name a backend (a slug never
+	// says which provider serves it), so without this the router keys
+	// on the slug, finds no route, and silently bills OpenRouter — the
+	// exact bug Nova already fixed once for subagents. Empty means
+	// "route by slug, fall through to the default" (pre-routing
+	// behavior for contexts that never set it).
+	ModelID string
+	// Router, when non-nil, is the Nova provider router this turn's
+	// calls go through (built per turn from that turn's config
+	// generation — see routing.Build). Nil means direct: agent runs the
+	// thread's LLM client straight, the pre-routing behavior every
+	// non-turn context keeps until it opts in.
+	Router *route.Router
 
 	// Embed is a local Ollama client used only by agent.Run's
 	// query-similarity stale-search signal (see agent/query_similarity.go)
@@ -47,8 +73,9 @@ type Context struct {
 	// BraveUsageThisMonth/IncrementBraveUsage back the monthly cap on
 	// Brave calls (store.Store's api_usage table), same shape and same
 	// reasoning as ParallelUsageThisMonth/IncrementParallelUsage below —
-	// Brave has no ongoing free tier at all (just a one-time signup
-	// credit), so this cap matters even more than Parallel's.
+	// Brave's free allowance is a recurring $5/mo credit (~1,000 queries)
+	// rather than an unmetered tier, and past it every query bills the
+	// account's card on file, so the cap keeps usage inside the credit.
 	BraveUsageThisMonth func() (int, error)
 	IncrementBraveUsage func() error
 
@@ -79,22 +106,26 @@ type Context struct {
 	TavilyUsageThisMonth func() (int, error)
 	IncrementTavilyUsage func() error
 
-	// Jev backs compare_sources (tools/compare_sources.go) — nil if
-	// OpenRouter itself isn't configured (jev.NewClient's nil-means-
+	// Decisions backs compare_sources (tools/compare_sources.go) — nil if
+	// OpenRouter itself isn't configured (decisions.NewClient's nil-means-
 	// unconfigured convention, same as Brave/Parallel/Tavily above), since
-	// Jev is reached through OpenRouter's beta endpoint using the exact
+	// Decisions is reached through OpenRouter's Decisions API using the exact
 	// same api_key that already authenticates the main chat model, not a
-	// separate secret. JevCostThisMonth/LogJevCost back the monthly dollar
-	// cap (store.Store's jev_usage table) — dollar-based, not call-count-
-	// based like Brave/Parallel/Tavily's api_usage, since Jev bills by
+	// separate secret. DecisionsCostThisMonth/LogDecisionsCost back the monthly dollar
+	// cap (store.Store's decisions_usage table) — dollar-based, not call-count-
+	// based like Brave/Parallel/Tavily's api_usage, since Decisions bills by
 	// token and one heavily-chunked comparison could cost more than a
-	// typical call. LogJevCost is also how Stats.VerificationCostUSD's
-	// breakout gets its data — call it once per real Jev call, after
-	// AddCost/AddJevCost below, same "record only what actually went
+	// typical call. LogDecisionsCost is also how Stats.VerificationCostUSD's
+	// breakout gets its data — call it once per real Decisions call, after
+	// AddCost/AddDecisionsCost below, same "record only what actually went
 	// through" convention as IncrementBraveUsage.
-	Jev              *jev.Client
-	JevCostThisMonth func() (float64, error)
-	LogJevCost       func(usd float64) error
+	Decisions              *decisions.Client
+	DecisionsCostThisMonth func() (float64, error)
+	LogDecisionsCost       func(usd float64) error
+	// LogCompareDecisionsCost is LogDecisionsCost for compare_sources specifically, so
+	// the ledger can tell its calls from verification badges (issue #151).
+	// compare_sources falls back to LogDecisionsCost when this is nil.
+	LogCompareDecisionsCost func(usd float64) error
 
 	// PinnedProvider, when non-empty, forces web_search to a single
 	// provider on every call instead of the normal SearXNG-first,
@@ -153,6 +184,36 @@ type Context struct {
 	// rather than raw content to extract facts from. Meaningless unless
 	// WeaverRun is also true.
 	WeaverInteractive bool
+
+	// ApproachRun is true inside Comet's Approach classifier
+	// (gateway/comet_approach.go) — one agent.Run over one past thread
+	// deciding its topic/mood/intent/resolved. Gates the two approach-run
+	// tools (tools/search_trails.go, tools/record_classification.go) and
+	// narrows the whole menu to {view_image, search_trails,
+	// record_classification} in catalog.go's offered(), same structural
+	// isolation WeaverRun gives Weaver's five. agent/driver.go's
+	// loadSystemPrompt swaps in prompts.yaml's comet.approach_system for
+	// this context instead of prompt.md. Never set on a normal chat/pulse
+	// turn.
+	ApproachRun bool
+
+	// ApproachSearchTrails backs the search_trails tool — a narrow closure
+	// over store.Store (its SearchTrails method), same pattern as the
+	// WeaverSearchStars closure. Wired only alongside ApproachRun being
+	// true; nil everywhere else, which is also what offered()'s
+	// "approach_run" case re-checks defensively.
+	ApproachSearchTrails func(query string) ([]store.Trail, error)
+
+	// ApproachCategoriesInUse/ApproachMoodsInUse are the live lists of
+	// topic/mood values already recorded in trails beyond the fixed
+	// starting vocabulary — substituted into comet.approach_system's two
+	// %s verbs so the classifier extends the existing labels rather than
+	// fragmenting them into near-synonyms, same "check what's already in
+	// use first" mechanism WeaverCategoriesInUse backs for stars. Empty on
+	// a from-scratch install; that's fine, the escape hatch just has
+	// nothing to reuse yet.
+	ApproachCategoriesInUse string
+	ApproachMoodsInUse      string
 
 	// WeaverSearchStars/WeaverReadStar/WeaverCreateStar/WeaverUpdateStar/
 	// WeaverLinkStars back Weaver's five tools — narrow closures over
@@ -266,7 +327,7 @@ type Context struct {
 
 	// DescribeImage, when non-nil, asks a vision-capable model (this
 	// thread's own, if Multimodal above, else a configured fallback — see
-	// gateway's visionClient) to describe an image and return the text —
+	// gateway's visionModelFor) to describe an image and return the text —
 	// the "describe" half of view_image's mode parameter. instructions
 	// mirrors web_read's own optional focus parameter; empty means "a full
 	// literal description". nil only when no multimodal model is
@@ -393,6 +454,17 @@ type Context struct {
 	// or fired no checks this turn.
 	OracleSection string
 
+	// Visuals is the Intelligent UI dial ("off" | "low" | "normal", see
+	// gateway.VisualsFromStore) for this turn. agent.loadSystemPrompt appends
+	// the `ui` block grammar for "low"/"normal"; the zero value "" means
+	// "this entry point never offers blocks" and, like "off", adds nothing.
+	// Only gateway/turn_context.go sets it (for the live chat turn, /api/ask
+	// and Pulsar pulses; never a voice call or Atlas's Quick Answer). Pulsar
+	// Daily, Weaver, the wizard and the benchmark harness build their own
+	// Contexts and leave it empty, so none is told to write a fence it can't
+	// render.
+	Visuals string
+
 	// Wizard, when non-nil, marks this turn as the ephemeral "help me
 	// write this" interview (see gateway/wizard.go) rather than a normal
 	// chat/pulse turn, and says what the interview is writing (see
@@ -414,6 +486,13 @@ type Context struct {
 	// gateway/pulsar_daily.go's block-context builder, never in a normal
 	// chat/pulse turn. Zero value (false) is normal behavior.
 	PulsarDailyItems bool
+
+	// PulseAlert, when non-nil, marks this turn as a user-defined Pulsar
+	// routine's scheduled pulse and is what alert_me calls to flag it as big
+	// news (catalog.go's "pulsar_alert" Requires case). Wired only by
+	// gateway/turn_context.go for a turn carrying a routine id — never a
+	// Pulsar Daily block, a retry, or a normal chat. nil is normal behavior.
+	PulseAlert func(reason string) error
 
 	// DisabledTools is the settings panel's per-tool on/off list (see
 	// gateway.DisabledToolsFromStore) — a tool named here is excluded
@@ -523,7 +602,7 @@ type Context struct {
 	// nearby_search calls during this turn, so the gateway can attach
 	// them to the final answer once the model replies. citationsMu guards
 	// it — agent.Run dispatches every tool call from one model turn
-	// concurrently (see dispatchToolCallsConcurrently), so two handlers
+	// concurrently (see Nova's parallel tool dispatch, agent/nova_tools.go), so two handlers
 	// can call AddCitation at the same instant.
 	citationsMu sync.Mutex
 	Citations   []Citation
@@ -577,13 +656,22 @@ type Context struct {
 	evidenceMu sync.Mutex
 	evidence   map[string][]string
 
-	// jevCostMu/jevCostUSD track this turn's own running Jev spend,
+	// pageStats records what web_read measured from each URL's *full* extracted
+	// text at fetch time — a reading list (`readings` block) shows the reader a
+	// real length, so the number must come from the page itself, never from what
+	// the summarizing filter handed the model. See AddPageStats/
+	// PageStatsForURL and tools/page_stats.go. Same parallel-tool-dispatch
+	// concurrency shape as evidence, so its own mutex.
+	pageStatsMu sync.Mutex
+	pageStats   map[string]PageStats
+
+	// decisionsCostMu/decisionsCostUSD track this turn's own running decisions spend,
 	// separately from ExtraCostUSD (which mixes in every other tool's
-	// extra LLM spend too) — see AddJevCost/JevSpentThisTurn. This is what
+	// extra LLM spend too) — see AddDecisionsCost/DecisionsSpentThisTurn. This is what
 	// compare_sources checks against the $0.01/turn cap before firing
-	// another call, not ExtraCostUSD, which isn't Jev-specific.
-	jevCostMu  sync.Mutex
-	jevCostUSD float64
+	// another call, not ExtraCostUSD, which isn't decisions-specific.
+	decisionsCostMu  sync.Mutex
+	decisionsCostUSD float64
 
 	// Chart holds this turn's chart, if any tool produced one (see
 	// ChartSpec) — today, only weather.go's deterministic "range" chart
@@ -631,6 +719,15 @@ type Context struct {
 	// dispatch reason WizardFinal's mutex exists.
 	dailyItemsFinalMu sync.Mutex
 	DailyItemsFinal   *DailyItemsFinal
+
+	// TrailClassification, once set, tells agent.Run to end the turn the
+	// same way DailyItemsFinal does — see record_classification.go and
+	// ApproachRun above. Only ever populated on an Approach run, since
+	// record_classification is never offered otherwise.
+	// trailClassificationMu guards it for the same concurrent-dispatch
+	// reason dailyItemsFinalMu exists.
+	trailClassificationMu sync.Mutex
+	TrailClassification   *TrailClassification
 
 	// PendingImageMessages accumulates synthetic "user" messages carrying a
 	// real image (view_image's "see" mode — see llm.ChatMessage.ImageURLs)
@@ -684,21 +781,54 @@ func (c *Context) AddCost(usd float64) {
 	c.ExtraCostUSD += usd
 }
 
-// AddJevCost records real Jev spend against this turn's own running total
-// and returns the new total — see jevCostUSD's doc comment for why this is
+// AddDecisionsCost records real decisions spend against this turn's own running total
+// and returns the new total — see decisionsCostUSD's doc comment for why this is
 // separate from AddCost/ExtraCostUSD. Safe to call concurrently.
-func (c *Context) AddJevCost(usd float64) float64 {
-	c.jevCostMu.Lock()
-	defer c.jevCostMu.Unlock()
-	c.jevCostUSD += usd
-	return c.jevCostUSD
+func (c *Context) AddDecisionsCost(usd float64) float64 {
+	c.decisionsCostMu.Lock()
+	defer c.decisionsCostMu.Unlock()
+	c.decisionsCostUSD += usd
+	return c.decisionsCostUSD
 }
 
-// JevSpentThisTurn returns this turn's running Jev spend so far — checked
+// DecisionsSpentThisTurn returns this turn's running decisions spend so far — checked
 // against the per-turn cap before firing another call. Safe to call
 // concurrently.
-func (c *Context) JevSpentThisTurn() float64 {
-	c.jevCostMu.Lock()
-	defer c.jevCostMu.Unlock()
-	return c.jevCostUSD
+func (c *Context) DecisionsSpentThisTurn() float64 {
+	c.decisionsCostMu.Lock()
+	defer c.decisionsCostMu.Unlock()
+	return c.decisionsCostUSD
+}
+
+// CompleteFunc runs one plain, no-tools model call and returns its text and
+// cost in the currency the turn totals use (retail list cost, never allowance
+// dollars — routing.ListCost), so a caller feeds it straight into AddCost.
+type CompleteFunc func(ctx context.Context, messages []llm.ChatMessage) (text string, costUSD float64, err error)
+
+// CompleteFromClient adapts a raw chat client to CompleteFunc: the direct
+// (unrouted) call every side call made before routing, kept for contexts that
+// have no router.
+func CompleteFromClient(client llm.ChatClient) CompleteFunc {
+	return func(ctx context.Context, messages []llm.ChatMessage) (string, float64, error) {
+		resp, err := client.ChatCompletionStreaming(ctx, messages, func(string) {}, nil)
+		if err != nil {
+			return "", 0, err
+		}
+		return resp.Content, resp.CostUSD, nil
+	}
+}
+
+// CompleteFunc returns the routed completion when this context was wired for
+// one, otherwise the direct client. Never nil-panics for an unwired context
+// that still has an LLM; a context with neither returns a func that errors.
+func (c *Context) CompleteFunc() CompleteFunc {
+	if c.Complete != nil {
+		return c.Complete
+	}
+	if c.LLM != nil {
+		return CompleteFromClient(c.LLM)
+	}
+	return func(context.Context, []llm.ChatMessage) (string, float64, error) {
+		return "", 0, errors.New("no model client configured")
+	}
 }

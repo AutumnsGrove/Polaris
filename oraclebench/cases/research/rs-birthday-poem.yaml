@@ -1,0 +1,12 @@
+id: rs-birthday-poem
+track: research
+rationale: >-
+  Writing help, no facts needed. research=no ("writing help, brainstorming"). task=write bonus.
+state:
+  latest: "Please write a short, funny poem for my sister's 30th birthday. She loves cats and hates Mondays."
+expect:
+  research: {answer: "no"}
+  task: {answer: write}
+quiet:
+  - emotional
+  - private_person

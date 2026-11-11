@@ -187,7 +187,7 @@ type ResearchPlan struct {
 
 // SetPendingQuestion records the turn-ending question, if none has been
 // recorded yet this turn. First-write-wins rather than overwriting or
-// erroring on a second call — dispatchToolCallsConcurrently could in
+// erroring on a second call — Nova's parallel dispatch could in
 // principle run two ask_user_question calls from the same batch in
 // parallel (the model was told not to, but nothing enforces that), and
 // silently keeping whichever one landed first is a safer failure mode

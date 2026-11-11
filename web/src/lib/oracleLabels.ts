@@ -1,4 +1,5 @@
 import { FOCUS_MODES } from './focusModes';
+import { splitContent } from './uiBlocks/split';
 import type { OracleResult } from './types';
 
 // Human labels for the fixed, small option vocabularies prompts.yaml's
@@ -47,6 +48,35 @@ const TASK_LABELS: Record<string, string> = {
 	brainstorm: 'a brainstorm',
 	calculate: 'a calculation'
 };
+
+// The ui check's winners, for the margin note's "shown as a <b>compare</b>
+// block". Fixed and developer-authored, so safe in {@html}; a winner not
+// listed (a future block kind this build doesn't know) is simply not named.
+const UI_BLOCK_LABELS: Record<string, string> = {
+	compare: 'compare',
+	steps: 'steps',
+	choose: 'decision',
+	checklist: 'checklist',
+	timeline: 'timeline',
+	procon: 'pros and cons',
+	facts: 'facts',
+	flow: 'flow',
+	tabs: 'tabs',
+	claim: 'claim check'
+};
+
+/**
+ * True when `answer` actually contains a Prism `ui` block — meaning one
+ * `splitContent` hands to `UiBlocks`, not a ```ui line quoted inside a longer
+ * fence. Shares the renderer's own splitter so the ⓘ note can never claim
+ * "shown as a … block" for a fence that renders as inert code (or miss one the
+ * renderer does show). Cheap enough to call per token: the `includes` guard
+ * skips an answer with no `ui` at all.
+ */
+export function hasUiBlock(answer: string | undefined): boolean {
+	if (!answer || !answer.includes('ui')) return false;
+	return splitContent(answer, false, ['ui']).some((seg) => seg.kind === 'ui');
+}
 
 // The note and offer labels are rendered with {@html} so they can carry
 // <b> emphasis; anything not from a fixed developer-authored set (an
@@ -104,7 +134,11 @@ export function buildOracleNote(
 	oracleResult: OracleResult | undefined,
 	oracleFocusModeSource: string | undefined,
 	appliedFocusMode: string | undefined,
-	previousAppliedFocusMode: string | undefined
+	previousAppliedFocusMode: string | undefined,
+	// The turn's answer text, so the note can say "shown as a compare block"
+	// only when the model actually wrote one — the ui check nudges toward a
+	// block, it can't promise one.
+	answer?: string
 ): string | null {
 	if (!oracleResult) return null;
 
@@ -142,9 +176,30 @@ export function buildOracleNote(
 		}
 	}
 
-	if (readAs && focusClause) return `Read as <b>${readAs}</b> · ${focusClause}`;
-	if (readAs) return `Read as <b>${readAs}</b>`;
-	if (focusClause) return focusClause.charAt(0).toUpperCase() + focusClause.slice(1);
+	// Straight off the result's own flag, not the check outcome: the flag is
+	// only set when the promotion actually took effect (not held back by
+	// clarify/emotional, not overridden by Brief/Safari).
+	const deepClause = oracleResult.deep_research
+		? 'promoted to <b>Deep Research</b>'
+		: oracleResult.deep_research_carried
+			? 'continuing <b>Deep Research</b>'
+			: undefined;
+
+	const ui = oracleResult.checks?.find((c) => c.key === 'ui');
+	const uiClause =
+		ui?.fired && UI_BLOCK_LABELS[ui.winner] && hasUiBlock(answer)
+			? `shown as a <b>${UI_BLOCK_LABELS[ui.winner]}</b> block`
+			: undefined;
+
+	// "Read as X · answered as Y · shown as a Z block", whichever apply, in
+	// that order; the first clause present is capitalized unless it already
+	// starts with "Read as".
+	const parts: string[] = [];
+	if (readAs) parts.push(`Read as <b>${readAs}</b>`);
+	if (focusClause) parts.push(focusClause);
+	if (deepClause) parts.push(deepClause);
+	if (uiClause) parts.push(uiClause);
+	if (parts.length) return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + parts.slice(1).map((p) => ` · ${p}`).join('');
 
 	const recall = oracleResult.checks?.find((c) => c.key === 'recall');
 	if (recall?.fired && recall.winner === 'yes') return 'Refers to <b>a past chat</b>';
@@ -164,10 +219,12 @@ export const CHECK_DISPLAY: { key: string; name: string }[] = [
 	{ key: 'high_stakes', name: 'High stakes' },
 	{ key: 'intent', name: 'Topic' },
 	{ key: 'research', name: 'Research' },
+	{ key: 'deep_research', name: 'Deep Research' },
 	{ key: 'clarify', name: 'Clarify first' },
 	{ key: 'recall', name: 'Past chats' },
 	{ key: 'task', name: 'Task' },
 	{ key: 'format', name: 'Format' },
+	{ key: 'ui', name: 'Visual block' },
 	{ key: 'depth', name: 'Depth' },
 	{ key: 'recency', name: 'Freshness' },
 	{ key: 'source_type', name: 'Sources' },
@@ -224,6 +281,7 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
 		datetime: 'Time'
 	},
 	research: { yes: 'Needed', no: 'Not needed' },
+	deep_research: { yes: 'Deep question', no: 'Normal' },
 	clarify: { yes: 'Yes', no: 'No' },
 	recall: { yes: 'Yes', no: 'No' },
 	task: {
@@ -246,6 +304,19 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
 		prose: 'Prose',
 		code: 'Code',
 		timeline: 'Timeline'
+	},
+	ui: {
+		none: 'None',
+		compare: 'Compare',
+		steps: 'Steps',
+		choose: 'Decision',
+		checklist: 'Checklist',
+		timeline: 'Timeline',
+		procon: 'Pros and cons',
+		facts: 'Facts',
+		flow: 'Flow',
+		tabs: 'Tabs',
+		claim: 'Claim check'
 	},
 	depth: { standard: 'Standard', quick: 'Quick', thorough: 'Thorough' },
 	recency: { evergreen: 'Evergreen', recent: 'Recent', breaking: 'Breaking' },
@@ -274,6 +345,7 @@ export function optionLabel(checkKey: string, option: string): string {
 // injected guidance into this turn's system prompt or it didn't).
 export function checkStateLabel(checkKey: string, fired: boolean): string {
 	if (checkKey === 'focus') return fired ? 'Set' : 'Not set';
+	if (checkKey === 'deep_research') return fired ? 'Promoted' : 'Quiet';
 	return fired ? 'Nudged' : 'Quiet';
 }
 

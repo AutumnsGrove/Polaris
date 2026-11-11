@@ -1,0 +1,13 @@
+id: dr-single-fact-capital
+track: deep_research
+rationale: >-
+  A single fact. The no option names it exactly ("a single fact, a focused question"); promoting
+  this to Deep Research would burn sub-agent money for nothing, which is why a false yes is
+  weighted so heavily.
+state:
+  latest: "What is the capital of Australia?"
+expect:
+  deep_research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,11 @@
+id: st-creatine-cognition-research
+track: source_type
+rationale: >-
+  "What does the research show" asks for the study evidence itself: academic (peer-reviewed
+  papers over news coverage).
+state:
+  latest: "What does the research actually show about creatine supplementation and cognitive performance? Are there any meta-analyses?"
+expect:
+  source_type: {answer: academic}
+quiet:
+  - emotional

@@ -1,0 +1,13 @@
+id: rs-marathon-world-record
+track: research
+rationale: >-
+  Trap: a record feels like a fixed historical fact, but records fall and a remembered time can
+  be superseded. research=yes (statistics easy to get subtly wrong from memory). A false "no"
+  would confidently state a stale time.
+state:
+  latest: "What is the current world record for the men's marathon, and who holds it?"
+expect:
+  research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

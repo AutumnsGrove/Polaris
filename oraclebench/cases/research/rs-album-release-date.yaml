@@ -1,0 +1,14 @@
+id: rs-album-release-date
+track: research
+rationale: >-
+  Release-date lookup, lowercase and clipped. research=yes (release dates are named in the option
+  description; an upcoming date can also still move). intent=event is the "when does X come out"
+  bucket, music is the defensible alternative.
+state:
+  latest: "when does the next taylor swift album drop"
+expect:
+  research: {answer: "yes"}
+  intent: {answer: event, accept: [event, music]}
+quiet:
+  - emotional
+  - private_person

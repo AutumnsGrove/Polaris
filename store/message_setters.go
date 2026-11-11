@@ -128,6 +128,16 @@ func (s *Store) SetMessageAppliedModel(messageID int64, model string) error {
 	return err
 }
 
+// SetMessageProvider records the backend that actually served the turn —
+// see the schema comment above messages.provider. Same post-hoc-UPDATE
+// shape as SetMessageAppliedModel: the serving backend is only known once
+// agent.Run returns. Unlike applied_model (what was requested), a failover
+// shows up here.
+func (s *Store) SetMessageProvider(messageID int64, provider string) error {
+	_, err := s.db.Exec(`UPDATE messages SET provider = ? WHERE id = ?`, provider, messageID)
+	return err
+}
+
 // SetMessageTurnStats records the answer-stats fields the Oracle mode
 // turn-info sheet shows regardless of whether Oracle itself is on — same
 // post-hoc-UPDATE shape as SetMessageDuration, since none of these are

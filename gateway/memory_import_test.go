@@ -18,7 +18,7 @@ func textSSEBody(content string) string {
 		`data: {"choices":[{"delta":{"content":` + mustJSON(content) + `}}]}`,
 		`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`,
 		`data: [DONE]`,
-	}, "\n") + "\n"
+	}, "\n\n") + "\n\n"
 }
 
 func mustJSON(s string) string {

@@ -1,0 +1,11 @@
+id: pr-iphone-so-much-better
+track: premise
+rationale: >-
+  Textbook "why is X so much better than Y": presupposes the answer. premise=yes per the check
+  description.
+state:
+  latest: "why is the iphone so much better than android"
+expect:
+  premise: {answer: "yes"}
+quiet:
+  - emotional

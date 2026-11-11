@@ -1,0 +1,14 @@
+id: hs-first-ipo-trivia
+track: high_stakes
+rationale: >-
+  Financial trivia versus a money decision. This asks a historical fact about markets, with no
+  investing, debt, or purchase decision attached; a wrong answer costs nothing. High_stakes
+  none. Research "yes" because it is a checkable historical fact.
+state:
+  latest: "what was the first company ever to do an ipo"
+expect:
+  high_stakes: {answer: "none"}
+  research: {answer: "yes", accept: ["yes", "no"]}
+quiet:
+  - emotional
+  - private_person

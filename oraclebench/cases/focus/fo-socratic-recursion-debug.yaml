@@ -1,0 +1,11 @@
+id: fo-socratic-recursion-debug
+track: focus
+rationale: >-
+  Phone-typed request to be asked questions rather than handed the fix, on a debugging problem.
+  `socratic` because the person explicitly wants to work it out themselves.
+state:
+  latest: "my recursion never stops and i wanna figure out why myself. ask me questions instead of just fixing it"
+expect:
+  focus: {answer: socratic}
+quiet:
+  - emotional

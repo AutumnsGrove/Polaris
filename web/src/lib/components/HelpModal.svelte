@@ -26,6 +26,11 @@
 			detail: 'A folder of conversations that share instructions and reference files.'
 		},
 		{
+			name: 'OpenCode Go',
+			means: 'The subscription DeepSeek runs on',
+			detail: 'Chat traffic can bill against an OpenCode Go allowance instead of OpenRouter credits, per model. `polaris providers status` shows what goes where.'
+		},
+		{
 			name: 'Constellation',
 			means: 'What it knows about you',
 			detail: 'An auto-built personal library of short facts, learned from your chats. Optional.'
@@ -51,6 +56,11 @@
 			detail: 'A saved question that runs on a schedule and tells you only what’s new.'
 		},
 		{
+			name: 'Big news',
+			means: 'Important-run flag',
+			detail: 'A Pulsar run can flag itself when it finds something worth seeing first; it shows a bell and the reason.'
+		},
+		{
 			name: 'The Daily',
 			means: 'Your morning newspaper',
 			detail: 'One edition a day: weather, headlines, a quote, and any topics you add.'
@@ -61,6 +71,23 @@
 			detail: 'Reads each message first and quietly adjusts how it’s answered. You can undo it.'
 		},
 		{
+			name: 'Comet',
+			means: 'Monthly retrospective',
+			detail:
+				'One page a month looking back at what you asked, searched, and learned — with charts of where your attention went.'
+		},
+		{
+			name: 'Trails',
+			means: 'Comet’s per-chat summaries',
+			detail: 'One short classification (topic, mood, intent, resolved) per conversation, built once a month.'
+		},
+		{
+			name: 'Prism',
+			means: 'Immersive UI',
+			detail:
+				'Lets an answer lay itself out — a comparison, a step rail, a timeline, a checklist, tabs, a fact-check card, a callout and more — whenever structure scans better than plain text. Set how often in Settings.'
+		},
+		{
 			name: 'Ghost thread',
 			means: 'Incognito chat',
 			detail: 'Leaves no trace: no memory, hidden from the sidebar, deleted when it ends.'
@@ -69,6 +96,13 @@
 			name: 'Memory',
 			means: 'Things it remembers',
 			detail: 'Short facts and preferences carried between conversations. Editable in Settings.'
+		},
+		{
+			name: 'Semantic index',
+			means: 'Search by meaning',
+			detail:
+				'Chat and star search understand what you meant, not just the words you typed. Built automatically; ' +
+				'incognito threads are never included.'
 		}
 	];
 </script>

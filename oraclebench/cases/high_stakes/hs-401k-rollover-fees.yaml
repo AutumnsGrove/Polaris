@@ -1,0 +1,9 @@
+id: hs-401k-rollover-fees
+track: high_stakes
+rationale: >-
+  Rolling an old 401k into an IRA: investing plus tax consequences of a mistaken rollover.
+  Clear financial positive.
+state:
+  latest: "I recently left my job and have $40k sitting in my old 401k. How do I roll it over without getting hit with taxes or penalties?"
+expect:
+  high_stakes: {answer: financial}

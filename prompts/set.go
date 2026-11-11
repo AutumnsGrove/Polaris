@@ -136,6 +136,17 @@ type Set struct {
 		DescribeImage string `yaml:"describe_image"`
 	} `yaml:"vision"`
 
+	// Comet backs Comet, the monthly retrospective (docs/plans/comet.md).
+	// ApproachSystem is the classifier's whole system prompt — read one past
+	// conversation and record topic/mood/intent/resolved — and has exactly
+	// two %s verbs (the live topic and mood vocabularies already in use).
+	// TrendsSystem backs the one-shot spike/fade synthesis in
+	// gateway/comet_generate.go, which forces a record_trends tool call.
+	Comet struct {
+		ApproachSystem string `yaml:"approach_system"`
+		TrendsSystem   string `yaml:"trends_system"`
+	} `yaml:"comet"`
+
 	// Weaver is Constellation's own agent (docs/plans/constellation.md) —
 	// reads one thread and decides what belongs in the person's stars
 	// library. Sibling to PulsarDaily above, not nested under it: Weaver is
@@ -190,7 +201,7 @@ type Set struct {
 	} `yaml:"weaver"`
 
 	// Oracle backs Oracle mode (docs/plans/oracle-mode.md, issue #122) —
-	// gateway/oracle.go fires every enabled Checks entry as one Jev
+	// gateway/oracle.go fires every enabled Checks entry as one decisions
 	// AskChoice call, applies each answer's threshold/focus rules, and
 	// folds whatever fired into Section via {items}.
 	Oracle struct {
@@ -199,11 +210,11 @@ type Set struct {
 		// paragraph — see gateway/oracle.go.
 		Section string `yaml:"section"`
 		// QuestionPreamble is prepended to every check's own Instructions
-		// before it's sent to Jev; {state} isn't substituted here (that's
-		// Jev's `state` request field, built separately) — this is purely
+		// before it's sent to the decision model; {state} isn't substituted here (that's
+		// the request's `state` field, built separately) — this is purely
 		// the shared framing text.
 		QuestionPreamble string `yaml:"question_preamble"`
-		// LinkNudge is the has_url detector's injection — not a Jev
+		// LinkNudge is the has_url detector's injection — not a decision-model
 		// question (a regex in gateway/oracle.go finds pasted links), so
 		// it has no Options/threshold, just the text folded into Section.
 		LinkNudge string                 `yaml:"link_nudge"`
@@ -214,6 +225,17 @@ type Set struct {
 		// request time from the store's field list instead.
 		Chips map[string]OracleChip `yaml:"chips"`
 	} `yaml:"oracle"`
+
+	// UI is Intelligent UI's base prompt fragment (docs/plans/intelligent-
+	// ui.md): the `ui` fence grammar the assistant is taught whenever the
+	// Visuals dial isn't Off. Base is the grammar; LowBar/NormalBar are the one
+	// sentence that sets how readily to reach for a block, picked by the dial.
+	// This is the floor that has to work with Oracle off or timed out.
+	UI struct {
+		Base      string `yaml:"base"`
+		LowBar    string `yaml:"low_bar"`
+		NormalBar string `yaml:"normal_bar"`
+	} `yaml:"ui"`
 }
 
 // OracleCheck is one entry under oracle.checks — see docs/plans/

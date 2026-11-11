@@ -1,0 +1,14 @@
+id: rs-last-night-score
+track: research
+rationale: >-
+  A result from last night: unambiguously needs live data. research=yes, and a false "no" would
+  have the model guess a score. intent=sports (score/result).
+state:
+  latest: "did the celtics win last night"
+expect:
+  research: {answer: "yes"}
+  intent: {answer: sports}
+  recency: {answer: breaking}
+quiet:
+  - emotional
+  - private_person

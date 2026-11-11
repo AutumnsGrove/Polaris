@@ -1,0 +1,11 @@
+id: pr-hypothetical-cheese-moon
+track: premise
+rationale: >-
+  The false premise (moon is cheese) is explicitly framed as a hypothetical, so nothing is
+  being assumed true. premise=no.
+state:
+  latest: "hypothetically if the moon really was made of cheese how long would it take everyone on earth to eat it"
+expect:
+  premise: {answer: "no"}
+quiet:
+  - emotional

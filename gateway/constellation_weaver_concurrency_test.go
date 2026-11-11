@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 // TestWeaverToolClosures_SeenStars_ConcurrentAccess reproduces the data race
-// on seenStars in weaverToolClosures: agent.Run's dispatchToolCallsConcurrently
+// on seenStars in weaverToolClosures: agent.Run's parallel tool dispatch
 // fans out every tool call in one model turn across goroutines (parallel_tool_calls
 // is requested as true — see llm/client.go), so two Weaver tool calls batched
 // in the same turn (e.g. two search_stars, or search_stars + read_star) hit
@@ -30,7 +31,7 @@ func TestWeaverToolClosures_SeenStars_ConcurrentAccess(t *testing.T) {
 		ids = append(ids, id)
 	}
 
-	search, read, _, _, _ := weaverToolClosures(db, "thread-1")
+	search, read, _, _, _ := weaverToolClosures(db, "thread-2", nil, context.Background())
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {

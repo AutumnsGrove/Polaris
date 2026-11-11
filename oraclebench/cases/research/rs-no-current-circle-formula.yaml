@@ -1,0 +1,12 @@
+id: rs-no-current-circle-formula
+track: research
+rationale: >-
+  Trap: the words "current" and "up to date" are current-facts cues, but the area of a circle is
+  a mathematical constant of the world, so research=no. A false "yes" is merely wasteful here.
+state:
+  latest: "What is the current, up-to-date formula for the area of a circle?"
+expect:
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

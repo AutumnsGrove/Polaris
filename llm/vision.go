@@ -73,10 +73,7 @@ type visionResponse struct {
 // focus rather than replacing the base prompt — resolveAttachment's
 // upload-time call always passes "".
 func (c *Client) DescribeImage(ctx context.Context, imageBase64, mimeType, instructions string) (description string, costUSD float64, err error) {
-	prompt := prompts.Get().Vision.DescribeImage
-	if instructions != "" {
-		prompt = fmt.Sprintf("%s\n\nFocus specifically on: %s", prompt, instructions)
-	}
+	prompt := DescribePrompt(instructions)
 	reqBody := visionRequest{
 		Model: c.model,
 		Messages: []visionMessage{
@@ -140,4 +137,26 @@ func (c *Client) DescribeImage(ctx context.Context, imageBase64, mimeType, instr
 		costUSD = parsed.Usage.Cost
 	}
 	return parsed.Choices[0].Message.Content, costUSD, nil
+}
+
+// DescribePrompt is the text half of a describe-image request: the base
+// vision.describe_image prompt, plus an explicit focus when instructions is
+// non-empty. Shared by Client.DescribeImage and the routed describer in
+// gateway, so the two paths cannot drift on what they ask the model.
+func DescribePrompt(instructions string) string {
+	prompt := prompts.Get().Vision.DescribeImage
+	if instructions != "" {
+		prompt = fmt.Sprintf("%s\n\nFocus specifically on: %s", prompt, instructions)
+	}
+	return prompt
+}
+
+// DescribeMessages is the whole describe-image conversation: one user message
+// carrying the prompt and the image as a data URL.
+func DescribeMessages(imageBase64, mimeType, instructions string) []ChatMessage {
+	return []ChatMessage{{
+		Role:      "user",
+		Content:   DescribePrompt(instructions),
+		ImageURLs: []string{fmt.Sprintf("data:%s;base64,%s", mimeType, imageBase64)},
+	}}
 }

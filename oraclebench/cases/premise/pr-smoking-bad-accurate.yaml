@@ -1,0 +1,11 @@
+id: pr-smoking-bad-accurate
+track: premise
+rationale: >-
+  Sounds loaded ("so bad for you") but the assumption is well established. Near-miss that
+  catches over-firing on strongly worded but accurate premises. premise=no.
+state:
+  latest: "why is smoking so bad for your lungs"
+expect:
+  premise: {answer: "no"}
+quiet:
+  - emotional

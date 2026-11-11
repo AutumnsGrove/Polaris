@@ -56,7 +56,7 @@
 		{/if}
 	</div>
 	<div class="header-right">
-		{#if appState.turns.length === 0 && !isWeaverThread}
+		{#if appState.turns.length === 0 && !appState.threadLoading && !isWeaverThread}
 			<!-- Homepage only — gated on turns.length, not
 			     !appState.currentThreadId: a ghost thread DOES get a real
 			     currentThreadId now (see state.svelte.ts's isGhostThread doc
@@ -65,7 +65,10 @@
 			     below both try to render at once for a ghost session's
 			     first turn onward. turns.length is what actually means
 			     "still the empty-composer moment", same as a normal thread.
-			     Also excluded for a Weaver session (issue #94) — ghost
+			     Also suppressed while a thread is opening (threadLoading):
+			     turns.length is 0 during that fetch too, but this is a load
+			     in progress, not the homepage the ghost/Atlas controls are
+			     for. Also excluded for a Weaver session (issue #94) — ghost
 			     mode/model switching are both main-assistant concerns that
 			     don't apply to a tool-driven Weaver turn. -->
 			<button

@@ -27,7 +27,7 @@ func TestNewSubAgentContext_ScopesAndShares(t *testing.T) {
 	base.AddCitation(tools.Citation{Title: "parent", URL: "https://example.com/parent"})
 
 	mock := &llmtest.MockClient{}
-	sub := newSubAgentContext(base, mock)
+	sub := newSubAgentContext(base, mock, tools.SubAgentTask{})
 
 	if sub.SubAgentRole == "" {
 		t.Error("SubAgentRole is empty, want it set for a sub-agent context")

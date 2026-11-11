@@ -117,6 +117,12 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- uses for Atlas threads. Drives the amber unread indicator; meaningless
 	-- for any non-pulsar thread.
 	seen INTEGER NOT NULL DEFAULT 0,
+	-- alert_reason: set when a Pulsar routine's pulse called alert_me to flag
+	-- itself as big news (one short sentence). Empty for every ordinary pulse
+	-- and every non-pulsar thread. Persists after the pulse is opened — the
+	-- pulse list keeps showing why it was flagged; only the unread "alert"
+	-- indicator clears with seen.
+	alert_reason TEXT NOT NULL DEFAULT '',
 	-- compacted_pending_notice/compacted_pending_cost: a one-shot handoff
 	-- between the turn that compacted this thread and the next turn that
 	-- runs on it. Compaction is detached from the triggering turn's own
@@ -233,7 +239,7 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- post-hoc-UPDATE shape as suggestions/cards/chart above — the
 	-- verification pass runs in a detached goroutine after "done" ships,
 	-- so it's never known at AddMessage time. '[]' for user messages and
-	-- for any assistant message with no citations, an unconfigured Jev
+	-- for any assistant message with no citations, an unconfigured decisions
 	-- client, or nothing found supported at/above the confidence
 	-- threshold.
 	verification TEXT NOT NULL DEFAULT '[]',
@@ -307,7 +313,7 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- total cost_usd above, split by what spent it (docs/plans/
 	-- oracle-mode.md's "three-tier cost") — the main answer (plus
 	-- follow-up suggestions and title regen, both part of producing it),
-	-- the per-claim "found in source" pass, and Oracle's own Jev call.
+	-- the per-claim "found in source" pass, and Oracle's own decisions call.
 	-- cost_usd stays their sum, read by every existing cost display; these
 	-- three are additive detail, not a replacement.
 	cost_answer_usd REAL NOT NULL DEFAULT 0,
@@ -323,6 +329,15 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- assistant messages only, 0 elsewhere. Set post-hoc alongside
 	-- ttft_ms/tokens_per_second.
 	tool_call_count INTEGER NOT NULL DEFAULT 0,
+	-- provider: the backend that actually served the message's turn
+	-- ("openrouter" or "opencode-go" — the router's provider names, with
+	-- a hyphen, unlike the config key opencode_go; set via
+	-- SetMessageProvider once agent.Run returns) — the served backend, not the requested one.
+	-- Unlike applied_model (what was requested), a failover shows up
+	-- here and drives the transcript chip. '' for pre-feature rows and
+	-- for user messages. Still blind to OpenRouter's own within-model
+	-- provider fallback, same as applied_model.
+	provider TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -343,7 +358,12 @@ CREATE TABLE IF NOT EXISTS settings (
 -- every tool call/result, turn start/finish/failure, compaction, config
 -- reload, and self-update, persisted here (not just to the log files) so
 -- there's durable evidence of what happened even if the process crashed
--- mid-turn or the log directory was never checked.
+-- mid-turn or the log directory was never checked. Unlike the log files
+-- (90-day retention, see logger.rotatingWriter), events are NEVER pruned on
+-- a timer: a thread's trail lives exactly as long as the thread, cascading
+-- away only when its row is hard-deleted (the ON DELETE CASCADE below).
+-- Thread-less events (startup, self-update, config reload) have no thread to
+-- outlive and simply accumulate.
 CREATE TABLE IF NOT EXISTS events (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	-- thread_id is NULL for events with no single thread to attach to
@@ -368,8 +388,10 @@ CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 -- thread (see image_candidates.go). The model's history keeps the numbered
 -- candidate list from earlier turns, but tools.Context is rebuilt every
 -- turn — without this, "show images 2 and 3" on a follow-up turn cites
--- numbers the server no longer knows. Its own table rather than reading
--- events back: events are pruned after 90 days, threads never are.
+-- numbers the server no longer knows. Its own table rather than
+-- reconstructing from the events audit trail: the pool needs a stable,
+-- indexed (thread_id, num) upsert, which the event log's opaque tool-blob
+-- shape doesn't offer.
 CREATE TABLE IF NOT EXISTS image_candidates (
 	thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
 	num       INTEGER NOT NULL, -- 1-based, the number the model was told
@@ -413,24 +435,29 @@ CREATE TABLE IF NOT EXISTS ghost_usage (
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- jev_usage is a per-call ledger of real Jev (TypeSafe AI) spend — one row
+-- decisions_usage is a per-call ledger of real decision-model spend (Jev by
+-- default, via OpenRouter's Decisions API) — one row
 -- per API call, cost_usd read directly off that call's own response (never
 -- estimated), same shape as ghost_usage above (a per-row ledger with
 -- created_at, not a monthly aggregate) so it can back both a monthly cap
 -- check (SUM WHERE created_at falls in the current calendar month, see
--- JevCostThisMonth) and Stats.VerificationCostUSD's trailing-N-day breakout
+-- DecisionsCostThisMonth) and Stats.VerificationCostUSD's trailing-N-day breakout
 -- (SUM WHERE created_at >= since, matching every other period-filtered stat
 -- in stats.go). That breakout is a transparency slice into money already
 -- counted once via tools.Context.AddCost -> messages.cost_usd — GetStats
 -- must never add this into TotalCostUSD/PeriodCostUSD a second time. See
 -- docs/plans/source-verification-compare-tool.md's cost-tracking section.
-CREATE TABLE IF NOT EXISTS jev_usage (
+-- This table was called jev_usage until issue #184; Open carries an existing
+-- ledger over (renameJevUsageToDecisionsUsage in store.go) BEFORE this runs.
+CREATE TABLE IF NOT EXISTS decisions_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	cost_usd REAL NOT NULL,
-	-- source: "" for verification/compare_sources spend (every row from
-	-- before this column existed), "oracle" for Oracle mode's pre-read
-	-- (issue #125) — lets Stats break the two out separately while the
-	-- monthly cap (JevCostThisMonth) still sums every row.
+	-- source: "" for verification-badge spend (and every row from before
+	-- this column existed, which includes compare_sources calls that can't
+	-- be split out retroactively), "oracle" for Oracle mode's pre-read
+	-- (issue #125), "compare" for compare_sources calls made since issue
+	-- #151 — lets Stats break them out separately while the monthly cap
+	-- (DecisionsCostThisMonth) still sums every row.
 	source TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -453,6 +480,35 @@ CREATE TABLE IF NOT EXISTS aux_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	kind TEXT NOT NULL,
 	cost_usd REAL NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- provider_usage is a per-call ledger of the OpenCode Go subscription
+-- side of spend (docs/plans/multi-provider.md §6) — one row per call that
+-- touched Go, the same shape and the same "record only what completed"
+-- rule as decisions_usage/aux_usage. OpenRouter calls get no row: their
+-- cost already lives in messages.cost_usd/aux_usage.
+--
+-- allowance_usd is plan dollars (what the subscription consumed, including
+-- the peak cost.multipliers — never summed into Stats totals); list_cost_usd
+-- is the same call at retail, the currency the panel's "covered by Go"
+-- headline is denominated in so it adds up with the existing totals.
+-- billing_source is who paid: "go"/"go-plus" (covered), "balance"
+-- (real money — a misconfiguration, see §6.6), "free", "byok".
+-- spilled is 1 when a failover fired mid-call: the failed Go leg's tokens
+-- are folded into the row written under the serving provider, so the split
+-- is approximate — the panel footnotes it instead of presenting exactness.
+CREATE TABLE IF NOT EXISTS provider_usage (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	provider TEXT NOT NULL,
+	model TEXT NOT NULL,
+	allowance_usd REAL NOT NULL,
+	list_cost_usd REAL NOT NULL,
+	billing_source TEXT NOT NULL DEFAULT '',
+	prompt_tokens INTEGER NOT NULL DEFAULT 0,
+	completion_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+	spilled INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -699,8 +755,8 @@ CREATE TABLE IF NOT EXISTS pulsar_routines (
 	-- (see the plan doc) is deliberately just these three shapes.
 	schedule_type TEXT NOT NULL,
 	schedule_params TEXT NOT NULL DEFAULT '',
-	-- time_of_day: "HH:MM", 24-hour, server-local — no timezone handling,
-	-- per the plan doc's single-operator framing.
+	-- time_of_day: "HH:MM", 24-hour, in the zone chosen under Settings > Time zone (server-local if unset),
+	-- (see the tz package).
 	time_of_day TEXT NOT NULL,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	-- last_run_at: NULL means never fired yet. Checked by the scheduler on
@@ -949,6 +1005,50 @@ CREATE TRIGGER IF NOT EXISTS stars_fts_au AFTER UPDATE ON stars BEGIN
 	INSERT INTO stars_fts(rowid, title, summary) VALUES (new.id, new.title, new.summary);
 END;
 
+-- embeddings is the persisted semantic index over messages and stars (see
+-- docs/plans/embeddings.md). One polymorphic table rather than one per
+-- kind, so adding a kind later needs no new table and no new backfill
+-- path.
+--
+-- Deliberately NOT a child of any row via FOREIGN KEY: ref_id points at
+-- either messages.id or stars.id depending on kind, so no single
+-- REFERENCES clause is valid. That means nothing cascades from a deleted
+-- message or star, which is why Store.PurgeIneligibleEmbeddings exists and
+-- runs on the indexer's sweep -- and why ghost threads, whose messages are
+-- hard-deleted on session end, must never be indexed at all (see
+-- MessagesNeedingEmbedding's doc comment, and deleteGhostThreads' in-tx
+-- purge as the second belt). An orphaned vector is recoverable
+-- text-adjacent data for a conversation someone asked to forget.
+--
+-- model+dims are stored per row rather than inferred from config: a model
+-- swap with no recorded provenance degrades to "nothing matches" (see
+-- embed.CosineSimilarity on length mismatch) instead of a detectable
+-- mismatch.
+--
+-- vec is int8-quantized (embed.EncodeInt8) -- 1KB per 1024-dim vector.
+-- content_hash is sha256 of the exact text embedded, and exists for stars
+-- specifically: message content is immutable (only ever INSERTed), but a
+-- star's title/summary/body is merged and edited over time, so a star has
+-- to be re-embedded when its text actually changes rather than on every
+-- write.
+CREATE TABLE IF NOT EXISTS embeddings (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	kind         TEXT NOT NULL,
+	ref_id       INTEGER NOT NULL,
+	model        TEXT NOT NULL,
+	dims         INTEGER NOT NULL,
+	vec          BLOB NOT NULL,
+	content_hash TEXT NOT NULL,
+	created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE (kind, ref_id)
+);
+
+-- Scoped to (model, kind) because every read is "the vectors for this kind
+-- under the model currently configured" -- a partial index would serve a
+-- model-mismatch cleanup pass just as well, but there's exactly one model
+-- at a time in practice.
+CREATE INDEX IF NOT EXISTS embeddings_by_model ON embeddings(model, kind);
+
 -- star_sources backs the "Linked articles" list on Star detail -- a real
 -- table, not a JSON blob, because a thread can contribute to the same star
 -- more than once over time (see "Revisiting a thread" in the plan doc);
@@ -1079,4 +1179,108 @@ CREATE TABLE IF NOT EXISTS star_versions (
 	created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_star_versions_star_id ON star_versions(star_id, version_number);
+
+-- comet_config is Comet's singleton settings row (see docs/plans/comet.md)
+-- -- same shape as pulsar_daily_config/constellation_config: one row (id
+-- fixed to 1), not a per-item table, since there's only ever one Comet.
+CREATE TABLE IF NOT EXISTS comet_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- enabled: the Comet-wide on/off switch, checked by the scheduler
+	-- before any due-check runs at all. Defaults to 0 (off), unlike Pulsar
+	-- Daily's default-on: Comet's first real run is a full month's Approach
+	-- pass (real LLM spend per thread), so it stays off until the operator
+	-- explicitly turns it on, same conservative default Constellation uses.
+	enabled INTEGER NOT NULL DEFAULT 0,
+	-- time_of_day: "HH:MM", 24-hour, server-local -- when on the 1st of a
+	-- month the retrospective for the month that just ended is due. Same
+	-- convention as pulsar_routines/pulsar_daily_config.time_of_day.
+	time_of_day TEXT NOT NULL DEFAULT '06:00',
+	-- model: registry ID (models/models.go) used for both the Approach
+	-- classifier and the spike/fade synthesis pass. Empty means "use
+	-- whatever config.DefaultModel currently resolves to" -- same
+	-- empty-means-inherit pattern constellation_config.model uses.
+	model TEXT NOT NULL DEFAULT '',
+	-- last_generated_at: NULL means never generated. Set only after an
+	-- edition is actually assembled -- the due-check's own baseline, same
+	-- shape as pulsar_daily_config.last_generated_at.
+	last_generated_at DATETIME,
+	-- last_attempt_at: every generation attempt stamps this at the start,
+	-- success or failure. Retry throttling reads it: a failed run must not
+	-- re-fire on the very next once-a-minute tick (a full Approach pass is
+	-- real spend), but it also shouldn't be treated as "done for the month"
+	-- just because it failed -- the due-check combines both columns, see
+	-- gateway/comet_scheduler.go's cometDue.
+	last_attempt_at DATETIME,
+	-- classify_started_at: NULL means no manual classify run is in progress.
+	-- Set at the start of a 'polaris comet classify' run and cleared when it
+	-- finishes (defer on every exit path) -- a DB column, not an in-process
+	-- flag, for the exact reason constellation_config.backfill_started_at
+	-- documents: under Docker the CLI is a separate thin-client process but
+	-- bare-metal 'polaris comet classify' can be a distinct OS process
+	-- against the same SQLite file, and only a DB-visible marker closes that
+	-- race. Treated as stale past the scheduler's own staleness allowance so
+	-- a crashed run can't wedge the scheduler off forever.
+	classify_started_at DATETIME
+);
+
+-- comet_editions holds one assembled edition per period, keyed by a
+-- "YYYY-MM" string for a monthly edition (or "YYYY" for a yearly one,
+-- scaffolded but not yet generated -- see docs/plans/comet.md's "Yearly
+-- cadence"). One JSON blob of rendered blocks rather than a child table,
+-- same reasoning as pulsar_daily_editions.blocks: an edition is always
+-- read/written whole, never queried per-block.
+CREATE TABLE IF NOT EXISTS comet_editions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	period TEXT NOT NULL UNIQUE,
+	-- kind: 'monthly' | 'yearly' -- kept explicit rather than inferred from
+	-- the period string's length so a future cadence can share the table.
+	kind TEXT NOT NULL DEFAULT 'monthly',
+	-- hook: the one free-text editorial sentence the page is allowed
+	-- (masthead only -- see the plan doc's "Explicit scope discipline").
+	hook TEXT NOT NULL DEFAULT '',
+	data TEXT NOT NULL,
+	-- cost_usd: total LLM spend that produced this edition -- the
+	-- spike/fade synthesis call (Approaches' own cost lives on trails, not
+	-- here) -- shown so real generation cost isn't invisible.
+	cost_usd REAL NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- trails is one row per thread per period -- what an Approach classified a
+-- single thread as (see docs/plans/comet.md's "Category breakdown"). Named
+-- for consistency with Comet/Approach: a Trail is what a comet leaves
+-- visible behind it as it passes. topic deliberately reuses the same
+-- category vocabulary stars.category already uses, so Comet doesn't invent
+-- a second taxonomy to reconcile against Constellation's.
+CREATE TABLE IF NOT EXISTS trails (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	-- FK with CASCADE, same as star_sources.thread_id: a ghost thread's
+	-- hard-delete takes its trail with it. A soft-deleted (disabled=1)
+	-- thread keeps its trail -- the research really happened.
+	thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+	period TEXT NOT NULL,
+	topic TEXT NOT NULL DEFAULT '',
+	mood TEXT NOT NULL DEFAULT '',
+	-- intent: "what were you trying to do", one line.
+	intent TEXT NOT NULL DEFAULT '',
+	-- resolved: "did you get your answer" -- yes/no/partial.
+	resolved TEXT NOT NULL DEFAULT '',
+	-- started_at/classified_at: the run lifecycle in the row itself (no
+	-- separate runs table -- a Trail is the run's own record). classified_at
+	-- NULL means the Approach hasn't finished; a row can therefore exist in a
+	-- not-yet-complete state, which is also what lets a retry reuse the same
+	-- (thread_id, period) row instead of duplicating it.
+	started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	classified_at DATETIME,
+	-- needs_retry/error: Constellation's exact failure-and-retry shape (see
+	-- shooting_star_runs) -- a stale sweep marks an abandoned in-flight row
+	-- needs_retry, and eligibility re-selects it.
+	needs_retry INTEGER NOT NULL DEFAULT 0,
+	error TEXT NOT NULL DEFAULT '',
+	cost_usd REAL NOT NULL DEFAULT 0,
+	UNIQUE (thread_id, period)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trails_period ON trails(period);
 `

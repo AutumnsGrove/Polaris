@@ -69,7 +69,7 @@ var showDef = llm.ToolDef{
 				"image_indices": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "integer"},
-					"description": fmt.Sprintf("Numbers of image_search results to display (up to %d) — only the ones worth showing. One renders large, several as a gallery. Pass exactly one of path, url, or image_indices.", showMaxImages),
+					"description": fmt.Sprintf("Numbers of image_search, books, movies or music results to display (up to %d) — only the ones worth showing. One renders large, several as a gallery. Pass exactly one of path, url, or image_indices.", showMaxImages),
 				},
 				"caption": map[string]interface{}{
 					"type":        "string",
@@ -202,6 +202,9 @@ func showCandidateImages(ctx *Context, indices []int, caption, callID string) st
 		}
 		if ctx.Blocklist.Blocked(card.URL) || ctx.Blocklist.Blocked(card.FullImageURL) {
 			return fail(fmt.Sprintf("image %d comes from a blocked source and cannot be shown", n))
+		}
+		if card.ImageURL == "" && card.FullImageURL == "" {
+			return fail(fmt.Sprintf("image %d (%q) has no cover image to show — use highlight (image_index) for it instead", n, card.Title))
 		}
 		images = append(images, card)
 		shown = append(shown, fmt.Sprint(n))

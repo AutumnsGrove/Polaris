@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -132,6 +133,56 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 	}
 }
 
+// dailyRoutedSSEServer answers each request by what it asks for, not by arrival
+// order. Stage A's blocks are concurrent goroutines, so a FIFO hands a given
+// scripted body to whichever request happens to land Nth; and Stage A makes
+// more than one request per block when a block is offered a tool it was not
+// given (on_this_day is not itemized, so a scripted finalize_daily_items call
+// comes back "unknown tool" and the agent asks again). A FIFO therefore shifts
+// by an amount that depends on scheduling: under load the elect_top_story body
+// was consumed inside Stage A and the real ranking call got prose. route
+// receives the offered tool names, the message count, and the last message's
+// text, and returns the SSE body to serve.
+func dailyRoutedSSEServer(t *testing.T, route func(tools []string, msgCount int, last string) string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var req struct {
+			Tools []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+			Messages []struct {
+				Content any `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(raw, &req); err != nil {
+			t.Errorf("fake LLM got a non-JSON body: %v", err)
+		}
+		var names []string
+		for _, tl := range req.Tools {
+			names = append(names, tl.Function.Name)
+		}
+		last := ""
+		if n := len(req.Messages); n > 0 {
+			last = fmt.Sprint(req.Messages[n-1].Content)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, route(names, len(req.Messages), last))
+		w.(http.Flusher).Flush()
+	}))
+}
+
+func hasTool(names []string, want string) bool {
+	for _, n := range names {
+		if n == want {
+			return true
+		}
+	}
+	return false
+}
+
 // TestRunDailyPipeline_ItemizedTopStory covers the per-story expansion
 // path (finalize_daily_items) end to end — a list-shaped block
 // (headlines) that calls the tool instead of replying in prose, wins Top
@@ -143,31 +194,37 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 // elaborated single-item content, while headlines' own regular card
 // still carries all its original Items untouched.
 //
-// All 4 Stage A bodies are identical (the same finalize_daily_items call)
-// rather than one-per-block, deliberately: Stage A's blocks fire as
-// concurrent goroutines against sequencedSSEServer, which assigns bodies
-// by arrival order, not by which logical block asked — the same reason
-// TestRunDailyPipeline_FullFirstDayRun's assertions only check aggregate
-// facts, never "block X definitely got body Y". Making every Stage A
-// slot serve the same scripted response sidesteps that race instead of
-// fighting it: quote (a plain no-tools pick call) just gets empty content
-// from a tool-call-shaped body it doesn't know how to parse, harmless
-// since quote's actual content is never asserted here.
+// Requests are answered by content (dailyRoutedSSEServer), not by order: an
+// earlier version served identical bodies for every Stage A slot from a FIFO,
+// believing that sidestepped the concurrency, but Stage A makes extra
+// follow-up requests (on_this_day is not itemized) that shifted the FIFO by a
+// scheduling-dependent amount, so under load the elect_top_story body never
+// reached the ranking call (8/60 failures under contention). Passing runs were
+// only passing through the "ranking answered in prose, default to the first
+// candidate" fallback; this version actually exercises the election.
 func TestRunDailyPipeline_ItemizedTopStory(t *testing.T) {
 	itemsArgs := `{"items":[` +
 		`{"title":"Nvidia buys Hugging Face","summary":"Nvidia announced a $13B acquisition of the open-weight hosting platform.","source":"TechCrunch","url":"https://techcrunch.com/nvidia-hf"},` +
 		`{"title":"New open-weight model ships","summary":"A rival lab shipped a new open-weight model with strong benchmark gains.","source":"The Verge","url":"https://theverge.com/new-model"}` +
 		`]}`
 	itemsBody := toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"finalize_daily_items","arguments":` + fmt.Sprintf("%q", itemsArgs) + `}}`)
-	bodies := []string{
-		itemsBody, // Stage A: quote (pick — tool call ignored, ends up with empty content, unasserted)
-		itemsBody, // Stage A: on_this_day (research, itemized)
-		itemsBody, // Stage A: headlines (research, itemized)
-		itemsBody, // Stage A: trending (research, itemized)
-		toolCallSSEBody(`{"id":"call_2","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"headlines\",\"reasoning\":\"The Nvidia acquisition is the bigger development\"}"}}`), // Stage B
-		plainSSEBody("Deeper dive: the Nvidia acquisition includes board seats and a multi-year compute commitment."),                                                                                              // Stage C, elaborating item[0] only
-	}
-	srv := sequencedSSEServer(t, bodies)
+	electBody := toolCallSSEBody(`{"id":"call_2","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"headlines\",\"reasoning\":\"The Nvidia acquisition is the bigger development\"}"}}`)
+	deeperBody := plainSSEBody("Deeper dive: the Nvidia acquisition includes board seats and a multi-year compute commitment.")
+	otherBody := plainSSEBody("A short plain-prose block answer.")
+	srv := dailyRoutedSSEServer(t, func(tools []string, msgCount int, last string) string {
+		switch {
+		case hasTool(tools, "elect_top_story"):
+			return electBody // Stage B: the ranking call, the only one offered this tool
+		case strings.Contains(last, "lead story for a personal daily digest"):
+			return deeperBody // Stage C, elaborating item[0] only
+		case msgCount == 2 && hasTool(tools, "finalize_daily_items"):
+			return itemsBody // Stage A: the itemized research blocks (headlines, trending)
+		default:
+			// quote (a no-tools pick), on_this_day (not itemized), and any
+			// follow-up turn after a tool result: plain prose.
+			return otherBody
+		}
+	})
 	defer srv.Close()
 
 	h := newTestHarness(t, srv.URL)
@@ -531,7 +588,7 @@ func TestHandleGenerateDailyNow(t *testing.T) {
 // prose replies with toolCallSSEBody replies across one fake model's
 // sequence of stage calls.
 func plainSSEBody(content string) string {
-	return fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n", content) +
-		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"cost\":0.0001}}\n" +
-		"data: [DONE]\n"
+	return fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", content) +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"cost\":0.0001}}\n\n" +
+		"data: [DONE]\n\n"
 }

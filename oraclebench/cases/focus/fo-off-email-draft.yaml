@@ -1,0 +1,12 @@
+id: fo-off-email-draft
+track: focus
+rationale: >-
+  A writing request. No focus mode applies; `off`. Task write.
+state:
+  latest: "help me write a polite email asking my manager if i can take friday off"
+expect:
+  focus: {answer: "off"}
+  task: {answer: write}
+quiet:
+  - emotional
+  - high_stakes

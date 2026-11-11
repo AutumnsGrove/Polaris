@@ -1,0 +1,11 @@
+id: fo-followup-shopper-price
+track: focus
+rationale: >-
+  Follow-up with no product named: "which one is cheaper" only resolves through the previous
+  message about robot vacuums. shopper via state.previous.
+state:
+  previous: "I am looking at robot vacuums, specifically the Roomba j7 versus the Roborock Q Revo."
+  latest: "Which one is cheaper right now?"
+expect:
+  focus: {answer: shopper}
+  research: {answer: "yes"}

@@ -1,0 +1,12 @@
+id: st-official-real-id
+track: source_type
+rationale: >-
+  Whether a REAL ID is required to board a domestic flight is a federal rule (DHS/TSA), so the
+  agency's own page is the authority: official. Dates matter, which is why the inject asks for the
+  revision date.
+state:
+  latest: "Do I need a REAL ID to fly domestically, and what is the current enforcement date?"
+expect:
+  source_type: {answer: official}
+quiet:
+  - emotional

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"polaris/llm"
+	"polaris/routing"
 )
 
 // persistAnswer writes the assistant message and every post-hoc field that
@@ -75,14 +76,27 @@ func (t *turnRun) persistAnswer() bool {
 		log.Warn("failed to record applied model", "err", err)
 		t.logEvent(t.storageThreadID, "warn", "turn", "recording applied model failed", map[string]interface{}{"err": err.Error()}, t.turnID)
 	}
+	// Provider attribution (docs/plans/multi-provider.md §6):
+	// messages.provider records the backend that actually served the
+	// turn (the last call's provider — a failover shows up here, unlike
+	// applied_model above which records what was requested), and
+	// provider_usage gets one row per call that touched Go. A call
+	// "touched Go" when usage.opencode was present — billing_source set,
+	// or either dollar figure nonzero (a free-model call still carries a
+	// real list price). A spilled turn's only recorded call is the
+	// serving one with combined usage, so its row is flagged spilled:
+	// the failed Go leg's tokens folded into it, approximate rather
+	// than exact — the panel footnotes it instead of presenting the
+	// split as exact.
+	t.recordProviderUsage()
 
 	// oracleResult.Checks is only non-empty when Oracle actually got a
-	// live Jev answer this turn (RunOracle returns early, before
+	// live decision-model answer this turn (RunOracle returns early, before
 	// appending anything, on every off/unconfigured/error/timeout path)
 	// — persisting only then keeps oracle_result "" for every ordinary
 	// Oracle-off turn, matching its schema comment, rather than storing
 	// an empty-but-marshaled "{}".
-	if len(t.oracleResult.Checks) > 0 {
+	if t.oracleResult.hasContent() {
 		if oracleResultJSON, err := json.Marshal(t.oracleResult); err != nil {
 			log.Warn("failed to marshal oracle result", "err", err)
 		} else if err := t.s.db.SetMessageOracleResult(t.assistantMsgID, string(oracleResultJSON), t.oracleFocusModeSource); err != nil {
@@ -98,8 +112,8 @@ func (t *turnRun) persistAnswer() bool {
 	// Oracle timed out or errored (no checks to persist), but the turn still
 	// carried a focus mode whose provenance the next turn's sticky/retract
 	// logic reads back — losing it here would make an Oracle-set mode look
-	// like a plain default after one Jev hiccup.
-	if len(t.oracleResult.Checks) == 0 && t.oracleFocusModeSource != "" {
+	// like a plain default after one decisions-API hiccup.
+	if !t.oracleResult.hasContent() && t.oracleFocusModeSource != "" {
 		if err := t.s.db.SetMessageFocusModeSource(t.assistantMsgID, t.oracleFocusModeSource); err != nil {
 			log.Warn("failed to record focus mode source", "err", err)
 		}
@@ -168,6 +182,54 @@ func (t *turnRun) persistAnswer() bool {
 	return true
 }
 
+// servingProvider is the backend that actually served the turn (the last
+// completed call's provider) — "" when no call completed. The transcript
+// chip, messages.provider, and the done event all read this one value so
+// they can never disagree about who answered.
+func (t *turnRun) servingProvider() string {
+	calls := t.result.ProviderCalls
+	if len(calls) == 0 {
+		return ""
+	}
+	return calls[len(calls)-1].Provider
+}
+
+// recordProviderUsage persists the turn's provider attribution: the
+// serving backend on the assistant message, plus one provider_usage row
+// per call that touched the Go subscription. See the call-site comment in
+// persistAnswer for the touched-Go and spilled rules.
+func (t *turnRun) recordProviderUsage() {
+	calls := t.result.ProviderCalls
+	serving := t.servingProvider()
+	if serving == "" {
+		return
+	}
+	if err := t.s.db.SetMessageProvider(t.assistantMsgID, serving); err != nil {
+		log.Warn("failed to record serving provider", "err", err)
+		t.logEvent(t.storageThreadID, "warn", "turn", "recording serving provider failed", map[string]interface{}{"err": err.Error()}, t.turnID)
+	}
+	// Spilled when something other than the route's primary answered —
+	// the recorded (combined) usage folds the failed leg's tokens in.
+	spilled := false
+	if t.router != nil {
+		if primary, _, _ := t.router.Primary(t.modelCfg.ID); primary != "" && serving != primary {
+			spilled = true
+		}
+	}
+	for _, pc := range calls {
+		u := pc.Usage
+		if !routing.TouchedGo(u) {
+			continue // never touched Go: OpenRouter calls get no row
+		}
+		if err := t.s.db.LogProviderUsage(routing.OpenCodeGo, t.modelCfg.ID,
+			u.AllowanceUSD, routing.ListCost(u), u.BillingSource,
+			u.PromptTokens, u.CompletionTokens, u.CachedTokens, spilled); err != nil {
+			log.Warn("failed to record provider usage", "err", err)
+			t.logEvent(t.storageThreadID, "warn", "turn", "recording provider usage failed", map[string]interface{}{"err": err.Error()}, t.turnID)
+		}
+	}
+}
+
 // finishTurn logs completion and sends "done" with the turn's totals.
 func (t *turnRun) finishTurn() {
 	// Auto-compact once this thread crosses the configured threshold: the
@@ -178,7 +240,7 @@ func (t *turnRun) finishTurn() {
 	// Decided here, fired in the detached goroutine after "done" below —
 	// see that goroutine for why the call itself no longer runs inline.
 	contextTokens := t.result.ContextTokens
-	t.needsCompaction = t.result.ContextTokens >= t.cfg.ContextWindowTokens
+	t.needsCompaction = t.result.ContextTokens >= t.cfg.CompactionThreshold(t.modelCfg)
 
 	// Total cost added to the thread this turn: the agent's LLM/tool spend
 	// plus any STT cost from a voice memo. Note what is NOT here any more —
@@ -214,7 +276,7 @@ func (t *turnRun) finishTurn() {
 		Citations:          t.result.Citations,
 		Cards:              t.result.Cards,
 		Chart:              t.result.Chart,
-		// Oracle's Jev spend is already on this message/thread in the DB
+		// Oracle's decisions spend is already on this message/thread in the DB
 		// (AddTurnCost above), so the live total must carry it too or the
 		// thread's running cost only catches up on reload.
 		CostUSD:               totalCost + t.oracleResult.CostUSD,
@@ -230,6 +292,7 @@ func (t *turnRun) finishTurn() {
 		OracleFocusModeSource: t.oracleFocusModeSource,
 		AppliedFocusMode:      t.appliedFocusMode,
 		AppliedModel:          t.requestedModel,
+		Provider:              t.servingProvider(),
 		CostAnswerUSD:         totalCost,
 		// CostVerificationUSD deliberately left at its zero value: that
 		// spend isn't known yet (verification runs in a detached goroutine

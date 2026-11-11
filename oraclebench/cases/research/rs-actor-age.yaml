@@ -1,0 +1,14 @@
+id: rs-actor-age
+track: research
+rationale: >-
+  Age of a real, living public figure. The research=yes description explicitly lists "ages" as
+  specific checkable facts easy to get subtly wrong from memory (and it depends on today's date).
+  Trap: it feels like trivia the model "just knows".
+state:
+  latest: "How old is Tom Hanks?"
+expect:
+  research: {answer: "yes"}
+  intent: {answer: person_org, accept: [person_org, film_tv, general]}
+quiet:
+  - emotional
+  - private_person

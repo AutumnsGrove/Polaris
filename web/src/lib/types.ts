@@ -10,6 +10,17 @@ export interface Citation {
 	// comment. Rendered by the source list in place of the numbered index
 	// badge when present.
 	image_url?: string;
+	// True when web_read actually fetched this URL's text this turn, not just
+	// when a search snippet mentioned it. The `readings` Prism block only lists
+	// pages Polaris really opened.
+	opened?: boolean;
+	// Full extracted word count measured at fetch time (before the summarizing
+	// filter and the display window). Rendered as minutes at ~230 wpm. Absent
+	// for a PDF (see pages) or a fetch too unreliable to measure.
+	words?: number;
+	// A PDF's own page count; shown instead of minutes, since only one page's
+	// text was ever extracted.
+	pages?: number;
 	// True when at least one claim citing this URL was checked and found
 	// "found in source" (see VerificationMark, docs/plans/
 	// source-verification-badge.md) — the aggregate mark shown on the
@@ -29,6 +40,11 @@ export interface VerificationMark {
 	claim_index: number;
 	choice: string;
 	confidence: number;
+	// Set only for a link inside a Prism `ui` block, and then it (not
+	// claim_index) says which chip: "<fence>.<block>.<item>.<field>#<n>", built
+	// by components/ui/ and by uiblocks/sites.go. A mark with a locator
+	// never counts toward the prose chips' claim_index matching.
+	locator?: string;
 }
 
 // Mirrors gateway/pulsar_suggest.go's pulsarSuggestResponse — the derived
@@ -77,6 +93,13 @@ export interface OracleResult {
 	// being absent, which means "Oracle had no opinion".
 	focus_cleared?: boolean;
 	no_research_hint?: boolean;
+	// The deep_research check fired "yes" and nothing held it back: this one
+	// turn ran as Deep Research (the multi-agent mode) without the composer
+	// toggle being on.
+	deep_research?: boolean;
+	// Ran as Deep Research only because the previous turn ended on a plan
+	// confirmation; Oracle may be off, in which case this is all the result holds.
+	deep_research_carried?: boolean;
 	injections?: string[];
 	checks?: OracleCheckOutcome[];
 	chips?: OracleChip[];
@@ -202,11 +225,37 @@ export interface ResearchPlan {
 }
 
 export type ServerEvent =
-	| { type: 'thinking'; thread_id?: string; content: string }
-	| { type: 'reasoning'; thread_id?: string; content: string }
+	// Reply to a "ping" ClientMessage — the sidebar's connection heartbeat
+	// consumes this in ws.ts and never forwards it to the app's event switch
+	// (see state.svelte.ts's handleEvent). "pong" is not a synonym for the
+	// WebSocket protocol's own ping/pong frames, which the browser answers
+	// internally and no JS ever sees.
+	| { type: 'pong' }
+	// agent_id (on this and the tool_call/tool_result/commentary variants below)
+	// is set only on a Deep Research sub-agent's events: the timeline files
+	// them under that agent's own 'subagent' item instead of the main list.
+	// See gateway/protocol.go's ServerEvent.AgentID.
+	| { type: 'thinking'; thread_id?: string; content: string; agent_id?: string }
+	| { type: 'reasoning'; thread_id?: string; content: string; agent_id?: string }
+	// Sub-agent lifecycle, keyed by agent_id; call_id is the parent
+	// spawn_researchers call. _start fires for every researcher up front (even
+	// ones still queued behind the concurrency cap); _end carries the report.
+	| { type: 'subagent_start'; thread_id?: string; agent_id: string; call_id?: string; objective: string }
+	| {
+			type: 'subagent_end';
+			thread_id?: string;
+			agent_id: string;
+			call_id?: string;
+			objective?: string;
+			agent_status: 'done' | 'failed';
+			result?: string;
+			citations?: Citation[];
+			cost_usd?: number;
+	  }
 	| {
 			type: 'tool_call';
 			thread_id?: string;
+			agent_id?: string;
 			tool: string;
 			args?: Record<string, unknown>;
 			// Correlates this call to its own tool_result — see
@@ -219,6 +268,7 @@ export type ServerEvent =
 	| {
 			type: 'tool_result';
 			thread_id?: string;
+			agent_id?: string;
 			tool: string;
 			result: string;
 			// web_search's normalized fallback-source key ("searxng" /
@@ -265,7 +315,13 @@ export type ServerEvent =
 	// What the model said before deciding to call a tool (or before an
 	// aborted attempt got discarded) — see gateway/protocol.go's doc
 	// comment on this event type for the full rationale.
-	| { type: 'commentary'; thread_id?: string; content: string }
+	| { type: 'commentary'; thread_id?: string; content: string; agent_id?: string }
+	// A Go attempt hit a limit/refusal and the same call continued on
+	// OpenRouter — see gateway/protocol.go's ServerEvent From/To/Error.
+	// Persisted per turn (unlike cost_update above), so reopened threads
+	// rebuild the transcript chip instead of only the live session
+	// showing it. from/to are router attempt names (opencode-go, openrouter).
+	| { type: 'provider_fallback'; thread_id?: string; from: string; to: string; error?: string }
 	| { type: 'user_message'; thread_id: string; user_message_id: number }
 	| {
 			type: 'done';
@@ -334,6 +390,9 @@ export type ServerEvent =
 			// This turn's requested model id — see
 			// gateway/protocol.go's ServerEvent.AppliedModel doc comment.
 			applied_model?: string;
+			// Backend that served this turn — see gateway/protocol.go's
+			// ServerEvent.Provider. Drives TurnInfoSheet's covered line.
+			provider?: string;
 	  }
 	// Sent once, shortly after 'done' — up to 3 follow-up questions for the
 	// answer that just finished, persisted alongside it (see
@@ -347,7 +406,7 @@ export type ServerEvent =
 	// over this message's own inline citations finishes — see
 	// gateway/protocol.go's "verification" doc comment and
 	// docs/plans/source-verification-badge.md. May never arrive at all
-	// (Jev not configured, every source's budget cap already hit, nothing
+	// (decisions client not configured, every source's budget cap already hit, nothing
 	// found supported) — treat that as a normal, silent outcome. Targets a
 	// specific message, not just "whatever's pending" like 'suggestions'
 	// does, since the user may have already sent another message by the
@@ -424,6 +483,9 @@ export type ClientMessage =
 			// TurnInfoSheet.svelte's "Rerun without Oracle" — see
 			// gateway/protocol.go's ClientMessage.NoOracle doc comment.
 			no_oracle?: boolean;
+			// TurnInfoSheet.svelte's "Rerun as plain text" — see
+			// gateway/protocol.go's ClientMessage.NoVisuals doc comment.
+			no_visuals?: boolean;
 			// Set when the composer's "+" sheet attached one or more files,
 			// each already uploaded via POST /api/upload before this message
 			// is sent — see gateway/attachments.go's resolveAttachments.
@@ -461,7 +523,10 @@ export type ClientMessage =
 	// way the server treats "no answer" as normal and falls back to its
 	// own default, so this should be sent promptly rather than held back
 	// waiting for a "good" answer.
-	| { type: 'location_response'; user_location?: string };
+	| { type: 'location_response'; user_location?: string }
+	// The sidebar's connection heartbeat (ws.ts sends one every 2s while the
+	// socket is open; the server answers 'pong'). Carries nothing.
+	| { type: 'ping' };
 
 // 'off' isn't a selectable mode in the sheet — it's just what focusMode
 // resets to when the active mode is tapped again to turn it off.
@@ -504,6 +569,11 @@ export interface TTSVoice {
 export interface ModelPricing {
 	prompt_per_m: number;
 	completion_per_m: number;
+	// Present only on models whose price steps up once a request's prompt
+	// reaches long_prompt_tokens (the whole request reprices, not the excess).
+	long_prompt_tokens?: number;
+	long_prompt_per_m?: number;
+	long_completion_per_m?: number;
 }
 
 export interface ModelOption {
@@ -511,6 +581,16 @@ export interface ModelOption {
 	name: string;
 	default: boolean;
 	pricing?: ModelPricing;
+	// Context size at which a thread on this model auto-compacts.
+	compaction_tokens?: number;
+	// Effective serving backend from the live routing policy (route.Primary).
+	// Absent on an older backend, which renders no badge instead of guessing.
+	primary?: string;
+	// Subscription monthly allowance for this model; 0/absent = no Go entry.
+	go_monthly_limit_usd?: number;
+	// Polaris's own share of that window this month — the picker's headroom
+	// tint reads this Polaris-only number.
+	polaris_share_allowance_usd?: number;
 }
 
 export interface Thread {
@@ -578,6 +658,9 @@ export interface PulsarPulse {
 	seen: boolean;
 	created_at: string;
 	in_progress: boolean;
+	// Non-empty when the pulse flagged itself as big news (alert_me) — the
+	// one-sentence reason, shown under the title. Empty for an ordinary pulse.
+	alert_reason: string;
 }
 
 // PulsarDailyConfig mirrors store.PulsarDailyConfig's JSON shape — the
@@ -654,6 +737,137 @@ export interface PulsarDailyEdition {
 	// store.PulsarDailyEdition.CostUSD.
 	cost_usd: number;
 	created_at: string;
+}
+
+// CometConfig mirrors store.CometConfig — Comet's singleton settings row.
+// model empty means "use the deployment's default model".
+export interface CometConfig {
+	enabled: boolean;
+	time_of_day: string;
+	model: string;
+	created_at: string;
+	last_generated_at: string | null;
+	last_attempt_at: string | null;
+	classify_started_at: string | null;
+}
+
+// CometStats is one edition's stat row.
+export interface CometStats {
+	turns: number;
+	new_stars: number;
+	searches: number;
+	cost_usd: number;
+}
+
+// CometCategory is one category-breakdown row (count of trails whose topic
+// is this name).
+export interface CometCategory {
+	name: string;
+	count: number;
+}
+
+// CometTrend is one spiked or faded item.
+export interface CometTrend {
+	topic: string;
+	count: number;
+	delta?: string;
+	since?: string;
+}
+
+// CometStar is one entry in the capped new-stars showcase.
+export interface CometStar {
+	id: number;
+	title: string;
+	category: string;
+}
+
+// CometHighlight is one conversation the synthesis pass picked as
+// defining the month.
+export interface CometHighlight {
+	thread_id: string;
+	title: string;
+	topic?: string;
+	why: string;
+}
+
+// CometDayCount is one calendar day's message count, for the heatmap.
+export interface CometDayCount {
+	date: string;
+	count: number;
+}
+
+// CometRhythm is the activity-rhythm block.
+export interface CometRhythm {
+	days: CometDayCount[];
+	active_days: number;
+	days_in_period: number;
+	hours: number[];
+	peak_hour: number;
+	busiest_date: string;
+	busiest_count: number;
+}
+
+// CometToolCount is one user-facing tool's period usage.
+export interface CometToolCount {
+	name: string;
+	count: number;
+}
+
+// CometFirst is a topic explored for the first time this period.
+export interface CometFirst {
+	name: string;
+	count: number;
+}
+
+// CometGrowth is Constellation's month (all zero when Constellation is off).
+export interface CometGrowth {
+	new_stars: number;
+	grown_stars: number;
+	new_links: number;
+	featured?: CometStar;
+}
+
+// CometEditionData mirrors store.CometEditionData — the fixed blocks plus
+// the framing bits. Collections may arrive as null from older editions, so
+// the page always guards them with ?? [].
+export interface CometEditionData {
+	period_label: string;
+	stats: CometStats;
+	categories: CometCategory[];
+	spiked: CometTrend[];
+	faded: CometTrend[];
+	stars: CometStar[];
+	star_total: number;
+	ghost_count: number;
+	highlights: CometHighlight[];
+	rhythm: CometRhythm;
+	tools: CometToolCount[];
+	growth: CometGrowth;
+	unresolved_count: number;
+	firsts: CometFirst[];
+}
+
+// CometEdition mirrors store.CometEdition — one assembled period page.
+export interface CometEdition {
+	period: string;
+	kind: 'monthly' | 'yearly';
+	hook: string;
+	data: CometEditionData;
+	cost_usd: number;
+	created_at: string;
+}
+
+// CometConfigResponse is GET/PUT /api/comet/config — the config row plus
+// the period the scheduler would generate right now.
+export interface CometConfigResponse {
+	config: CometConfig;
+	current_period: string;
+}
+
+// CometPeriodsResponse is GET /api/comet/periods — the edition-nav data.
+export interface CometPeriodsResponse {
+	periods: string[];
+	current_period: string;
 }
 
 // WizardTarget says what a "help me write this" interview is writing —
@@ -755,13 +969,37 @@ export interface StoredEvent {
 
 export type TimelineItem =
 	| { kind: 'thinking'; content: string }
-	| { kind: 'reasoning'; content: string; done: boolean }
+	// A Go attempt spilled to OpenRouter mid-turn: the paid retry the transcript
+	// must never stay silent about (same convention as web_search's "[via X]").
+	| { kind: 'provider_fallback'; from: string; to: string; error?: string }
+	// startedAt (epoch ms) is only set on a live-streamed burst, to drive the
+	// header's ticking "Thinking for Ns"; durationMs is set once it closes
+	// (live) or read back from the persisted row (reopened thread). Rows
+	// persisted before this existed have neither, and just show no stats.
+	| { kind: 'reasoning'; content: string; done: boolean; startedAt?: number; durationMs?: number }
 	| { kind: 'compacted'; summary: string }
 	// What the model said before calling a tool — rendered as real
 	// markdown prose (it's genuine assistant reply text, not private
 	// reasoning), positioned in the timeline between the tool calls that
 	// came before and after it. See ServerEvent's 'commentary' case.
 	| { kind: 'commentary'; content: string }
+	// One Deep Research researcher (a spawn_researchers task): everything it
+	// did — reasoning, tool calls, commentary — lives in its own items list
+	// rather than the main timeline, and result is its final findings report.
+	// Rendered as a collapsible card by SubAgentCard.svelte. Items nest the
+	// same TimelineItem shapes, so the main-timeline reducers apply to them
+	// unchanged (see turnEvents.ts).
+	| {
+			kind: 'subagent';
+			agentId: string;
+			callId?: string;
+			objective: string;
+			status: 'running' | 'done' | 'failed';
+			items: TimelineItem[];
+			result?: string;
+			citations?: Citation[];
+			costUsd?: number;
+	  }
 	| {
 			kind: 'tool';
 			tool: string;
@@ -781,6 +1019,8 @@ export type TimelineItem =
 			// concurrent calls to the same tool can finish out of order.
 			callId?: string;
 	  };
+
+export type SubAgentItem = Extract<TimelineItem, { kind: 'subagent' }>;
 
 export interface ChatTurn {
 	role: 'user' | 'assistant';
@@ -861,6 +1101,9 @@ export interface ChatTurn {
 	// doc comment. Mapped to a display name via appState.models in
 	// TurnInfoSheet.svelte, same lookup ComposerMenu's model picker uses.
 	appliedModel?: string;
+	// Backend that served the turn (openrouter/opencode-go) — unlike appliedModel
+	// (requested), a failover shows up here and drives TurnInfoSheet's covered line.
+	provider?: string;
 	// costAnswer/costVerification/costOracle are costUsd's three-tier split
 	// — see store.Message.CostAnswerUSD's doc comment. Shown even with
 	// Oracle off (verification can run either way).

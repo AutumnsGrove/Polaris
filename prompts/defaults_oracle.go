@@ -43,6 +43,20 @@ func oracleDefaults(d *Set) {
 					"specific fact, in which case search as normal.",
 			},
 		},
+		"deep_research": {
+			Instructions: "Is this a deep, nuanced question that genuinely needs extensive, multi-angle " +
+				"research — many sources compared and cross-checked — rather than one good search? Pick " +
+				"\"no\" unless a thorough investigation would clearly produce a meaningfully better answer " +
+				"than a normal one.",
+			Options: map[string]string{
+				"yes": "Broad, layered, or contested enough that it spans several distinct angles, " +
+					"sub-questions, or bodies of sources (a landscape survey, a multi-factor comparison, a " +
+					"question with competing expert views, an investigation of a complex topic), where an " +
+					"answer from a few searches would be shallow.",
+				"no": "A single fact, a focused question, a quick recommendation, casual conversation, or " +
+					"anything a normal search-and-answer handles well, however interesting it is.",
+			},
+		},
 		"high_stakes": {
 			Instructions: "Would acting on a wrong answer to this message risk someone's health, legal standing, " +
 				"money, or physical safety?",
@@ -109,11 +123,14 @@ func oracleDefaults(d *Set) {
 					"ratings — use it rather than relying on web_search alone, and include those specifics.",
 				"book": "This is about books. Use the books tool for real bibliographic data. If more than one " +
 					"title fits, briefly say how they differ (focus, tone, audience, depth) so the choice is " +
-					"easy, rather than just listing them.",
+					"easy, rather than just listing them. " +
+					"Its results aren't shown automatically — put your picks on screen with highlight (image_index + a short why).",
 				"film_tv": "This is about film or TV. Use the movies tool for real details (year, cast, runtime, " +
-					"where it's streaming if available). If recommending several, say what distinguishes each.",
+					"where it's streaming if available). If recommending several, say what distinguishes each. " +
+					"Its results aren't shown automatically — put your picks on screen with highlight (image_index + a short why).",
 				"music": "This is about music. Use the music tool for real release and artist data. If recommending " +
-					"several, say what distinguishes each.",
+					"several, say what distinguishes each. " +
+					"Its results aren't shown automatically — put your picks on screen with highlight (image_index + a short why).",
 				"product": "This is about a product. Compare real, currently available options with actual prices " +
 					"and the tradeoffs that matter for this use — not a generic feature list.",
 				"weather": "This is about weather. Use the weather tool rather than a web search.",
@@ -188,6 +205,71 @@ func oracleDefaults(d *Set) {
 				"prose":      "This reads best as connected prose, not a bulleted breakdown — explain the reasoning in paragraphs and keep headings and lists out of it.",
 				"code":       "Lead with the code or command in a fenced block, then only as much explanation as it needs.",
 				"timeline":   "Present this in chronological order with dates, so the sequence and the gaps between events are easy to see.",
+			},
+		},
+		// Prism (docs/plans/intelligent-ui.md): would a structured visual block
+		// beat prose? Only the shapes the renderer can draw are offered; each
+		// option's nudge names the block and gives its exemplar line, which is
+		// the just-in-time few-shot that backs up the base prompt's grammar.
+		"ui": {
+			Instructions: "Would a structured visual block serve this message clearly better than ordinary prose? " +
+				"Pick \"none\" unless the answer is really one of these shapes and prose would be harder to scan.",
+			Options: map[string]string{
+				"none":      "Prose, a short list, or code serves this best.",
+				"compare":   "Choosing between specific options across shared attributes.",
+				"steps":     "A procedure where order matters.",
+				"choose":    "The person asks which to pick or what to do, and the best answer depends on their own situation (usage, budget, location, goals), so a few if-then rules serve them better than a table of attributes.",
+				"checklist": "Things to prepare, pack or tick off.",
+				"timeline":  "A sequence of dated events, a history, or a schedule. Not a price, number or trend over time.",
+				"procon":    "The person is weighing a personal decision or asking for the pros and cons of one thing; give arguments for and against. Not a public question where different camps disagree.",
+				"facts":     "An at-a-glance summary of one named thing (a product, place, person or organization).",
+				"flow":      "A process or decision chain where the next step depends on an answer, so it branches, rather than a straight list of steps.",
+				"tabs":      "Parallel versions of one answer (per operating system, per language, per plan) where the reader needs only one of them.",
+				"claim":     "Checking whether one specific claim holds up, with evidence on both sides.",
+				"views":     "A genuinely contested question of fact or policy where credible experts, camps or institutions disagree - present who holds each position. Not a question of taste or a joke, not one true/false claim to check, not a personal decision to weigh up, and not two named products or plans to choose between.",
+				"readings":  "The person wants to learn a topic; give pages to read, in order. Not a best-of list for choosing between things.",
+			},
+			Inject: map[string]string{
+				"compare": "The user is choosing between options. A compare block fits: write one ui fence with " +
+					"{\"c\":\"compare\",\"cols\":[\"A\",\"B\"],\"pick\":0} then one {\"row\":\"Price\",\"v\":[\"...\",\"...\"]} " +
+					"line per attribute, then say which to pick and what would change that. Keep the prose short.",
+				"steps": "This is a procedure where order matters. A steps block fits: write one ui fence with " +
+					"{\"c\":\"steps\",\"title\":\"...\"} then one {\"i\":\"Step\",\"d\":\"detail\",\"t\":\"2 min\"} line per step " +
+					"(leave out t unless it is a real duration), and say up front what is needed first.",
+				"choose": "The right answer depends on the person's situation. A choose block fits: write one ui fence " +
+					"with {\"c\":\"choose\",\"title\":\"...\"} then one {\"if\":\"their situation\",\"then\":\"the pick\"} line " +
+					"per case, then say what you would need to know to narrow it down. Keep the prose short.",
+				"checklist": "This is a list of things to prepare or tick off. A checklist block fits: write one ui fence " +
+					"with {\"c\":\"checklist\",\"title\":\"...\"} then one {\"i\":\"Item\"} line per item, and keep any " +
+					"caveat that matters in the prose.",
+				"timeline": "This is events over time. A timeline block fits: write one ui fence with {\"c\":\"timeline\"} " +
+					"then one {\"when\":\"1969\",\"i\":\"What happened\"} line per event, in time order, and put the " +
+					"context in the prose around it.",
+				"procon": "One thing is being weighed. A procon block fits: write one ui fence with {\"c\":\"procon\"} " +
+					"then {\"+\":\"point\"} and {\"-\":\"point\"} lines, then give your overall read in the prose.",
+				"facts": "The user wants the essentials on one named thing. A facts block fits: write one ui fence " +
+					"with {\"c\":\"facts\",\"title\":\"Name\",\"sub\":\"what it is\"} then one {\"k\":\"Label\",\"v\":\"value\"} " +
+					"line per fact, cited where you can.",
+				"flow": "This is a process with a decision in it. A flow block fits: write one ui fence with " +
+					"{\"c\":\"flow\"}, then {\"n\":\"a\",\"t\":\"Step\",\"d\":\"detail\"} node lines (add \"kind\":\"decision\" on a " +
+					"question) and {\"e\":[\"a\",\"b\"],\"l\":\"Yes\"} edge lines. At most 8 nodes; the first is the start. " +
+					"Say in the prose what the chain is for.",
+				"tabs": "This has parallel versions and the reader needs only one. A tabs block fits: write one ui " +
+					"fence with {\"c\":\"tabs\"} then one {\"tab\":\"macOS\",\"text\":\"...\"} line per version, at most 6, " +
+					"and keep anything true for every version in the prose.",
+				"claim": "The user is testing a claim. A claim block fits: write one ui fence with " +
+					"{\"c\":\"claim\",\"text\":\"the claim\",\"verdict\":\"mixed\"} then {\"+\":\"what supports it\",\"src\":[\"https://...\"]} " +
+					"and {\"-\":\"what disputes it\",\"src\":[\"https://...\"]} lines. verdict is true, mixed, misleading, false " +
+					"or unverified. Cite only sources you read, and say in the prose what the evidence adds up to.",
+				"views": "This is a question where informed people genuinely disagree. A views block fits: write one ui " +
+					"fence with {\"c\":\"views\",\"title\":\"...\"} then one {\"who\":\"who holds it\",\"stance\":\"the position in " +
+					"a line\",\"t\":\"the sentence saying it\",\"src\":[\"https://...\"]} line per camp, at most 6. State " +
+					"each position as its own proponents would and cite each camp's sources; give no verdict and no " +
+					"ranking, and keep what is factual separate from what is a value judgment.",
+				"readings": "The person wants to learn this topic. A readings block fits: write one ui fence with " +
+					"{\"c\":\"readings\",\"title\":\"...\"} then one {\"lvl\":\"start\",\"t\":\"page title\",\"why\":\"why read it\", " +
+					"\"src\":[\"https://...\"]} line per page, at most 6, with level start, next or deep. Every src must be " +
+					"a page you actually opened with web_read this turn; say in the prose what the set adds up to.",
 			},
 		},
 		"depth": {

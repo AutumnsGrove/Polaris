@@ -11,6 +11,8 @@
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
 	import HelpModal from './HelpModal.svelte';
 	import { constellationState } from '$lib/constellation.svelte';
+	import { cometState } from '$lib/comet.svelte';
+	import CometIcon from '$lib/components/icons/Comet.svelte';
 	import { Plus, PanelLeftClose, Settings, CircleHelp, Star, Search, X, Orbit, Sunrise, Galaxy, FolderSymlink } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
@@ -56,6 +58,11 @@
 		// Decides whether the Constellation entry renders at all, so it has
 		// to be known at app load, not only once /constellation is visited.
 		if (!constellationState.config) void constellationState.loadConfig();
+		// Same reasoning for Comet: the footer icon is hidden until the
+		// config says enabled, so the config must load at app start; the
+		// unread ping needs the latest edition checked too.
+		if (!cometState.config) void cometState.loadConfig();
+		void cometState.checkForNewEdition(localStorage.getItem('polaris-comet-last-seen'));
 	});
 
 	let showHelp = $state(false);
@@ -291,7 +298,7 @@
 		>
 			<Orbit size={16} />
 			<span class="pulsar-label">Pulsar</span>
-			<PulsarUnreadBadge count={pulsarState.totalUnread} />
+			<PulsarUnreadBadge count={pulsarState.totalUnread} alert={pulsarState.totalAlerts > 0} />
 			</button>
 		<button
 			class="pulsar-entry daily-entry"
@@ -397,8 +404,65 @@
 	</div>
 
 	<div class="status">
-		<span class="dot" class:connected={appState.connected}></span>
 		<span class="status-text">{appState.connected ? 'connected' : 'reconnecting…'}</span>
+		<!-- The connection trace: a hairline baseline with one travelling beat
+		     per ping the server actually answered (ws.ts sends one every 2s,
+		     gateway/ws.go answers "pong", state.svelte.ts keeps the last 3).
+		     So this is a reading of the socket, not a looping animation that
+		     would still look alive after the connection had gone quiet — the
+		     beats come from real round trips or not at all.
+
+		     38x18 is the widest box that leaves the word intact: the strip is
+		     260px, minus 24 padding, 93 of icon buttons and 16 for two gaps
+		     leaves 127, so the box and the text share that — at 38 the text
+		     still gets 89 and "reconnecting…" (84) fits. Beats take 6s to cross
+		     and are born every 2s, which is what puts three on screen at once;
+		     see mockups/heartbeat-sweep-spacing.html for the sweep. -->
+		<span
+			class="trace"
+			class:dead={!appState.connected}
+			title={appState.connected
+				? 'Connection heartbeat — one beat per answered ping'
+				: 'Not reaching the server — retrying every 2s'}
+			aria-hidden="true"
+		>
+			<svg viewBox="0 0 44 16" width="32" height="16">
+				{#if appState.connected}
+					<path class="trace-base" d="M2 10.5 L42 10.5" />
+					{#each appState.heartbeats as beat (beat)}
+						<g class="beat"><path d="M0 10.5 L1.6 10.5 L3 4.6 L4.4 13 L5.8 10.5" /></g>
+					{/each}
+					<!-- The same three beats as a still frame — substituted in for
+					     the travelling ones under prefers-reduced-motion, where the
+					     global rule in app.css collapses the animation to 0.001ms and
+					     would otherwise snap every beat off the right edge. -->
+					<g class="beat-still">
+						<path d="M5 10.5 L6.6 10.5 L8 4.6 L9.4 13 L10.8 10.5" />
+						<path d="M18.5 10.5 L20.1 10.5 L21.5 4.6 L22.9 13 L24.3 10.5" />
+						<path d="M32 10.5 L33.6 10.5 L35 4.6 L36.4 13 L37.8 10.5" />
+					</g>
+				{:else}
+					<path class="trace-cut" d="M2 10.5 L22 10.5" />
+					<path class="trace-cut faint" d="M26 10.5 L42 10.5" />
+				{/if}
+			</svg>
+		</span>
+		<!-- Hidden until Comet's config has loaded AND says enabled — same
+		     "unknown shows nothing" treatment as the Constellation entry. The
+		     on/off switch lives in the main Settings panel. -->
+		{#if cometState.config?.enabled}
+			<button
+				class="icon-btn comet-btn"
+				onclick={() => goto('/comet')}
+				title="Comet — monthly retrospective"
+				aria-label="Comet: monthly retrospective"
+			>
+				<CometIcon size={15} />
+				{#if cometState.hasNewEdition}
+					<span class="comet-dot" title="New retrospective"></span>
+				{/if}
+			</button>
+		{/if}
 		<button class="icon-btn" onclick={() => (showHelp = true)} title="What's what" aria-label="Help: what each feature is">
 			<CircleHelp size={15} />
 		</button>
@@ -534,6 +598,34 @@
 		border-radius: 50%;
 		background: var(--color-accent);
 		flex-shrink: 0;
+	}
+
+	/* Comet's own unread ping — the footer icon is small, so unlike
+	   .daily-dot above this sits absolutely in the corner and breathes
+	   rather than taking a flex slot. */
+	.comet-btn {
+		position: relative;
+	}
+	.comet-dot {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--color-accent);
+		animation: comet-pulse 2s ease-in-out infinite;
+	}
+	@keyframes comet-pulse {
+		0%,
+		100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.45;
+			transform: scale(0.75);
+		}
 	}
 
 	.thread-search {
@@ -774,18 +866,92 @@
 		flex-shrink: 0;
 	}
 
-	.dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--color-danger);
+	.trace {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 38px;
+		height: 18px;
 		flex-shrink: 0;
-		transition: box-shadow 0.2s var(--ease-out-expo), background-color 0.2s var(--ease-out-expo);
+		overflow: hidden;
+		/* Same chrome as the search field and composer menus, so it reads as
+		   another piece of this app's furniture rather than a widget dropped
+		   into the footer. */
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface-2);
+		color: var(--color-accent);
 	}
 
-	.dot.connected {
-		background: var(--color-accent);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+	/* Down: the same dimming the old dot got, without the dot. */
+	.trace.dead {
+		color: var(--color-text-dim);
+	}
+
+	.trace svg {
+		display: block;
+	}
+
+	.trace-base,
+	.trace-cut {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1;
+		stroke-linecap: round;
+	}
+
+	.trace-base {
+		opacity: 0.3;
+	}
+
+	/* The line breaks where the heartbeat stopped — 4px of air, not a fade, so
+	   "no signal" reads even in grayscale. */
+	.trace-cut.faint {
+		opacity: 0.22;
+	}
+
+	/* One beat, one pass. 6s across a 38px box while pings arrive every 2s is
+	   what keeps three beats visible at once (see ws.ts's HEARTBEAT_MS — the
+	   two numbers are a pair). `transform-box: view-box` makes the translate
+	   below use the SVG's own 44-unit coordinate system rather than the
+	   element's bounding box. */
+	.beat,
+	.beat-still {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.3;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.beat {
+		transform-box: view-box;
+		animation: beat-travel 6s linear forwards;
+	}
+
+	@keyframes beat-travel {
+		from {
+			transform: translateX(-8px);
+		}
+		to {
+			transform: translateX(48px);
+		}
+	}
+
+	.beat-still {
+		display: none;
+	}
+
+	/* app.css collapses animation-duration to 0.001ms here, which would snap
+	   every live beat straight off the right edge and leave an empty box. Swap
+	   in the still frame instead — same shape, no motion. */
+	@media (prefers-reduced-motion: reduce) {
+		.beat {
+			display: none;
+		}
+		.beat-still {
+			display: inline;
+		}
 	}
 
 	/* Mobile: the sidebar becomes a fixed-position overlay drawer that

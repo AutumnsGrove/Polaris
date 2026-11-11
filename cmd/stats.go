@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"polaris/gateway"
 	"polaris/store"
 )
 
@@ -45,13 +46,36 @@ func runDockerStats(days int) error {
 		return fmt.Errorf("fetching stats failed (status %d)", resp.StatusCode)
 	}
 
-	var s store.Stats
-	if err := readCappedJSON(resp, &s); err != nil {
+	var body gateway.StatsResponse
+	if err := readCappedJSON(resp, &body); err != nil {
 		return fmt.Errorf("decoding stats response: %w", err)
 	}
+	if body.Stats == nil {
+		// A body with none of Stats' fields leaves the embedded pointer nil.
+		body.Stats = &store.Stats{}
+	}
 
-	printStats(&s)
+	printStats(body.Stats)
+	printAPICaps(body.APICaps)
 	return nil
+}
+
+// printAPICaps renders the paid-API monthly caps: what's used, what's
+// left, and when the counters reset. Printed last so it doesn't push the
+// long-standing sections around. Nothing is printed for a server too old
+// to report the section.
+func printAPICaps(c gateway.APICaps) {
+	if len(c.Services) == 0 {
+		return
+	}
+	fmt.Printf("\npaid API monthly caps (%s, resets %s):\n", c.Month, c.ResetsAt)
+	for _, svc := range c.Services {
+		if svc.Unit == "usd" {
+			fmt.Printf("  %-10s $%7.2f / $%.2f   %5.1f%% used\n", svc.Provider, svc.Used, svc.Cap, svc.PercentUsed)
+		} else {
+			fmt.Printf("  %-10s %7.0f / %.0f calls   %5.1f%% used\n", svc.Provider, svc.Used, svc.Cap, svc.PercentUsed)
+		}
+	}
 }
 
 func printStats(s *store.Stats) {
@@ -65,6 +89,8 @@ func printStats(s *store.Stats) {
 	fmt.Printf("  pulsar:  $%.4f total, $%.4f (%s)\n", s.CostBySource.Pulsar.TotalCostUSD, s.CostBySource.Pulsar.PeriodCostUSD, period)
 	fmt.Printf("  daily:   $%.4f total, $%.4f (%s)\n", s.CostBySource.Daily.TotalCostUSD, s.CostBySource.Daily.PeriodCostUSD, period)
 	fmt.Printf("  constellation: $%.4f total, $%.4f (%s)\n", s.CostBySource.Constellation.TotalCostUSD, s.CostBySource.Constellation.PeriodCostUSD, period)
+	fmt.Printf("  comet:   $%.4f total, $%.4f (%s)\n", s.CostBySource.Comet.TotalCostUSD, s.CostBySource.Comet.PeriodCostUSD, period)
+	fmt.Printf("  embeddings: $%.4f total, $%.4f (%s)\n", s.CostBySource.Embeddings.TotalCostUSD, s.CostBySource.Embeddings.PeriodCostUSD, period)
 	fmt.Printf("threads: %d, turns: %d (%s)\n", s.ThreadCount, s.TurnCount, period)
 	fmt.Printf("avg turn duration: %.1fs\n", float64(s.AvgTurnDurationMs)/1000)
 	fmt.Printf("auto-compactions: %d (%s)\n", s.CompactionCount, period)
@@ -90,6 +116,18 @@ func printStats(s *store.Stats) {
 				errPct = float64(errs) / float64(calls) * 100
 			}
 			fmt.Printf("  %-20s %5d calls   %5.1f%% errored\n", t, calls, errPct)
+		}
+	}
+
+	if len(s.MadeUpToolCounts) > 0 {
+		fmt.Printf("\nmade-up tools (%s) — the model called tools that don't exist:\n", period)
+		names := make([]string, 0, len(s.MadeUpToolCounts))
+		for t := range s.MadeUpToolCounts {
+			names = append(names, t)
+		}
+		sort.Strings(names)
+		for _, t := range names {
+			fmt.Printf("  %-20s %5d calls\n", t, s.MadeUpToolCounts[t])
 		}
 	}
 

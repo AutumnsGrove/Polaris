@@ -1,28 +1,27 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // Separate file (not a case inside mermaid.test.ts) so mermaid.ts's
-// module-level `mermaidPromise` cache starts genuinely fresh — each test
+// module-level `pelePromise` cache starts genuinely fresh — each test
 // file gets its own module registry, which lets this test simulate the
-// dynamic `import('mermaid')` itself rejecting on the *first* call, before
+// dynamic `import('pele')` itself rejecting on the *first* call, before
 // anything else in the process has ever resolved it successfully.
 //
-// Regression test for a real bug found live: getMermaid() cached whatever
-// promise loadMermaid() returned, including a rejected one. One transient
+// Regression test for a real bug found live: getPele() cached whatever
+// promise the import returned, including a rejected one. One transient
 // import failure (chunk-load blip, stale hash after a deploy) permanently
-// broke mermaid rendering for the rest of that browser tab, and the
+// broke diagram rendering for the rest of that browser tab, and the
 // rejection happened before renderMermaidIn's per-block try/catch — so
 // nothing rendered, no error note appeared, and the failure was invisible
 // (an unhandled rejection from the unawaited `void renderMermaidIn(...)`
 // call in ChatTurnView.svelte).
 let importShouldFail = true;
 
-vi.mock('mermaid', () => {
+vi.mock('pele', () => {
 	if (importShouldFail) return Promise.reject(new Error('failed to fetch dynamically imported module'));
-	return Promise.resolve({ default: { initialize, render } });
+	return Promise.resolve({ render });
 });
 
-const initialize = vi.fn();
-const render = vi.fn(async (id: string, source: string) => ({ svg: `<svg data-id="${id}">${source}</svg>` }));
+const render = vi.fn((source: string) => ({ svg: `<svg>${source}</svg>` }));
 
 const { renderMermaidIn } = await import('./mermaid');
 
@@ -36,7 +35,7 @@ function fenceBlock(source: string): HTMLElement {
 	return pre;
 }
 
-describe('renderMermaidIn when the mermaid library itself fails to load', () => {
+describe('renderMermaidIn when the diagram library itself fails to load', () => {
 	it('shows the fallback note instead of silently doing nothing, then recovers on a later pass', async () => {
 		const container = document.createElement('div');
 		container.appendChild(fenceBlock('graph TD; A-->B;'));

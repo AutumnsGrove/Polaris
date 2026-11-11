@@ -1,0 +1,11 @@
+id: co-vaccines-autism
+track: contested
+rationale: >-
+  Politically heated, but the science is settled: large studies show no link. "A question with
+  broad agreement" is the no option. Contested=yes would give the claim false balance.
+state:
+  latest: "do vaccines cause autism"
+expect:
+  contested: {answer: "no"}
+quiet:
+  - private_person

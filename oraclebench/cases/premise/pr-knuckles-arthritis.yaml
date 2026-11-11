@@ -1,0 +1,9 @@
+id: pr-knuckles-arthritis
+track: premise
+rationale: >-
+  Presupposes that cracking knuckles causes arthritis; studies find no link. Lowercase phone
+  voice, false embedded premise, premise=yes.
+state:
+  latest: "why does cracking knuckles cause arthritis"
+expect:
+  premise: {answer: "yes"}

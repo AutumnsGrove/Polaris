@@ -1,0 +1,12 @@
+id: fo-news-flavored-settled-fact
+track: focus
+rationale: >-
+  Trap: "headlines" and "that day" use news vocabulary but the event is from 1986 and settled.
+  `news` is for current or recent events; this is a normal balanced answer from stable
+  knowledge. Brief or first_principles are not what was asked either.
+state:
+  latest: "give me the headlines version of the 1986 challenger disaster, what happened that day"
+expect:
+  focus: {answer: "off", accept: ["off", brief]}
+quiet:
+  - emotional

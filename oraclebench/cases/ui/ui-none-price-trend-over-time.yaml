@@ -1,0 +1,14 @@
+id: ui-none-price-trend-over-time
+track: ui
+rationale: >-
+  False friend for timeline: the question is about "over the years", but the timeline option
+  explicitly excludes a price, number or trend over time. The answer is a few numbers and a
+  sentence, so ui is none. Research is clearly yes (current price data).
+state:
+  latest: "how has the price of eggs changed over the last 5 years"
+expect:
+  ui: {answer: "none"}
+  research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

@@ -69,6 +69,9 @@ export function buildTurnsFromMessages(
 			tokensPerSecond: m.tokens_per_second || undefined,
 			appliedFocusMode: m.applied_focus_mode,
 			appliedModel: m.applied_model,
+			// Backend that served the turn (openrouter/opencode-go) — '' on
+			// pre-feature rows, undefined-gated the same as appliedModel.
+			provider: m.provider || undefined,
 			// Both roles now carry their real DB id — see ChatTurn.id's doc
 			// comment (assistant turns need it too, for read-aloud's
 			// persisted-audio attachment; this used to be user-only before

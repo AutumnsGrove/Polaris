@@ -1,0 +1,12 @@
+id: dp-standard-vpn-for-travel
+track: depth
+rationale: >-
+  An ordinary question that wants a normal-length answer. Standard is the common correct
+  answer and must stay quiet (no quick or thorough nudge).
+state:
+  latest: "Do I need a VPN when using hotel wifi while traveling?"
+expect:
+  depth: {answer: standard}
+quiet:
+  - emotional
+  - private_person

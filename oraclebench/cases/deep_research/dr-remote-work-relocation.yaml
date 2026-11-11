@@ -1,0 +1,14 @@
+id: dr-remote-work-relocation
+track: deep_research
+rationale: >-
+  A multi-factor comparison across three cities: cost of living, visa routes, tax treatment,
+  internet, healthcare, community. Each factor is its own sub-question with its own sources, the
+  "multi-factor comparison" the yes option names.
+state:
+  latest: "I'm a US citizen working remotely and deciding between Lisbon, Valencia and Porto for a two-year move. Compare them in depth on cost of living, visa and residency routes, how my income would be taxed, internet reliability, healthcare access, and the expat community, using current sources."
+expect:
+  deep_research: {answer: "yes"}
+  locale: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

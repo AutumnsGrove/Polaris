@@ -1,0 +1,13 @@
+id: ch-daily-no-landlord-email
+track: chips
+rationale: >-
+  A personal one-time task (drafting an email). Nothing here is a topic, story, or situation to
+  follow each morning, so chip_daily=no. The heater and landlord are false friends for "ongoing
+  situation", but the ask is a single piece of writing.
+state:
+  latest: "help me write an email to my landlord, the heater has been broken since monday and he hasnt answered my texts"
+expect:
+  chip_daily: {answer: "no"}
+quiet:
+  - chip_pulsar
+  - chip_safari

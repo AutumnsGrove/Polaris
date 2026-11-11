@@ -1,0 +1,16 @@
+id: ch-no-chips-in-routine-thread
+track: chips
+rationale: >-
+  A Pulsar routine thread is already a scheduled output, so every offer chip is withheld
+  server-side (issue #146) no matter what the model answers. The label is the price check
+  itself; the chips are listed quiet so a leak shows up as a false offer.
+state:
+  latest: "weekly update: bitcoin price and any big moves this week"
+  thread_source: pulsar
+expect:
+  research: {answer: "yes"}
+quiet:
+  - chip_pulsar
+  - chip_daily
+  - chip_safari
+  - chip_field

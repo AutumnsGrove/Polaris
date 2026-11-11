@@ -152,25 +152,25 @@ func TestGetStats_AuxUsageFoldsIntoPolaris(t *testing.T) {
 	}
 }
 
-// Oracle's Jev spend must land on the same ledger the monthly cap sums
+// Oracle's decisions spend must land on the same ledger the monthly cap sums
 // (issue #125) while Stats keeps it out of the verification breakout — a
 // regression here means either the cap under-counts again or Oracle spend
 // reads as verification spend.
-func TestGetStats_OracleJevCostCountsTowardCapButBreaksOutSeparately(t *testing.T) {
+func TestGetStats_OracleDecisionsCostCountsTowardCapButBreaksOutSeparately(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.LogJevCost(0.002); err != nil {
-		t.Fatalf("LogJevCost: %v", err)
+	if err := s.LogDecisionsCost(0.002); err != nil {
+		t.Fatalf("LogDecisionsCost: %v", err)
 	}
-	if err := s.LogOracleJevCost(0.0005); err != nil {
-		t.Fatalf("LogOracleJevCost: %v", err)
+	if err := s.LogOracleDecisionsCost(0.0005); err != nil {
+		t.Fatalf("LogOracleDecisionsCost: %v", err)
 	}
 
-	month, err := s.JevCostThisMonth()
+	month, err := s.DecisionsCostThisMonth()
 	if err != nil {
-		t.Fatalf("JevCostThisMonth: %v", err)
+		t.Fatalf("DecisionsCostThisMonth: %v", err)
 	}
 	if math.Abs(month-0.0025) > 1e-9 {
-		t.Errorf("JevCostThisMonth = %v, want 0.0025 (verification + oracle both count toward the cap)", month)
+		t.Errorf("DecisionsCostThisMonth = %v, want 0.0025 (verification + oracle both count toward the cap)", month)
 	}
 
 	stats, err := s.GetStats(30)
@@ -182,6 +182,81 @@ func TestGetStats_OracleJevCostCountsTowardCapButBreaksOutSeparately(t *testing.
 	}
 	if math.Abs(stats.OracleCostUSD.TotalCostUSD-0.0005) > 1e-9 || math.Abs(stats.OracleCostUSD.PeriodCostUSD-0.0005) > 1e-9 {
 		t.Errorf("OracleCostUSD = %+v, want 0.0005 total and period", stats.OracleCostUSD)
+	}
+}
+
+// Issue #151: each decisions source counts independently (badges must not absorb
+// compare_sources' new 'compare' rows), the period filter applies to counts
+// like it does to cost, and the new source value must still count toward
+// the monthly cap.
+func TestGetStats_DecisionCallCounts(t *testing.T) {
+	s := openTestStore(t)
+	for i := 0; i < 3; i++ {
+		if err := s.LogDecisionsCost(0.001); err != nil {
+			t.Fatalf("LogDecisionsCost: %v", err)
+		}
+	}
+	if err := s.LogOracleDecisionsCost(0.001); err != nil {
+		t.Fatalf("LogOracleDecisionsCost: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := s.LogCompareDecisionsCost(0.001); err != nil {
+			t.Fatalf("LogCompareDecisionsCost: %v", err)
+		}
+	}
+	// An old row, outside the 30-day window: counts all-time only.
+	if _, err := s.db.Exec(`INSERT INTO decisions_usage (cost_usd, created_at) VALUES (0.001, datetime('now', '-90 days'))`); err != nil {
+		t.Fatalf("insert old row: %v", err)
+	}
+
+	stats, err := s.GetStats(30)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	want := DecisionCallCounts{
+		Oracle:       CallCount{Period: 1, Total: 1},
+		Verification: CallCount{Period: 3, Total: 4},
+		Compare:      CallCount{Period: 2, Total: 2},
+	}
+	if stats.DecisionCalls != want {
+		t.Errorf("DecisionCalls = %+v, want %+v", stats.DecisionCalls, want)
+	}
+
+	month, err := s.DecisionsCostThisMonth()
+	if err != nil {
+		t.Fatalf("DecisionsCostThisMonth: %v", err)
+	}
+	if math.Abs(month-0.006) > 1e-9 {
+		t.Errorf("DecisionsCostThisMonth = %v, want 0.006 (compare rows must count toward the cap)", month)
+	}
+}
+
+// A hallucinated tool name must land in MadeUpToolCounts only — never as a
+// real tool row with a 100% error rate in ToolCallCounts/ToolErrorCounts —
+// while a real tool's own errors keep counting normally.
+func TestGetStats_MadeUpToolsSplitFromRealTools(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	s.LogEvent("t1", "info", "tool.web_search", "tool call finished", map[string]interface{}{"result": "ok"}, "turn-1")
+	s.LogEvent("t1", "warn", "tool.web_read", "tool call finished", map[string]interface{}{"result": "error: fetch failed"}, "turn-2")
+	s.LogEvent("t1", "warn", "tool.web_command", "tool call finished", map[string]interface{}{"result": "error: unknown tool web_command"}, "turn-3")
+	s.LogEvent("t1", "warn", "tool.web_command", "tool call finished", map[string]interface{}{"result": "error: unknown tool web_command"}, "turn-4")
+
+	stats, err := s.GetStats(30)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if got := stats.MadeUpToolCounts["web_command"]; got != 2 {
+		t.Errorf("MadeUpToolCounts[web_command] = %d, want 2", got)
+	}
+	if _, ok := stats.ToolCallCounts["web_command"]; ok {
+		t.Errorf("web_command leaked into ToolCallCounts: %v", stats.ToolCallCounts)
+	}
+	if stats.ToolCallCounts["web_search"] != 1 || stats.ToolErrorCounts["web_read"] != 1 {
+		t.Errorf("real tools miscounted: calls=%v errors=%v", stats.ToolCallCounts, stats.ToolErrorCounts)
 	}
 }
 

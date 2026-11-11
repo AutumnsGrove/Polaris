@@ -1,15 +1,28 @@
 package gateway
 
 import (
-	"context"
 	"strings"
 	"sync"
 
 	"polaris/agent"
+	"polaris/decisions"
 	"polaris/llm"
+	"polaris/routing"
 	"polaris/store"
 	"polaris/tools"
 )
+
+// decisionsClient is the server's shared decisions client pointed at the model
+// this turn's config names (decisions.model; empty keeps the pinned default).
+// t.cfg is re-read at the start of every turn, so editing config.yaml takes
+// effect on the next message with no restart. ForModel copies rather than
+// mutating the shared client, which concurrent turns are using right now. Both
+// Oracle and the tools' Context must come through here, or one of them would
+// keep asking the old model after a config edit. Nil stays nil, so an
+// unconfigured server still disables the features that gate on it.
+func (t *turnRun) decisionsClient() *decisions.Client {
+	return t.s.decisions.ForModel(t.cfg.Decisions.Model)
+}
 
 // buildAgentContext assembles the tools.Context the agent runs with: the
 // always-on wiring first, then each optional capability (personalization,
@@ -32,7 +45,7 @@ func (t *turnRun) buildAgentContext() {
 	// requestLocation asks a specific browser for a fix; resolveLiveLocation
 	// is the tool-facing wrapper handed to tools.Context — sync.Once means
 	// however many location-hungry tool calls this turn makes (nearby_search
-	// and weather both could, concurrently, via dispatchToolCallsConcurrently),
+	// and weather both could, concurrently, via Nova's parallel tool dispatch),
 	// the browser only ever gets interrupted for its GPS once. Nil when
 	// requestLocation itself is nil (no live client — see ask.go), so
 	// ResolveLocation's nil check skips straight to defaultLocation above.
@@ -49,36 +62,54 @@ func (t *turnRun) buildAgentContext() {
 		}
 	}
 
+	// The router carries this turn's provider policy: ModelID (the
+	// registry id) resolves the attempt chain while the wire slug
+	// travels for the rewrite. Built once per turn from the turn's
+	// config generation — not shared process-wide, because SessionID
+	// must close over this turn's thread id (see routing.Build). A
+	// failover mid-turn emits provider_fallback, which the transcript
+	// chip renders (unknown to the current frontend, which ignores
+	// event types it doesn't know — Phase 3 teaches it this one).
+	t.router = routing.Build(t.cfg, routing.Options{
+		SessionID: func() string { return t.threadID },
+		UserAgent: "Polaris/" + t.s.version,
+		OnFallback: func(from, to string, err error) {
+			t.emitter.emit("provider_fallback", map[string]interface{}{
+				"from": from, "to": to, "error": err.Error(),
+			})
+		},
+	})
 	t.agentCtx = &tools.Context{
-		SearXNG:                t.s.searxng,
-		Blocklist:              t.s.blocklist,
-		Foursquare:             t.s.foursquare,
-		Tavily:                 t.s.tavily,
-		TavilyUsageThisMonth:   func() (int, error) { return t.s.db.GetAPIUsage("tavily") },
-		IncrementTavilyUsage:   func() error { _, err := t.s.db.IncrementAPIUsage("tavily"); return err },
-		Brave:                  t.s.brave,
-		BraveUsageThisMonth:    func() (int, error) { return t.s.db.GetAPIUsage("brave") },
-		IncrementBraveUsage:    func() error { _, err := t.s.db.IncrementAPIUsage("brave"); return err },
-		Parallel:               t.s.parallel,
-		Reddit:                 t.s.reddit,
-		ParallelUsageThisMonth: func() (int, error) { return t.s.db.GetAPIUsage("parallel") },
-		IncrementParallelUsage: func() error { _, err := t.s.db.IncrementAPIUsage("parallel"); return err },
-		Jev:                    t.s.jev,
-		JevCostThisMonth:       t.s.db.JevCostThisMonth,
-		LogJevCost:             t.s.db.LogJevCost,
-		Embed:                  t.s.embed,
-		GitHubToken:            t.cfg.GitHub.Token,
-		LastFMAPIKey:           t.cfg.LastFM.APIKey,
-		HardcoverAPIKey:        t.cfg.Hardcover.APIKey,
-		TMDBAPIKey:             t.cfg.TMDB.APIKey,
-		DefaultLocation:        defaultLocation,
-		RequestLocation:        resolveLiveLocation,
-		VoiceMode:              t.msg.VoiceMode,
-		FocusMode:              t.msg.FocusMode,
-		DeepResearch:           t.msg.DeepResearch,
-		NoResearch:             t.msg.NoResearch,
-		QuickMode:              t.msg.QuickMode,
-		DisabledTools:          DisabledToolsFromStore(t.s.db),
+		SearXNG:                 t.s.searxng,
+		Blocklist:               t.s.blocklist,
+		Foursquare:              t.s.foursquare,
+		Tavily:                  t.s.tavily,
+		TavilyUsageThisMonth:    func() (int, error) { return t.s.db.GetAPIUsage("tavily") },
+		IncrementTavilyUsage:    func() error { _, err := t.s.db.IncrementAPIUsage("tavily"); return err },
+		Brave:                   t.s.brave,
+		BraveUsageThisMonth:     func() (int, error) { return t.s.db.GetAPIUsage("brave") },
+		IncrementBraveUsage:     func() error { _, err := t.s.db.IncrementAPIUsage("brave"); return err },
+		Parallel:                t.s.parallel,
+		Reddit:                  t.s.reddit,
+		ParallelUsageThisMonth:  func() (int, error) { return t.s.db.GetAPIUsage("parallel") },
+		IncrementParallelUsage:  func() error { _, err := t.s.db.IncrementAPIUsage("parallel"); return err },
+		Decisions:               t.decisionsClient(),
+		DecisionsCostThisMonth:  t.s.db.DecisionsCostThisMonth,
+		LogDecisionsCost:        t.s.db.LogDecisionsCost,
+		LogCompareDecisionsCost: t.s.db.LogCompareDecisionsCost,
+		Embed:                   t.s.embed,
+		GitHubToken:             t.cfg.GitHub.Token,
+		LastFMAPIKey:            t.cfg.LastFM.APIKey,
+		HardcoverAPIKey:         t.cfg.Hardcover.APIKey,
+		TMDBAPIKey:              t.cfg.TMDB.APIKey,
+		DefaultLocation:         defaultLocation,
+		RequestLocation:         resolveLiveLocation,
+		VoiceMode:               t.msg.VoiceMode,
+		FocusMode:               t.msg.FocusMode,
+		DeepResearch:            t.msg.DeepResearch,
+		NoResearch:              t.msg.NoResearch,
+		QuickMode:               t.msg.QuickMode,
+		DisabledTools:           DisabledToolsFromStore(t.s.db),
 		// CustomInstructions is left unset below while this thread is
 		// still ghost (issue #67's "no personalization") rather than
 		// wired here — same "leave the field nil/empty" convention
@@ -87,6 +118,17 @@ func (t *turnRun) buildAgentContext() {
 		// {custom_instructions} to nothing rather than needing its own
 		// flag.
 		LLM: t.client,
+		// Tool side calls (web_read/search_chats filter passes) take the
+		// routed path with this turn's fallback chip, not the raw client.
+		Complete: t.s.routedComplete(t.cfg, t.client, t.modelCfg.ID, t.threadID, func(from, to string, err error) {
+			t.emitter.emit("provider_fallback", map[string]interface{}{"from": from, "to": to, "error": err.Error()})
+		}),
+		// ModelID + Router: the routed path (see routing.Build and
+		// agent.novaProviderFor). Both set together or not at all — a
+		// router without a catalog id would key on the wire slug, find
+		// no route, and silently bill OpenRouter.
+		ModelID: t.modelCfg.ID,
+		Router:  t.router,
 		// SearchThreads/ListRecentThreads/ReadThread are left unset below
 		// while this thread is still ghost, same as CustomInstructions
 		// above — they back the chat_search tool (tools/catalog.go's
@@ -116,12 +158,37 @@ func (t *turnRun) buildAgentContext() {
 		ThreadID: t.threadID,
 		FieldID:  t.fieldID,
 	}
+	// The one place Visuals is set. Opt-in per entry point: ws, /api/ask and
+	// Pulsar's scheduler set ClientMessage.OffersVisuals (a pulse opens a real
+	// thread in the normal chat view), while Atlas's Quick Answer and anything
+	// that never opts in leave it false. Not in a voice call either
+	// (Transponder): that answer is read aloud, and a comparison table has no
+	// spoken form worth the tokens.
+	if t.msg.OffersVisuals && !t.msg.VoiceMode && !t.msg.NoVisuals {
+		t.agentCtx.Visuals = VisualsFromStore(t.s.db)
+	}
 	t.wirePersonalization()
 	t.wireVision()
 	t.wireCodeExec()
 	t.wireMemory()
 	t.wireWeaver()
 	t.wireResearchers()
+	t.wirePulseAlert()
+}
+
+// wirePulseAlert offers alert_me on a user-defined Pulsar routine's
+// scheduled pulse only. Keyed off the routine id the scheduler stamps on its
+// ClientMessage (never present on a JSON-decoded client request, see
+// protocol.go), so normal chat and Pulsar Daily blocks — which build their
+// own tools.Context — can't reach it.
+func (t *turnRun) wirePulseAlert() {
+	if t.msg.PulsarRoutineID == 0 {
+		return
+	}
+	threadID := t.threadID
+	t.agentCtx.PulseAlert = func(reason string) error {
+		return t.s.db.SetThreadAlert(threadID, reason)
+	}
 }
 
 // wirePersonalization attaches the persisted-store reads (custom
@@ -135,7 +202,12 @@ func (t *turnRun) wirePersonalization() {
 		)
 		t.agentCtx.PersonName = PersonNameFromStore(t.s.db)
 		t.agentCtx.PersonPronouns = PersonPronounsFromStore(t.s.db)
-		t.agentCtx.SearchThreads = t.s.db.SearchMessages
+		// Hybrid for the model's own paraphrased questions (keyword +
+		// semantic, fused); the sidebar's search box stays keyword-only on
+		// purpose — see SearchChatsHybrid's doc comment.
+		t.agentCtx.SearchThreads = func(query string, limit int) ([]store.MessageSearchResult, error) {
+			return searchChatsHybrid(t.s.embeds, t.s.db, t.agentCtx.Ctx, query, limit)
+		}
 		t.agentCtx.ListRecentThreads = t.s.db.ListThreadsPage
 		t.agentCtx.ReadThread = t.s.db.ReadThread
 		// stars (issue #56) — the main assistant's own read-only search
@@ -147,7 +219,12 @@ func (t *turnRun) wirePersonalization() {
 		// SearchLibraryStars already applies, so a guessed/stale star_id
 		// can't surface something the person rejected or hid via the
 		// Library UI's Disable action.
-		t.agentCtx.StarsSearch = t.s.db.SearchLibraryStars
+		// Hybrid (keyword + semantic, fused) via the embedding service; with
+		// no service configured, searchLibraryStarsHybrid degrades to exactly
+		// the FTS-only call this used to be.
+		t.agentCtx.StarsSearch = func(query string, limit int) ([]store.Star, error) {
+			return searchLibraryStarsHybrid(t.s.embeds, t.s.db, t.agentCtx.Ctx, query, limit)
+		}
 		t.agentCtx.StarsRead = func(starID int64) (*store.Star, error) {
 			star, err := t.s.db.GetStar(starID)
 			if err != nil {
@@ -164,15 +241,13 @@ func (t *turnRun) wirePersonalization() {
 // wireVision attaches the image-description helper when any multimodal model
 // is available.
 func (t *turnRun) wireVision() {
-	// visionClient mirrors resolveAttachment's own model-selection logic
+	// visionModelFor picks the describe model: the thread's own if multimodal,
 	// (this thread's model if multimodal, else cfg.MultimodalModel()'s
 	// fallback) — nil only when neither exists, matching every other
 	// optional dependency on tools.Context (Brave/Parallel/Tavily) that's
 	// left nil rather than wired when unavailable.
-	if visionCl, ok := visionClient(t.cfg, t.modelCfg); ok {
-		t.agentCtx.DescribeImage = func(imgCtx context.Context, imageBase64, mimeType, instructions string) (string, float64, error) {
-			return visionCl.DescribeImage(imgCtx, imageBase64, mimeType, instructions)
-		}
+	if describe, ok := t.s.visionDescriber(t.cfg, t.modelCfg, t.threadID); ok {
+		t.agentCtx.DescribeImage = describe
 	}
 }
 
@@ -251,7 +326,7 @@ func (t *turnRun) wireWeaver() {
 		if err != nil {
 			categories = nil
 		}
-		search, read, create, update, link := weaverToolClosures(t.s.db, t.threadID)
+		search, read, create, update, link := weaverToolClosures(t.s.db, t.threadID, t.s.embeds, t.agentCtx.Ctx)
 		t.agentCtx.WeaverRun = true
 		t.agentCtx.WeaverInteractive = true
 		t.agentCtx.MaxTurns = weaverMaxTurns
@@ -279,7 +354,7 @@ func (t *turnRun) wireResearchers() {
 	// of the orchestrator's own `client` above — same reasoning as
 	// generateSuggestions/generateTitle building their own dedicated
 	// clients rather than sharing the thread's.
-	if t.msg.DeepResearch {
+	if t.agentCtx.DeepResearch {
 		if workerModelCfg, ok := t.cfg.ResearchWorkerModel(); ok {
 			workerClient := llm.NewClient(t.cfg.OpenRouter.BaseURL, t.cfg.OpenRouter.APIKey, workerModelCfg.Model, workerModelCfg.Temperature, workerModelCfg.MaxTokens).
 				// AllowFallbacks(true) — see the main client's construction

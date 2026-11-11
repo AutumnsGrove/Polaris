@@ -1,0 +1,12 @@
+id: dr-undo-last-git-commit
+track: deep_research
+rationale: >-
+  A quick how-to with a known answer. Nothing here spans multiple angles or bodies of sources.
+state:
+  latest: "how do i undo my last git commit"
+expect:
+  deep_research: {answer: "no"}
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

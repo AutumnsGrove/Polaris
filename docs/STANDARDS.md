@@ -173,6 +173,12 @@ how a function, a query, or a component should look — not about where things r
   exercises the race condition it closes, not just the happy path — see
   `TestConstellationConfig_BackfillStartedRoundTrips`'s explicit "a second concurrent call must not
   silently win" case.
+- Parsers of untrusted text (LLM output, fetched pages/PDFs, URLs, cursors) get a `FuzzXxx`
+  target in a `fuzz_test.go` next to the code: seed it from real inputs, assert no panic plus a
+  cheap invariant, and for size-gated code seed an input past the threshold by hand. A crasher
+  gets fixed, gets a named regression test, and its `testdata/fuzz/` file stays checked in. See
+  `docs/plans/fuzz-testing.md`; run one with
+  `go test ./pkg -run='^$' -fuzz=FuzzXxx -fuzztime=60s`.
 - When reverting a fix to confirm its regression test actually fails without the fix (CLAUDE.md's
   own instruction) isn't practical to do for real inside a session, at minimum reason through
   what the test would have caught before trusting it as coverage.

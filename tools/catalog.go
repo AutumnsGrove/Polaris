@@ -27,6 +27,13 @@ var catalogOrder = []string{
 	// field thread — putting it mid-list would shift every later tool's
 	// position for those threads relative to ordinary ones.
 	"save_to_field",
+	// Also appended last, for the same prefix-caching reason: alert_me is
+	// offered only on a Pulsar routine's scheduled pulse.
+	"alert_me",
+	// Same reasoning again: Comet's Approach classifier tools are offered
+	// only inside an Approach run (requires: approach_run), so appending
+	// them keeps every other tool's list position unchanged.
+	"search_trails", "record_classification",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -57,6 +64,12 @@ type catalogEntry struct {
 	Category       string `yaml:"category"`
 	Description    string `yaml:"description"`
 	APIDescription string `yaml:"api_description"`
+	// ExportPrivacy classifies a tool for thread export's privacy toggles:
+	// "" (not sensitive), "memory" (the memory tool), or "personal" (chat
+	// search, star reads, save-to-field). Declared on the catalog entry
+	// rather than a string list somewhere in the exporter, so a new
+	// memory-adjacent tool only has to declare itself here to be covered.
+	ExportPrivacy string `yaml:"export_privacy"`
 }
 
 // offered reports whether ctx has whatever key entry.Requires needs — the
@@ -94,6 +107,16 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// which it still needs for its own reasoning.
 		return false
 	}
+	if ctx.ApproachRun && e.Requires != "approach_run" && e.Name != "view_image" {
+		// Approach: restrict the menu to its own two tools plus view_image —
+		// never think/web_search/anything else from the main catalog. An
+		// Approach reads one already-written conversation and classifies it;
+		// it never researches, and the one exploration step it's allowed is
+		// looking at an image the thread itself referenced. view_image is
+		// allowed by name (not by Requires) because it has no Requires of its
+		// own — it's an ordinary always-available tool.
+		return false
+	}
 	if ctx.WeaverRun && e.Requires != "weaver_run" && e.Requires != "chat_search" {
 		// Weaver: restrict the menu to its own five tools plus search_chats
 		// — never think/calculator/web_search/anything else from the main
@@ -119,11 +142,11 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		return ctx.LastFMAPIKey != ""
 	case "tmdb_api_key":
 		return ctx.TMDBAPIKey != ""
-	case "jev":
-		// compare_sources needs a real Jev client, which itself needs
-		// OpenRouter configured (see jev.NewClient's nil-means-
+	case "decisions":
+		// compare_sources needs a real decisions client, which itself needs
+		// OpenRouter configured (see decisions.NewClient's nil-means-
 		// unconfigured convention) — no separate API key of its own.
-		return ctx.Jev != nil
+		return ctx.Decisions != nil
 	case "interactive_chat":
 		// Reuses the exact "is there a live client on the other end of
 		// this turn" signal RequestLocation already encodes — nil on
@@ -182,6 +205,12 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// PulsarDailyItems doc comment. Never offered on a normal
 		// chat/pulse turn or any other Daily block kind.
 		return ctx.PulsarDailyItems
+	case "pulsar_alert":
+		// A user-defined Pulsar routine's pulse only — keyed off the
+		// closure being wired (gateway/turn_context.go sets it solely
+		// when the turn carries a routine id), so Pulsar Daily blocks
+		// and normal chat structurally never see alert_me.
+		return ctx.PulseAlert != nil
 	case "field_workspace":
 		// save_to_field copies a file into the field's shared directory,
 		// so it needs both a field to copy into and a configured workspace
@@ -194,6 +223,13 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// A Weaver shooting-star run only — see registry.go's WeaverRun
 		// doc comment. Never offered on a normal chat/pulse turn.
 		return ctx.WeaverRun
+	case "approach_run":
+		// A Comet Approach classification run only — see registry.go's
+		// ApproachRun doc comment. Never offered on a normal chat/pulse turn.
+		// Gated on the closure being wired as well as the flag, so a caller
+		// that set ApproachRun but forgot the closure gets a tool that
+		// cleanly errors rather than one that's silently absent.
+		return ctx.ApproachRun && ctx.ApproachSearchTrails != nil
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -242,9 +278,9 @@ var catalogDefaults = map[string]catalogEntry{
 	"movies": {Name: "movies", Requires: "tmdb_api_key", Category: "research", Description: "find real movie/TV show recommendations grounded in TMDB's audience-recommendation data.",
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
 	"code_exec": {Name: "code_exec", Requires: "docker_only", Category: "compute",
-		Description: "run Python in a locked-down, network-less sandbox — numpy/pandas/matplotlib/scipy/scikit-learn/pillow/sympy/seaborn/pyarrow preinstalled. Docker-only.",
+		Description: "run Python in a locked-down, network-less sandbox — numpy/pandas/matplotlib/scipy/scikit-learn/pillow/sympy/seaborn/pyarrow/pyyaml/pypdf preinstalled. Docker-only.",
 		APIDescription: "Run Python code in a sandboxed environment for calculations, data analysis, or file processing. " +
-			"numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn, and pyarrow are preinstalled — no " +
+			"numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn, pyarrow, pyyaml, and pypdf are preinstalled — no " +
 			"other packages can be installed, and there is no network access from inside the sandbox at all. Files " +
 			"written to the current directory persist across calls within this conversation. Returns stdout, stderr, " +
 			"and the exit code. A resource or time limit hit is reported back as a normal result, not a crash — " +
@@ -279,14 +315,14 @@ var catalogDefaults = map[string]catalogEntry{
 	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",
 		Description:    "ask the user a single focused clarifying question when a genuinely necessary detail is missing.",
 		APIDescription: "Ask the user a single focused clarifying question when a genuinely necessary detail is missing — this ends the turn."},
-	"memory": {Name: "memory", Requires: "memory_store",
+	"memory": {Name: "memory", Requires: "memory_store", ExportPrivacy: "memory",
 		Description:    "write, edit, view, or forget durable memories about the user or ongoing work.",
 		APIDescription: "Write, edit, view, or forget durable memories about the user or ongoing work, carried across threads."},
-	"search_chats": {Name: "search_chats", Requires: "chat_search",
+	"search_chats": {Name: "search_chats", Requires: "chat_search", ExportPrivacy: "personal",
 		Description: "search or list your own past conversations, and read one back in full.",
 		APIDescription: "Search your own past conversations by keyword, or list your most recent ones when no " +
 			"query is given, and read one back in full (filtered to what you ask for, or raw)."},
-	"stars": {Name: "stars", Requires: "stars_library",
+	"stars": {Name: "stars", Requires: "stars_library", ExportPrivacy: "personal",
 		Description:    "search the person's Constellation library — facts Weaver has synthesized about them — and read one back in full.",
 		APIDescription: "Search the person's Constellation library (facts Weaver has synthesized about them across past conversations) and read one star back in full by ID."},
 	"spawn_researchers": {Name: "spawn_researchers", Requires: "deep_research", Category: "research",
@@ -298,10 +334,19 @@ var catalogDefaults = map[string]catalogEntry{
 	"finalize_daily_items": {Name: "finalize_daily_items", Requires: "pulsar_daily_items",
 		Description:    "end with a structured list of distinct stories instead of one merged paragraph.",
 		APIDescription: "End with every distinct story found as its own item (title, summary, source) instead of one merged paragraph — this ends the turn."},
-	"search_stars": {Name: "search_stars", Requires: "weaver_run",
+	"alert_me": {Name: "alert_me", Requires: "pulsar_alert",
+		Description:    "flag this scheduled run as important news the user should see first.",
+		APIDescription: "Flag this run as genuinely important, so it stands out as big news. Pass a one-sentence reason."},
+	"search_trails": {Name: "search_trails", Requires: "approach_run", ExportPrivacy: "personal",
+		Description:    "keyword-search prior Comet trails, for cross-period consistency.",
+		APIDescription: "Keyword search over prior Comet trails (topic/mood/intent + thread titles). Use this when a thread you're classifying has an earlier trail, or to see how similar conversations were phrased before."},
+	"record_classification": {Name: "record_classification", Requires: "approach_run",
+		Description:    "record this conversation's topic, mood, intent, and whether it was resolved.",
+		APIDescription: "Record the finished classification (topic, mood, intent, resolved) — this ends the turn."},
+	"search_stars": {Name: "search_stars", Requires: "weaver_run", ExportPrivacy: "personal",
 		Description:    "keyword-search Constellation's existing stars, for dedup-checking and link-discovery.",
 		APIDescription: "Keyword search over Constellation's existing stars by title/summary. Always call this before create_star to check whether this topic already has a star."},
-	"read_star": {Name: "read_star", Requires: "weaver_run",
+	"read_star": {Name: "read_star", Requires: "weaver_run", ExportPrivacy: "personal",
 		Description:    "read one star's full card.",
 		APIDescription: "Read one star's full card (title, category, tags, status, confidence, summary, body). Mandatory before update_star or link_stars."},
 	"create_star": {Name: "create_star", Requires: "weaver_run",
@@ -313,10 +358,10 @@ var catalogDefaults = map[string]catalogEntry{
 	"link_stars": {Name: "link_stars", Requires: "weaver_run",
 		Description:    "connect two related-but-distinct stars.",
 		APIDescription: "Record that two distinct stars relate to each other, with a specific reason why."},
-	"compare_sources": {Name: "compare_sources", Requires: "jev", Category: "research",
+	"compare_sources": {Name: "compare_sources", Requires: "decisions", Category: "research",
 		Description:    "check whether two or more of your own cited sources actually agree on a specific fact.",
 		APIDescription: "Check whether two or more sources you've already read this turn (via web_read) actually agree on a specific fact, using a calibrated comparison rather than your own read of them. Use this when you notice sources might conflict on something specific — not as a routine double-check of everything."},
-	"save_to_field": {Name: "save_to_field", Requires: "field_workspace",
+	"save_to_field": {Name: "save_to_field", Requires: "field_workspace", ExportPrivacy: "personal",
 		Description: "copy a file from your workspace into this field's shared files, so every other conversation in the field can read it.",
 		APIDescription: "Copy a file from your own workspace into this field's shared file pool, where every other conversation in the field can read it (read-only, under /field in code_exec). " +
 			"The file stays in your workspace too. If the field already has a file with that name, the copy is saved under a numbered name instead of replacing it — the result tells you the name it actually got."},
@@ -335,6 +380,27 @@ var (
 // given tool (missing/unreadable/unparseable file, or a name: mismatch
 // against the filename), keeps serving the last-known-good entry for that
 // tool, falling back to catalogDefaults if none has ever loaded.
+// ExportPrivacyClass returns the tool names threadexport's two privacy
+// toggles suppress, read from each catalog entry's own export_privacy field.
+// Reading the catalog rather than a literal list here is the point: a new
+// tool declares export_privacy in its own YAML (and in catalogDefaults, for
+// the broken-descriptions-directory fallback) and lands in the right set with
+// no second list to keep in sync.
+func ExportPrivacyClass() (memory, personal map[string]bool) {
+	catalog := loadCatalog()
+	memory = map[string]bool{}
+	personal = map[string]bool{}
+	for name, entry := range catalog {
+		switch entry.ExportPrivacy {
+		case "memory":
+			memory[name] = true
+		case "personal":
+			personal[name] = true
+		}
+	}
+	return memory, personal
+}
+
 func loadCatalog() map[string]catalogEntry {
 	catalogMu.Lock()
 	defer catalogMu.Unlock()
@@ -394,7 +460,8 @@ func loadCatalog() map[string]catalogEntry {
 // switch.
 var nonToggleable = map[string]bool{
 	"think": true, "ask_user_question": true, "memory": true,
-	"finalize_wizard_prompt": true, "finalize_daily_items": true,
+	"finalize_wizard_prompt": true, "finalize_daily_items": true, "alert_me": true,
+	"record_classification": true,
 }
 
 // ToolInfo is one individually toggleable tool's identity, for the
@@ -426,7 +493,7 @@ func ToggleableTools() []ToolInfo {
 		if nonToggleable[name] {
 			continue
 		}
-		if catalog[name].Requires == "weaver_run" {
+		if catalog[name].Requires == "weaver_run" || catalog[name].Requires == "approach_run" {
 			continue
 		}
 		out = append(out, ToolInfo{Name: name, Description: catalog[name].Description})

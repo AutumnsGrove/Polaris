@@ -1,0 +1,12 @@
+id: ch-daily-wildfire-status
+track: chips
+rationale: >-
+  A developing local situation (containment, evacuation zones) that moves day to day and matters
+  to the person: a situation worth a daily glance, so chip_daily=yes. Different flavor from the
+  news-story seed: this is a safety-relevant local condition, not a political story.
+state:
+  latest: "wildfire near ashland oregon, whats the containment status and are the evacuation zones changing"
+expect:
+  chip_daily: {answer: "yes"}
+quiet:
+  - chip_safari

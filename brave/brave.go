@@ -5,9 +5,10 @@
 // Parallel -> Tavily. Brave goes ahead of Parallel/Tavily specifically
 // because it returns real result listings suited to Atlas's browsing UI,
 // where Parallel/Tavily's pre-summarized, agent-oriented output isn't a
-// good fit. Brave has no ongoing free tier beyond a one-time $5/mo
-// signup credit — every query bills the account's card on file, so
-// callers must check a persisted usage count (see store.Store's
+// good fit. Brave's free allowance is a recurring $5 credit per month
+// (~1,000 Search requests at $5/1,000), applied automatically — past
+// that credit every query bills the account's card on file, so callers
+// must check a persisted usage count (see store.Store's
 // api_usage table) against a hard monthly cap themselves before calling
 // Search; this package has no awareness of the cap, it only executes
 // the request it's asked to.
@@ -38,9 +39,9 @@ const MaxCount = 20
 const maxOffset = 9
 
 // MonthlyCap is the hard ceiling on Brave Search API calls per calendar
-// month, matching Brave's own $5/mo signup credit (~1,000 queries at
-// $5/1,000) — unlike Parallel/Tavily, Brave has no ongoing free tier, so
-// every query past this bills the account's card on file. Brave's own
+// month, matching the ~1,000 queries Brave's recurring $5/mo credit buys
+// at $5/1,000 — past that credit every query bills the account's card
+// on file, so this cap keeps usage inside the free allowance. Brave's own
 // dashboard also auto-stops the key at 1,000/mo, so callers enforcing
 // this (see store.Store's api_usage table) are belt-and-suspenders
 // rather than the only thing standing between usage and a bill — kept

@@ -1,0 +1,15 @@
+id: dr-followup-direct-air-capture
+track: deep_research
+rationale: >-
+  A follow-up that turns a light overview into a request to go deep. The previous message was a
+  normal broad question; the latest asks for a multi-dimensional comparison of companies, costs,
+  energy needs and criticisms on one sub-topic. Only the latest message decides, and it clearly
+  wants extensive research.
+state:
+  previous: "what are the main approaches to carbon capture"
+  latest: "ok now go deep on direct air capture. compare the leading companies, real costs per ton, energy requirements, and what the critics say"
+expect:
+  deep_research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

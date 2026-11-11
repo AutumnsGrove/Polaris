@@ -39,8 +39,10 @@ func buildDefaults() Set {
 	turnDefaults(&d)
 	toolsDefaults(&d)
 	weaverDefaults(&d)
+	cometDefaults(&d)
 	wizardDefaults(&d)
 	pulsarDefaults(&d)
 	oracleDefaults(&d)
+	uiDefaults(&d)
 	return d
 }

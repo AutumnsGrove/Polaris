@@ -10,7 +10,6 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
-	"strconv"
 	"time"
 
 	"polaris/logger"
@@ -114,6 +113,23 @@ func (s *Store) ListEvents(threadID string, limit int) ([]Event, error) {
 	return scanEvents(rows)
 }
 
+// AllEventsForThread returns every event for threadID, oldest first, with
+// no limit — unlike ListEvents, whose 500-row default would silently
+// truncate a long researched thread's trail exactly where an export needs
+// it complete (the newest rows are the ones LIMIT would drop).
+func (s *Store) AllEventsForThread(threadID string) ([]Event, error) {
+	rows, err := s.db.Query(
+		`SELECT id, COALESCE(thread_id, ''), level, source, message, data, turn_id, created_at
+		 FROM events WHERE thread_id = ? ORDER BY id ASC`,
+		threadID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanEvents(rows)
+}
+
 // ToolEventsForThread returns every tool call started/finished event
 // logged under threadID, oldest first — the raw material gateway's
 // loadHistory rebuilds tool calls and results from for turns stored before
@@ -171,24 +187,13 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 	return events, rows.Err()
 }
 
-// PruneEvents deletes events older than olderThanDays — called once at
-// startup, mirroring the log files' own 90-day retention (see
-// logger.rotatingWriter) so this durable trail doesn't grow forever on a
-// long-running install.
-//
-// Deliberately asymmetric with threads/messages, which are NEVER pruned —
-// events are disposable operational evidence (tool calls, thinking steps,
-// turn timing), rebuilt fresh on every turn, while a thread's messages are
-// the actual conversation the user is revisiting/continuing (see the
-// package doc comment). Silently deleting someone's chat history on a
-// timer would be a real, surprising data-loss feature, not a hygiene one —
-// if unbounded growth of threads/messages ever becomes a real problem for
-// a given install, that needs to be an explicit, opt-in retention policy,
-// not an assumption baked in here.
-func (s *Store) PruneEvents(olderThanDays int) error {
-	_, err := s.db.Exec(
-		`DELETE FROM events WHERE created_at < datetime('now', '-' || ? || ' days')`,
-		strconv.Itoa(olderThanDays),
-	)
-	return err
-}
+// There is deliberately no PruneEvents here — unlike the log files (see
+// logger.rotatingWriter's 90-day retention), events are never deleted on a
+// timer. They're the only place a turn's thinking traces survive
+// (messages.transcript holds tool calls and results but no reasoning), so a
+// thread's audit trail must live exactly as long as the thread itself: a
+// hard-deleted thread's events cascade away with it (events.thread_id's
+// ON DELETE CASCADE, see schema.go), a soft-deleted thread keeps them. Each
+// row is capped at maxEventDataBytes so growth is by usage, not per-row
+// size. If unbounded growth ever becomes a real problem, that needs an
+// explicit, opt-in retention policy — not a silent timer.

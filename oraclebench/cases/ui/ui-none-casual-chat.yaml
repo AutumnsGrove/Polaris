@@ -1,0 +1,14 @@
+id: ui-none-casual-chat
+track: ui
+rationale: >-
+  Pure casual banter. No block shape applies; every shape check stays quiet.
+state:
+  latest: "lol ok fair enough. anyway how's your day going"
+expect:
+  ui: {answer: "none"}
+  format: {answer: "none"}
+  depth: {answer: quick}
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,13 @@
+id: dp-quick-ack-followup
+track: depth
+rationale: >-
+  A mid-thread acknowledgement with a throwaway follow-up. A couple of sentences is the right
+  size, so quick.
+state:
+  previous: "can i freeze cooked rice"
+  latest: "cool, and how long does it keep"
+expect:
+  depth: {answer: quick, accept: [quick, standard]}
+quiet:
+  - emotional
+  - private_person

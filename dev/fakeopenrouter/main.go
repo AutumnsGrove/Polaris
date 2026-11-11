@@ -33,6 +33,11 @@
 // dev/stack.sh's --fake-llm[-delay] flags, which wire this whole server
 // into the one-command dev stack.
 //
+// -chunk-delay (e.g. -chunk-delay=40ms) is the other axis: it sleeps between
+// the ~24-byte chunks of a plain-text answer, stretching the stream itself so
+// progressive rendering (streaming mermaid, `ui` blocks) can be watched or
+// sampled. stack.sh doesn't plumb it; run this server directly with it.
+//
 // With nothing queued, every call gets a generic canned plain-text reply
 // — enough to exercise a normal turn end-to-end with zero setup. Queue a
 // specific scripted response (a tool call, a particular answer) before
@@ -42,6 +47,9 @@
 //	  {"tool_calls":[{"name":"ask_user_question","arguments":{"question":"...","wants_web_search":true}}]},
 //	  {"content":"Here is the answer now that research is back on."}
 //	]}'
+//
+// A single response may carry both "content" and "tool_calls": the text
+// streams first, then the tool call (the "narrate, then call a tool" shape).
 //
 // Responses are served FIFO, one per call to /chat/completions, then it
 // falls back to the generic reply again once the queue drains — so a
@@ -71,25 +79,26 @@
 //	  {"content":"Generic reply for every other concurrent block this turn fires."}
 //	]}'
 //
-// # Jev (Oracle mode, source verification)
+// # Decisions API (Oracle mode, source verification)
 //
-// jev.Client hits a completely different endpoint (POST {base}/systemone,
-// not /chat/completions, and a plain JSON response, not SSE) with a
-// different request/response shape — see jev/jev.go's package doc
-// comment. This server answers it too, with its own queue/control
+// decisions.Client hits a completely different endpoint (POST
+// {host}/api/alpha/decisions — the host only, the base_url's path is
+// dropped — not /chat/completions, and a plain JSON response, not SSE) with
+// a different request/response shape — see decisions/decisions.go's package
+// doc comment. This server answers it too, with its own queue/control
 // surface, so a browser/Playwright session can exercise Oracle mode or
 // verification against this same fake process instead of needing a real
-// Jev-capable OpenRouter key on hand. GET /_control/jev/calls returns raw
+// OpenRouter key on hand. GET /_control/decisions/calls returns raw
 // request bodies (each one's "questions" map's keys/criteria are the
 // interesting part to assert on — e.g. that a skip_for_focus check really
-// didn't get asked). POST /_control/jev/queue schedules answers for
+// didn't get asked). POST /_control/decisions/queue schedules answers for
 // specific question keys by name — any question in the request NOT
 // covered by the queued entry answers itself, picking whichever of its
 // own criteria is named "off"/"no"/"none" (falling back to the
 // alphabetically-first option), at 100% confidence, so an unscripted
 // question never blocks the response or looks like it fired:
 //
-//	curl -sX POST http://127.0.0.1:18901/_control/jev/queue -d '{"responses":[
+//	curl -sX POST http://127.0.0.1:18901/_control/decisions/queue -d '{"responses":[
 //	  {"answers":{
 //	    "high_stakes":{"choice":"medical","probabilities":{"medical":0.91,"none":0.06}},
 //	    "focus":{"choice":"researcher","probabilities":{"researcher":0.82,"academic":0.11,"off":0.05}}
@@ -99,7 +108,32 @@
 // Same Match/FIFO precedence as the chat queue above, and the same
 // "queue empty -> everything answers quiet/off" fallback as
 // defaultReply's reasoning — a script that only cares about the chat
-// completion side doesn't have to also stub every Jev call it triggers.
+// completion side doesn't have to also stub every decisions call it triggers.
+//
+// # OpenCode Go dialect and the failover proof (docs/plans/multi-provider.md §10)
+//
+// -go makes this server speak the Go dialect: it requires
+// x-opencode-session on every inference request (400 MissingSessionID
+// without it, the live body), attaches usage.opencode
+// (allowance/list_cost/billing_source, scriptable per queued response) to
+// every usage chunk, and serves a canned GET /api/go/status. -limit makes
+// every inference request 429, whatever is queued.
+//
+// The live failover proof runs two instances — a spent Go leg and a
+// healthy OpenRouter leg — against a real `polaris run` with deepseek
+// routed Go-first:
+//
+//	go run ./dev/fakeopenrouter -addr 127.0.0.1:18901 -go -limit &
+//	go run ./dev/fakeopenrouter -addr 127.0.0.1:18902 &
+//	# config.yaml: opencode_go.base_url http://127.0.0.1:18901,
+//	# openrouter.base_url http://127.0.0.1:18902, deepseek routed Go-first
+//
+// The turn's Go attempt 429s, the same thread continues on OpenRouter and
+// says so (provider_fallback event → transcript chip), the next turn tries
+// Go first again, and /_control/calls on :18901 shows every Go attempt
+// carrying the thread's x-opencode-session. (The -limit instance never
+// emits a usage block: a refused request never reaches the model, so
+// nothing is consumed — same as the real backend.)
 package main
 
 import (
@@ -124,10 +158,10 @@ type queuedToolCall struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-// queuedResponse is one scripted turn: either Content (a plain-text final
-// answer) or ToolCalls (ending the turn in a tool_calls finish, same as a
-// real model choosing to call a tool instead of answering) — never both,
-// mirroring how a real completion is one or the other.
+// queuedResponse is one scripted turn: Content (streamed text), ToolCalls
+// (ending the turn in a tool_calls finish, same as a real model choosing to
+// call a tool), or both — text first, then the calls, like a real model that
+// narrates before reaching for a tool.
 type queuedResponse struct {
 	Content   string           `json:"content,omitempty"`
 	ToolCalls []queuedToolCall `json:"tool_calls,omitempty"`
@@ -146,12 +180,29 @@ type queuedResponse struct {
 	// verify a tool's internal filter-pass LLM call actually gets counted
 	// toward a thread's total cost, not silently dropped).
 	Cost float64 `json:"cost,omitempty"`
+	// Allowance/ListCost/BillingSource script the Go usage block
+	// (usage.opencode) when the server runs with -go — what the real Go
+	// backend attaches to every response. Pointers so a scripted free
+	// call (explicit zero allowance with a real list price) reads
+	// differently from an unset field, which falls back to the -go
+	// defaults. Ignored without -go.
+	Allowance     *float64 `json:"allowance,omitempty"`
+	ListCost      *float64 `json:"list_cost,omitempty"`
+	BillingSource string   `json:"billing_source,omitempty"`
 	// PromptTokens scripts this response's reported usage.prompt_tokens
 	// (default 0, like Cost) — what makes a token display (the turn-info
 	// sheet's "Context" vs summed "Tokens in") exercisable end to end
 	// against a live server. Script a growing value across a tool turn's
 	// responses to see the last-call-vs-sum distinction.
 	PromptTokens int `json:"prompt_tokens,omitempty"`
+	// Status, when non-zero, makes this scripted response a bare HTTP error with
+	// that code and OpenRouter's `{"error":{"message":...}}` envelope instead of
+	// a stream. Provider failures were the one thing this double could not
+	// script, which left Polaris's retry path (429 at 2s then 4s, see
+	// llm/client.go's max429Retries) only ever exercised by unit fakes: queue
+	// `{"status":429}` twice and then a normal response to watch a live server
+	// retry and recover, or three times to see the user-facing rate-limit text.
+	Status int `json:"status,omitempty"`
 }
 
 // defaultReply is what every call gets when the queue is empty — lets a
@@ -164,33 +215,36 @@ type queuedResponse struct {
 // explicitly scripted, e.g. title/suggestion generation calls).
 const defaultReply = "This is the fake OpenRouter server's default reply — queue a scripted response via POST /_control/queue for anything more specific."
 
-// jevAnswerScript is one scripted question's answer — see
-// jev.ChoiceAnswer. Probabilities defaults to {Choice: 1.0} when omitted,
+// scriptedErrorMessage is the message inside a queuedResponse.Status error body.
+const scriptedErrorMessage = "scripted provider failure from dev/fakeopenrouter"
+
+// decisionsAnswerScript is one scripted question's answer — see
+// decisions.ChoiceAnswer. Probabilities defaults to {Choice: 1.0} when omitted,
 // the common case for a script that only cares which option won, not the
 // exact odds.
-type jevAnswerScript struct {
+type decisionsAnswerScript struct {
 	Choice        string             `json:"choice"`
 	Probabilities map[string]float64 `json:"probabilities,omitempty"`
 }
 
-// queuedJevResponse is one scripted /systemone call — Answers is keyed by
+// queuedDecisionsResponse is one scripted /api/alpha/decisions call — Answers is keyed by
 // question key (e.g. "focus", "high_stakes", "chip_pulsar"), same shape
 // gateway/oracle.go's RunOracle asks for. Any question in the real
 // request NOT covered here answers itself via a quiet default — see
-// jevQuietAnswer.
-type queuedJevResponse struct {
-	Answers map[string]jevAnswerScript `json:"answers,omitempty"`
-	Cost    float64                    `json:"cost,omitempty"`
+// decisionsQuietAnswer.
+type queuedDecisionsResponse struct {
+	Answers map[string]decisionsAnswerScript `json:"answers,omitempty"`
+	Cost    float64                          `json:"cost,omitempty"`
 	// Match: see queuedResponse.Match's doc comment — identical semantics,
-	// just checked against a /systemone request body instead of a
+	// just checked against a decisions request body instead of a
 	// /chat/completions one.
 	Match string `json:"match,omitempty"`
 }
 
-// jevRequestBody mirrors jev.go's own requestBody/questionWire just
+// decisionsRequestBody mirrors decisions.go's own requestBody/questionWire just
 // enough to read back each question's criteria (option set) — needed to
 // pick a quiet default for any question a queued response doesn't cover.
-type jevRequestBody struct {
+type decisionsRequestBody struct {
 	Questions map[string]struct {
 		Criteria map[string]string `json:"criteria"`
 	} `json:"questions"`
@@ -209,18 +263,54 @@ type server struct {
 	// human (or a screenshot/mid-turn state check) to ever see it "still
 	// running." Set via -delay to slow every call down uniformly instead.
 	delay time.Duration
+	// chunkDelay sleeps between the ~24-byte content chunks of a plain-text
+	// answer (not tool calls), via -chunk-delay. Unlike delay, which only
+	// shifts when a response starts, this stretches the stream itself.
+	chunkDelay time.Duration
 
-	// jevQueue/jevCalls: Jev's own queue/call-log, entirely separate from
-	// the chat-completion ones above — see the package doc comment's
-	// "Jev" section.
-	jevQueue []queuedJevResponse
-	jevCalls []json.RawMessage
+	// decisionsQueue/decisionsCalls: the decisions API's own queue/call-log,
+	// entirely separate from the chat-completion ones above — see the package
+	// doc comment's "Decisions API" section.
+	decisionsQueue []queuedDecisionsResponse
+	decisionsCalls []json.RawMessage
+
+	// goDialect makes this server speak the OpenCode Go dialect instead
+	// of plain OpenRouter (set via -go): every inference request without
+	// x-opencode-session is refused with the live 400 MissingSessionID
+	// body, and the usage chunk carries usage.opencode
+	// (allowance/list_cost/billing_source). limitAll (set via -limit)
+	// answers every inference request with 429, whatever is queued —
+	// the failover proof needs both: a Go leg that refuses for a real
+	// reason (missing header) or a spent window (limit), never an
+	// invented one.
+	goDialect bool
+	limitAll  bool
 }
 
 func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// The Go dialect's hard requirement, enforced before anything scripted
+	// is consumed: a refused request never reaches the model, so the queue
+	// stays intact for the retry that fixes the header.
+	if s.goDialect && r.Header.Get("x-opencode-session") == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"MissingSessionID","message":"Request is missing x-opencode-session and cannot be routed efficiently."}}`)
+		return
+	}
+
+	// A spent subscription window: every call fails the same way a real
+	// rate-limited Go backend does, so the router must spill to OpenRouter
+	// and say so.
+	if s.limitAll {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"subscription limit reached","type":"RateLimitError","code":429}}`)
 		return
 	}
 
@@ -234,6 +324,15 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	resp := s.takeResponse(string(body))
 
+	// A scripted failure answers as an error, never as a stream — see
+	// queuedResponse.Status.
+	if resp.Status != 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.Status)
+		fmt.Fprintf(w, `{"error":{"message":%q,"code":%d}}`, scriptedErrorMessage, resp.Status)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -245,7 +344,43 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
+	// Content streams first whenever present, tool calls after — a real model
+	// routinely narrates ("let me search for that") or even starts an answer
+	// before calling a tool, and the app treats that pre-tool text specially
+	// (turnEvents.ts reclassifies it as commentary). A response with both
+	// reproduces that path; content alone is the plain-answer case, and with
+	// neither set the generic reply is used.
+	content := resp.Content
+	if content == "" && len(resp.ToolCalls) == 0 {
+		content = defaultReply
+	}
+	// Chunked rather than sent whole — exercises the frontend's live
+	// token-by-token rendering path instead of one giant "token" event.
+	const chunkSize = 24
+	for len(content) > 0 {
+		n := chunkSize
+		if n > len(content) {
+			n = len(content)
+		}
+		chunk, _ := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"delta":         map[string]interface{}{"content": content[:n]},
+				"finish_reason": "",
+			}},
+			"model": "fake-openrouter",
+		})
+		sseLine(string(chunk))
+		content = content[n:]
+		// Pacing between chunks, so progressive rendering (a diagram or
+		// `ui` block filling in as it streams) is observable rather than
+		// finishing inside one frame.
+		if s.chunkDelay > 0 && len(content) > 0 {
+			time.Sleep(s.chunkDelay)
+		}
+	}
+	finish := "stop"
 	if len(resp.ToolCalls) > 0 {
+		finish = "tool_calls"
 		for i, tc := range resp.ToolCalls {
 			args := string(tc.Arguments)
 			if args == "" {
@@ -270,43 +405,42 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			})
 			sseLine(string(chunk))
 		}
-		finishChunk, _ := json.Marshal(map[string]interface{}{
-			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "tool_calls"}},
-			"usage":   map[string]interface{}{"prompt_tokens": resp.PromptTokens, "completion_tokens": 0, "total_tokens": resp.PromptTokens, "cost": resp.Cost},
-			"model":   "fake-openrouter",
-		})
-		sseLine(string(finishChunk))
-	} else {
-		content := resp.Content
-		if content == "" {
-			content = defaultReply
-		}
-		// Chunked rather than sent whole — exercises the frontend's live
-		// token-by-token rendering path instead of one giant "token" event.
-		const chunkSize = 24
-		for len(content) > 0 {
-			n := chunkSize
-			if n > len(content) {
-				n = len(content)
-			}
-			chunk, _ := json.Marshal(map[string]interface{}{
-				"choices": []map[string]interface{}{{
-					"delta":         map[string]interface{}{"content": content[:n]},
-					"finish_reason": "",
-				}},
-				"model": "fake-openrouter",
-			})
-			sseLine(string(chunk))
-			content = content[n:]
-		}
-		finishChunk, _ := json.Marshal(map[string]interface{}{
-			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "stop"}},
-			"usage":   map[string]interface{}{"prompt_tokens": resp.PromptTokens, "completion_tokens": 0, "total_tokens": resp.PromptTokens, "cost": resp.Cost},
-			"model":   "fake-openrouter",
-		})
-		sseLine(string(finishChunk))
 	}
+	finishChunk, _ := json.Marshal(map[string]interface{}{
+		"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": finish}},
+		"usage":   s.usageChunk(resp),
+		"model":   "fake-openrouter",
+	})
+	sseLine(string(finishChunk))
 	sseLine("[DONE]")
+}
+
+// usageChunk builds the response's usage object: the plain OpenRouter
+// shape by default, plus the usage.opencode block in Go dialect mode.
+// A scripted free call (explicit zero allowance, real list price) keeps
+// its zero — only unset fields fall back to the -go defaults.
+func (s *server) usageChunk(resp queuedResponse) map[string]interface{} {
+	u := map[string]interface{}{
+		"prompt_tokens": resp.PromptTokens, "completion_tokens": 0,
+		"total_tokens": resp.PromptTokens, "cost": resp.Cost,
+	}
+	if !s.goDialect {
+		return u
+	}
+	allowance, listCost, billing := 0.001, 0.002, "go"
+	if resp.Allowance != nil {
+		allowance = *resp.Allowance
+	}
+	if resp.ListCost != nil {
+		listCost = *resp.ListCost
+	}
+	if resp.BillingSource != "" {
+		billing = resp.BillingSource
+	}
+	u["opencode"] = map[string]interface{}{
+		"allowance": allowance, "list_cost": listCost, "billing_source": billing,
+	}
+	return u
 }
 
 // takeResponse pops and returns the queued response for one incoming
@@ -352,8 +486,8 @@ func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.queue = nil
 	s.calls = nil
-	s.jevQueue = nil
-	s.jevCalls = nil
+	s.decisionsQueue = nil
+	s.decisionsCalls = nil
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -366,7 +500,7 @@ func (s *server) handleCalls(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(calls)
 }
 
-// jevQuietAnswer picks the "nothing fired" option from a question's own
+// decisionsQuietAnswer picks the "nothing fired" option from a question's own
 // criteria set — "off"/"no"/"none"/"general"/"standard"/"any"/"answer"/
 // "evergreen" in that priority order (prompts.yaml's checks each use one of
 // these for their quiet option: intent's is "general", depth's "standard",
@@ -377,10 +511,10 @@ func (s *server) handleCalls(w http.ResponseWriter, r *http.Request) {
 // so an unusual/future check still gets a deterministic, valid answer
 // instead of an empty Choice that would fail RunOracle's
 // Probabilities[Choice] threshold lookup.
-func jevQuietAnswer(criteria map[string]string) jevAnswerScript {
+func decisionsQuietAnswer(criteria map[string]string) decisionsAnswerScript {
 	for _, quiet := range []string{"off", "no", "none", "general", "standard", "any", "answer", "evergreen"} {
 		if _, ok := criteria[quiet]; ok {
-			return jevAnswerScript{Choice: quiet, Probabilities: map[string]float64{quiet: 1.0}}
+			return decisionsAnswerScript{Choice: quiet, Probabilities: map[string]float64{quiet: 1.0}}
 		}
 	}
 	first := ""
@@ -389,30 +523,30 @@ func jevQuietAnswer(criteria map[string]string) jevAnswerScript {
 			first = k
 		}
 	}
-	return jevAnswerScript{Choice: first, Probabilities: map[string]float64{first: 1.0}}
+	return decisionsAnswerScript{Choice: first, Probabilities: map[string]float64{first: 1.0}}
 }
 
-// takeJevResponse mirrors takeResponse's match/FIFO precedence, just
-// against s.jevQueue — see queuedJevResponse.Match's doc comment.
-func (s *server) takeJevResponse(body string) (queuedJevResponse, bool) {
+// takeDecisionsResponse mirrors takeResponse's match/FIFO precedence, just
+// against s.decisionsQueue — see queuedDecisionsResponse.Match's doc comment.
+func (s *server) takeDecisionsResponse(body string) (queuedDecisionsResponse, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i, resp := range s.jevQueue {
+	for i, resp := range s.decisionsQueue {
 		if resp.Match != "" && strings.Contains(body, resp.Match) {
-			s.jevQueue = append(s.jevQueue[:i:i], s.jevQueue[i+1:]...)
+			s.decisionsQueue = append(s.decisionsQueue[:i:i], s.decisionsQueue[i+1:]...)
 			return resp, true
 		}
 	}
-	for i, resp := range s.jevQueue {
+	for i, resp := range s.decisionsQueue {
 		if resp.Match == "" {
-			s.jevQueue = append(s.jevQueue[:i:i], s.jevQueue[i+1:]...)
+			s.decisionsQueue = append(s.decisionsQueue[:i:i], s.decisionsQueue[i+1:]...)
 			return resp, true
 		}
 	}
-	return queuedJevResponse{}, false
+	return queuedDecisionsResponse{}, false
 }
 
-func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleDecisions(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -420,20 +554,20 @@ func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	s.jevCalls = append(s.jevCalls, json.RawMessage(body))
+	s.decisionsCalls = append(s.decisionsCalls, json.RawMessage(body))
 	s.mu.Unlock()
 
 	if s.delay > 0 {
 		time.Sleep(s.delay)
 	}
 
-	var req jevRequestBody
+	var req decisionsRequestBody
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	scripted, _ := s.takeJevResponse(string(body))
+	scripted, _ := s.takeDecisionsResponse(string(body))
 
 	answers := make(map[string]struct {
 		Choice        string             `json:"choice"`
@@ -443,7 +577,7 @@ func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
 	for key, q := range req.Questions {
 		a, ok := scripted.Answers[key]
 		if !ok {
-			a = jevQuietAnswer(q.Criteria)
+			a = decisionsQuietAnswer(q.Criteria)
 		}
 		conf := a.Probabilities[a.Choice]
 		answers[key] = struct {
@@ -461,44 +595,70 @@ func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (s *server) handleJevQueue(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleDecisionsQueue(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Responses []queuedJevResponse `json:"responses"`
+		Responses []queuedDecisionsResponse `json:"responses"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	s.mu.Lock()
-	s.jevQueue = append(s.jevQueue, req.Responses...)
-	n := len(s.jevQueue)
+	s.decisionsQueue = append(s.decisionsQueue, req.Responses...)
+	n := len(s.decisionsQueue)
 	s.mu.Unlock()
 	fmt.Fprintf(w, `{"queued":%d}`, n)
 }
 
-func (s *server) handleJevCalls(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleDecisionsCalls(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
-	calls := s.jevCalls
+	calls := s.decisionsCalls
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(calls)
 }
 
+// handleGoStatus serves a canned account-wide allowance window set, so
+// the settings Go panel and `polaris providers status` can be exercised
+// live without a real subscription. Only registered in -go mode; the
+// numbers are static and deliberately round.
+func (s *server) handleGoStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, `{"access":{"endsAt":"2026-12-06T00:00:00Z","meters":{`+
+		`"fiveHour":{"usedMicroCents":2000000000,"limitMicroCents":20000000000,"resetsAt":"2026-11-07T00:00:00Z"},`+
+		`"week":{"usedMicroCents":10000000000,"limitMicroCents":50000000000,"resetsAt":"2026-11-09T00:00:00Z"},`+
+		`"month":{"usedMicroCents":35000000000,"limitMicroCents":100000000000,"resetsAt":"2026-12-06T00:00:00Z"}}}}`)
+}
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:18901", "listen address")
 	delay := flag.Duration("delay", 0, "sleep this long before each call starts streaming its response — 0 (default) answers instantly; set e.g. 1500ms to slow a scripted multi-tool-call turn down enough to actually watch it stream or catch it mid-turn")
+	chunkDelay := flag.Duration("chunk-delay", 0, "sleep this long between the ~24-byte chunks of a plain-text answer — 0 (default) streams instantly; set e.g. 40ms to watch a diagram or ui block fill in as it streams")
+	goDialect := flag.Bool("go", false, "speak the OpenCode Go dialect: require x-opencode-session (400 MissingSessionID without it), emit usage.opencode on every response, serve a canned GET /api/go/status — point opencode_go.base_url at this server")
+	limitAll := flag.Bool("limit", false, "answer every inference request with 429 (spent subscription window) — combine with -go to force a live failover to OpenRouter and watch the transcript chip")
 	flag.Parse()
 
-	s := &server{delay: *delay}
+	s := &server{delay: *delay, chunkDelay: *chunkDelay, goDialect: *goDialect, limitAll: *limitAll}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/_control/queue", s.handleQueue)
 	mux.HandleFunc("/_control/reset", s.handleReset)
 	mux.HandleFunc("/_control/calls", s.handleCalls)
-	mux.HandleFunc("/systemone", s.handleSystemOne)
-	mux.HandleFunc("/_control/jev/queue", s.handleJevQueue)
-	mux.HandleFunc("/_control/jev/calls", s.handleJevCalls)
+	mux.HandleFunc("/api/alpha/decisions", s.handleDecisions)
+	mux.HandleFunc("/_control/decisions/queue", s.handleDecisionsQueue)
+	mux.HandleFunc("/_control/decisions/calls", s.handleDecisionsCalls)
+	if *goDialect {
+		mux.HandleFunc("/api/go/status", s.handleGoStatus)
+	}
 
-	log.Printf("fake OpenRouter stub listening on %s (delay=%s) — point openrouter.base_url at it in config.yaml", *addr, *delay)
+	which := "openrouter.base_url"
+	extra := ""
+	if *goDialect {
+		which = "opencode_go.base_url"
+	}
+	if *limitAll {
+		extra = " (every inference call 429s: point a second instance at openrouter.base_url and watch the failover chip)"
+	}
+	log.Printf("fake OpenRouter stub listening on %s (delay=%s) — point %s at it in config.yaml%s", *addr, *delay, which, extra)
 	log.Fatal(http.ListenAndServe(*addr, mux))
 }

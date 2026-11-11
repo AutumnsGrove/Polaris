@@ -115,7 +115,7 @@ func (s *Store) CreateMemory(name, memType, description, content, occurredAt str
 // memory tool's "edit" action can change just one field without a caller
 // ever needing to read the row first. That's done here as a single CASE-WHEN
 // UPDATE, not a Go-side read-then-write, specifically because
-// agent/driver.go's dispatchToolCallsConcurrently runs every tool call in a
+// Nova's parallel tool dispatch (agent/nova_tools.go) runs every tool call in a
 // batch on its own goroutine: two concurrent edits to the same memory (one
 // changing description, one changing content) reading a shared snapshot
 // before either writes back would let whichever write lands second silently

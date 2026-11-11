@@ -2,9 +2,10 @@
 
 **Added: 2026-09-19 (`2281d51`).**
 
-**Status: mockup reviewed and liked (operator: "just right... quite brief"), backend mechanics for
-category breakdown + spiked/faded now settled — still entirely in planning, implementation
-explicitly deferred.** Tracked as
+**Status: implemented (2026-10-18) — `store/comet.go`, `gateway/comet_*.go`, `cmd/comet.go`,
+`/comet`. The sections below are the original planning record; where code and plan disagree
+(e.g. `polaris comet classify -n N` takes the first N eligible threads oldest-first, not the N
+most-recently-active), the code is authoritative.** Tracked as
 [issue #115](https://github.com/AutumnsGrove/Polaris/issues/115). Named and scoped in a live
 brainstorm 2026-09-19 — see
 `docs/plans/crazy-ideas.md` for the naming history. A first visual mockup lives at
@@ -178,7 +179,7 @@ idle" detection to build.
   `polaris comet classify -n N` against a new `/api/comet/classify?limit=N` gets the same
   try-before-you-commit workflow for free, no new CLI pattern needed.
 
-**Status: mechanics settled, nothing implemented.** Explicitly flagged by the operator as needing
+**Status (historical — since implemented): mechanics settled.** Explicitly flagged by the operator as needing
 real testing against real threads (quality of topic/mood output, actual per-call cost, whether 500
 chars of assistant reply is enough signal) before any schema is finalized or real implementation
 starts — implementation is "not for another day or few" as of 2026-09-19. The `-n`-limited classify
@@ -318,26 +319,13 @@ now; that's prompt-writing work for implementation, not a planning decision.
 
 ## Open questions before this is buildable
 
-Every open question from the original planning session — generation cadence/scheduling,
-cost-control-per-run, yearly cadence, the test environment, star-edit runs' thread status, and
-`mood`'s vocabulary — is settled. What's left, surfaced by the naming pass:
-
-- **`trails` table naming/schema is still tentative** — chosen for consistency with the new
-  Comet/Approach/Trail naming, not yet validated against a real schema pass.
-- **`threads.source` value for an Approach's hidden thread** — likely `'comet_approach'` or
-  `'comet'`, not yet picked; needs the same `ListThreads`/`ListThreadsPage` exclusion treatment
-  `'weaver'` already got in issue #90.
+All settled and built. The two that were still open at the end of planning resolved as: the table
+is `trails`, and an Approach's hidden thread uses `threads.source = 'comet_approach'`, excluded
+from `ListThreads`/`ListThreadsPage`/`SearchMessages`/Constellation eligibility the same way
+`'weaver'` is. Any *new* thread listing or search that already excludes `'weaver'` needs
+`'comet_approach'` added alongside it.
 
 ## Next step
 
-Planning is done — mockup reaction, classification mechanics, naming (including the icon), eligibility,
-concurrency, and the test environment are all settled. Before any Comet implementation starts:
-
-1. [Issue #90](https://github.com/AutumnsGrove/Polaris/issues/90) (Weaver/shooting-star transcript
-   persistence) — **shipped** 2026-09-19, live-verified, two real bugs found and fixed along the
-   way. Comet's classification eligibility filter depends on this pattern, now proven.
-2. Stand up the throwaway test environment (see above), seed it via real `/api/ask` conversations
-   plus a `constellation backfill` run, and build the classify pass against it before any `trails`
-   schema is locked in.
-
-Full implementation is intentionally not starting yet.
+Shipped. Remaining ideas (yearly edition, `unresolved_count` as its own block) are tracked in the
+"Yearly cadence" section and `store.CometEditionData`'s own field comments.

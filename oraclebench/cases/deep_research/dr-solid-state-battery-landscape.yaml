@@ -1,0 +1,13 @@
+id: dr-solid-state-battery-landscape
+track: deep_research
+rationale: >-
+  A landscape survey with named dimensions (technical tradeoffs, timelines, where experts
+  diverge). This is the textbook "spans several distinct angles and competing views" case, where
+  a few searches would be shallow, so deep_research=yes.
+state:
+  latest: "Please put together a comprehensive comparison of the main solid-state battery approaches from the major manufacturers: the technical tradeoffs, realistic commercialization timelines, and where industry experts disagree about which will win."
+expect:
+  deep_research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

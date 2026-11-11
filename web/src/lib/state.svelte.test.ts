@@ -63,6 +63,51 @@ describe('AppState.send / dispatch', () => {
 			expect.objectContaining({ type: 'message', content: 'a question', model: 'test-model', thread_id: 'thread-1' })
 		);
 	});
+
+	// Regression: answering the Deep Research plan question ("Run it") goes
+	// through send() with no toggles, and the reply used to go out without
+	// deep_research — so the turn had no spawn_researchers tool and reset the
+	// thread's sticky config.
+	describe("falls back to the composer's live toggles", () => {
+		const live = { focusMode: 'academic' as const, deepResearch: true, noResearch: false };
+
+		it('inherits them on an existing thread when the caller passes none', () => {
+			state.currentThreadId = 'thread-1';
+			state.composerConfig = live;
+			const sendSpy = vi.spyOn((state as any).socket, 'send');
+
+			state.send('Run it');
+
+			expect(sendSpy).toHaveBeenCalledWith(
+				expect.objectContaining({ deep_research: true, focus_mode: 'academic' })
+			);
+		});
+
+		it('lets an explicit argument, including false, win over the composer', () => {
+			state.currentThreadId = 'thread-1';
+			state.composerConfig = { ...live, noResearch: true };
+			const sendSpy = vi.spyOn((state as any).socket, 'send');
+
+			state.send('no deep please', undefined, 'off', false, undefined, false);
+
+			const sent = sendSpy.mock.calls[0][0] as Record<string, unknown>;
+			expect(sent.deep_research).toBeUndefined();
+			expect(sent.focus_mode).toBeUndefined();
+			expect(sent.no_research).toBeUndefined();
+		});
+
+		it('does not leak a stale composer toggle into a brand-new thread', () => {
+			state.currentThreadId = null;
+			state.composerConfig = live;
+			const sendSpy = vi.spyOn((state as any).socket, 'send');
+
+			state.send('seed', undefined, undefined, undefined, undefined, undefined, 'constellation');
+
+			const sent = sendSpy.mock.calls[0][0] as Record<string, unknown>;
+			expect(sent.deep_research).toBeUndefined();
+			expect(sent.focus_mode).toBeUndefined();
+		});
+	});
 });
 
 describe('AppState.retry / editMessage', () => {
@@ -563,7 +608,7 @@ describe('AppState.openThread', () => {
 					return Promise.resolve({
 						ok: true,
 						json: async () => [
-							{ id: 1, level: 'info', source: 'turn', message: 'reasoning', data: '{"content":"Let me think about this first."}', turn_id: 'turn-1', created_at: '' }
+							{ id: 1, level: 'info', source: 'turn', message: 'reasoning', data: '{"content":"Let me think about this first.","duration_ms":12000}', turn_id: 'turn-1', created_at: '' }
 						]
 					});
 				}
@@ -588,7 +633,8 @@ describe('AppState.openThread', () => {
 		expect(assistantTurn.timeline?.[0]).toMatchObject({
 			kind: 'reasoning',
 			content: 'Let me think about this first.',
-			done: true
+			done: true,
+			durationMs: 12000
 		});
 	});
 
@@ -696,6 +742,80 @@ describe('AppState.openThread', () => {
 		);
 		await state.openThread('t1');
 		expect(state.turns).toHaveLength(1);
+	});
+
+	// threadLoading is what lets ChatView distinguish "no thread selected"
+	// from "a thread is being fetched" — the fix for a slow open rendering
+	// as the WelcomeScreen (which read as a bounce back to the homescreen).
+	// It must be set for the whole fetch and cleared exactly once.
+	it('marks threadLoading for the whole fetch and clears it once the thread lands', async () => {
+		let releaseThread!: () => void;
+		const gate = new Promise<void>((resolve) => (releaseThread = resolve));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (typeof url === 'string' && url.endsWith('/events')) {
+					return Promise.resolve({ ok: true, json: async () => [] });
+				}
+				return gate.then(() => ({
+					ok: true,
+					json: async () => ({ cost_usd: 0, context_tokens: 0, messages: [] })
+				}));
+			})
+		);
+
+		const pending = state.openThread('t1');
+		expect(state.threadLoading).toBe(true);
+		releaseThread();
+		await pending;
+		expect(state.threadLoading).toBe(false);
+	});
+
+	it('clears threadLoading when the thread cannot be loaded', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (typeof url === 'string' && url.endsWith('/events')) {
+					return Promise.resolve({ ok: true, json: async () => [] });
+				}
+				return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+			})
+		);
+
+		await state.openThread('gone');
+		expect(state.threadLoading).toBe(false);
+		expect(state.currentThreadId).toBeNull();
+	});
+
+	it('newThread supersedes an in-flight open so a slow load cannot clobber it', async () => {
+		let releaseThread!: () => void;
+		const gate = new Promise<void>((resolve) => (releaseThread = resolve));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (typeof url === 'string' && url.endsWith('/events')) {
+					return Promise.resolve({ ok: true, json: async () => [] });
+				}
+				return gate.then(() => ({
+					ok: true,
+					json: async () => ({
+						cost_usd: 0,
+						context_tokens: 0,
+						messages: [{ id: 1, role: 'user', content: 'q', citations: '[]', suggestions: '[]' }]
+					})
+				}));
+			})
+		);
+
+		const pending = state.openThread('slow');
+		expect(state.threadLoading).toBe(true);
+		state.newThread();
+		expect(state.threadLoading).toBe(false);
+		releaseThread();
+		await pending;
+		// The superseded load must not resurrect itself after the fact.
+		expect(state.currentThreadId).toBeNull();
+		expect(state.turns).toEqual([]);
 	});
 });
 

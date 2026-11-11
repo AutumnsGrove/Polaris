@@ -22,8 +22,8 @@ import (
 
 	"polaris/brave"
 	"polaris/config"
+	"polaris/decisions"
 	"polaris/embed"
-	"polaris/jev"
 	"polaris/logger"
 	"polaris/models"
 	"polaris/parallel"
@@ -63,8 +63,9 @@ type Server struct {
 	brave      *brave.Client            // nil if not configured
 	parallel   *parallel.Client         // nil if not configured
 	reddit     *reddit.Client           // never nil — reads through a third-party archive, no credentials involved
-	jev        *jev.Client              // nil if openrouter.api_key isn't set — disables compare_sources only
-	embed      *embed.Client            // nil if ollama.base_url isn't set — disables agent's query-similarity signal only
+	decisions  *decisions.Client        // nil if openrouter.api_key isn't set — disables compare_sources only
+	embed      *embed.Client            // nil if no embeddings backend is configured (see config.NewEmbedClient) — disables query-similarity and the semantic index
+	embeds     *embedService            // nil whenever embed is — the persisted semantic index (gateway/embedsvc.go)
 	stt        *voice.STTClient
 	tts        *voice.TTSClient
 	mux        *http.ServeMux
@@ -144,6 +145,14 @@ type Server struct {
 	// go through handleTurn/markTurnInFlight, so it needs its own check.
 	dailyGenerationRunning atomic.Bool
 
+	// cometGenerationRunning is the same single-flight guard for Comet —
+	// both the scheduler's monthly due-check and the manual "Generate now"
+	// button go through startCometGenerationIfIdle, which CAS-guards this.
+	// Read by handleServerBusy too, so a Docker update watcher waits for an
+	// in-flight Comet run rather than recreating the container out from
+	// under it (same reason dailyGenerationRunning is).
+	cometGenerationRunning atomic.Bool
+
 	// devMode is staticFS == nil (see New's doc comment) — true exactly
 	// when `polaris run --dev` is splitting the frontend (vite's own dev
 	// server) and backend (this process) across two ports instead of the
@@ -177,8 +186,8 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		brave:             brave.NewClient(cfg.Brave.APIKey),
 		parallel:          parallel.NewClient(cfg.Parallel.APIKey),
 		reddit:            reddit.NewClient(cfg.Reddit.UserAgent, cfg.Reddit.ArchiveURL),
-		jev:               jev.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
-		embed:             embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
+		decisions:         decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
+		embed:             cfg.NewEmbedClient(),
 		stt:               voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		tts:               voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
 		mux:               http.NewServeMux(),
@@ -188,9 +197,18 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		wizardSessions:    make(map[string]*wizardSession),
 		devMode:           staticFS == nil,
 	}
+	// Constructed after the literal because it needs the embed client the
+	// literal just built. Nil whenever that client is nil, so an
+	// unconfigured deployment gets no indexer, no cache, and no background
+	// sweep at all — see embedService's own doc comment.
+	s.embeds = newEmbedService(db, s.embed)
 	s.routes(staticFS)
 	return s
 }
+
+// RunEmbedIndexer runs the semantic index's background sweep until done is
+// closed. Delegates so cmd/run.go doesn't have to know about embedService.
+func (s *Server) RunEmbedIndexer(done <-chan struct{}) { s.embeds.RunEmbedIndexer(done) }
 
 func (s *Server) Handler() http.Handler { return gzipMiddleware(csrfProtect(s.mux, s.devMode)) }
 
@@ -565,6 +583,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("DELETE /api/fields/{id}/files/{filename}", s.handleDeleteFieldFile)
 	s.mux.HandleFunc("DELETE /api/threads/{id}", s.handleDeleteThread)
 	s.mux.HandleFunc("GET /api/threads/{id}/events", s.handleThreadEvents)
+	s.mux.HandleFunc("GET /api/threads/{id}/export", s.handleThreadExport)
 	s.mux.HandleFunc("GET /api/events", s.handleRecentEvents)
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("POST /api/transcribe", s.handleTranscribe)
@@ -597,8 +616,10 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("PATCH /api/pulsar/routines/{id}", s.handleUpdatePulsarRoutine)
 	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/archive", s.handleArchivePulsarRoutine)
 	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/unarchive", s.handleUnarchivePulsarRoutine)
+	s.mux.HandleFunc("DELETE /api/pulsar/routines/{id}", s.handleDeletePulsarRoutine)
 	s.mux.HandleFunc("GET /api/pulsar/routines/{id}/pulses", s.handleListPulsarPulses)
 	s.mux.HandleFunc("GET /api/pulsar/unread", s.handlePulsarUnreadCounts)
+	s.mux.HandleFunc("GET /api/pulsar/alerts", s.handlePulsarAlertCounts)
 	s.mux.HandleFunc("GET /api/pulsar/stats", s.handleGetPulsarStats)
 	s.mux.HandleFunc("POST /api/pulsar/suggest", s.handleSuggestPulsarPrompt)
 	s.mux.HandleFunc("POST /api/wizard/start", s.handleWizardStart)
@@ -629,6 +650,17 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/constellation/weaver-threads", s.handleListWeaverThreads)
 	s.mux.HandleFunc("GET /api/constellation/map", s.handleGetConstellationMap)
 	s.mux.HandleFunc("POST /api/constellation/backfill", s.handleConstellationBackfill)
+	s.mux.HandleFunc("GET /api/embeddings/status", s.handleEmbeddingsStatus)
+	s.mux.HandleFunc("GET /api/providers/status", s.handleProvidersStatus)
+	s.mux.HandleFunc("POST /api/embeddings/backfill", s.handleEmbeddingsBackfill)
+	s.mux.HandleFunc("POST /api/embeddings/reindex", s.handleEmbeddingsReindex)
+	s.mux.HandleFunc("GET /api/comet/config", s.handleGetCometConfig)
+	s.mux.HandleFunc("PUT /api/comet/config", s.handleUpdateCometConfig)
+	s.mux.HandleFunc("GET /api/comet/periods", s.handleListCometPeriods)
+	s.mux.HandleFunc("GET /api/comet/editions/{period}", s.handleGetCometEdition)
+	s.mux.HandleFunc("POST /api/comet/classify", s.handleCometClassify)
+	s.mux.HandleFunc("POST /api/comet/backfill", s.handleCometBackfill)
+	s.mux.HandleFunc("POST /api/comet/generate", s.handleGenerateCometNow)
 	s.mux.HandleFunc("GET /api/workspace/{thread_id}/{filename}", s.handleGetWorkspaceFile)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 

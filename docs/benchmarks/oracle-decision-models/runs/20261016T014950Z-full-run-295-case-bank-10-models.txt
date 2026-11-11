@@ -1,0 +1,34 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                             score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   perplexity/pplx-decider-v1.1-27b  91.4   87.7-94.4  91.0       97%      95%    98%      95%    0%         1%   2.0s   3.7s   $0.123  
+2≈  inception/mercury-decide:free     89.0   84.0-93.3  88.4       97%      96%    97%      95%    1%         0%   618ms  4.3s   $0.011  
+3   typesafe/jev-1.14                 87.8   83.2-92.0  87.8       96%      94%    96%      98%    1%         0%   152ms  189ms  $0.210  
+4   microsoft/microsoft-decision-1    87.5   82.9-91.5  87.5       95%      95%    96%      95%    1%         0%   347ms  424ms  $0.171  
+5   typesafe/jev-1.13                 86.5   81.4-90.9  86.5       96%      94%    96%      95%    1%         0%   184ms  272ms  $0.201  
+6   liquid/d1                         78.5   72.7-83.5  78.5       95%      89%    95%      68%    1%         0%   260ms  411ms  $0.101  
+7   cloudflare/clef                   76.6   71.2-81.3  76.6       95%      86%    94%      75%    1%         0%   820ms  1.9s   $0.270  
+8   cloudflare/clef-flash             73.4   68.2-78.5  73.4       94%      84%    94%      72%    1%         0%   596ms  1.3s   $0.127  
+x   inception/mercury-decide          4.6    2.4-7.5    2.9        4%       4%     97%      100%   0%         96%  3.9s   13.3s  $0.004  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+x = disqualified:
+  inception/mercury-decide: error/refusal rate above 5%
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  typesafe/jev-1.14                                |                          p50 152ms  p95 189ms 
+  typesafe/jev-1.13                                |                          p50 184ms  p95 272ms 
+  liquid/d1                         ░              |                          p50 260ms  p95 411ms 
+  microsoft/microsoft-decision-1    █              |                          p50 347ms  p95 424ms 
+  cloudflare/clef-flash             █░░░           |                          p50 596ms  p95 1.3s  
+  inception/mercury-decide:free     █░░░░░░░░░░░   |                          p50 618ms  p95 4.3s  
+  cloudflare/clef                   ██░░░          |                          p50 820ms  p95 1.9s  
+  perplexity/pplx-decider-v1.1-27b  ██████░░░░░    |                          p50 2.0s   p95 3.7s  
+  inception/mercury-decide          ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  p50 3.9s   p95 13.3s   over budget at p95
+
+Tracks scoring 25+ points below the model's own headline:
+  inception/mercury-decide:free: clarify 62, emotional 43
+  typesafe/jev-1.14: locale 61
+  microsoft/microsoft-decision-1: clarify 43, locale 62, private_person 62
+  cloudflare/clef: emotional 42

@@ -1,0 +1,11 @@
+id: fo-fp-planes-ground-up
+track: focus
+rationale: >-
+  Explicit "from the ground up" request for how something works. `first_principles`.
+state:
+  latest: "I have never really understood how airplanes stay in the air. Could you explain it from the ground up?"
+expect:
+  focus: {answer: first_principles}
+  task: {answer: explain}
+quiet:
+  - emotional

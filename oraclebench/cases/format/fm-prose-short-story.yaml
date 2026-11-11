@@ -1,0 +1,16 @@
+id: fm-prose-short-story
+track: format
+disputed_label: true
+rationale: >-
+  A request for a story: it is connected narrative, so format=prose. Disputed because a model
+  could reasonably say none (writing a story is its own shape and needs no nudge). Prose is
+  the more defensible label given the description names "story".
+state:
+  latest: "write me a short story about a lighthouse keeper who finds a message in a bottle, like 300 words"
+expect:
+  format: {answer: prose, accept: [prose, "none"]}
+  ui: {answer: "none"}
+  task: {answer: write}
+quiet:
+  - emotional
+  - private_person

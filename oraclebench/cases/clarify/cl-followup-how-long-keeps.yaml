@@ -1,0 +1,13 @@
+id: cl-followup-how-long-keeps
+track: clarify
+rationale: >-
+  Mid-thread vague follow-up ("how long does it keep") resolved by the previous cooking message.
+  Labeled on intent=recipe; clarify deliberately unlabeled (never asked mid-thread).
+state:
+  previous: "how do i make cold brew at home"
+  latest: "and how long does it keep in the fridge"
+expect:
+  intent: {answer: recipe}
+quiet:
+  - emotional
+  - private_person

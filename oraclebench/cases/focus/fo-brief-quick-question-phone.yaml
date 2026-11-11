@@ -1,0 +1,13 @@
+id: fo-brief-quick-question-phone
+track: focus
+rationale: >-
+  Phone-typed "quick q" framing signals the person wants a short answer; the content is a plain
+  unit conversion with no stakes. `brief` per its "quick question" wording.
+state:
+  latest: "quick q how many oz in a cup"
+expect:
+  focus: {answer: brief}
+  high_stakes: {answer: none}
+quiet:
+  - emotional
+  - private_person

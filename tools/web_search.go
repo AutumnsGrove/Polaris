@@ -35,6 +35,15 @@ const parallelMonthlyCap = 4900
 // well under the raw credit count rather than at it.
 const tavilyMonthlyCap = 500
 
+// ParallelMonthlyCap/TavilyMonthlyCap re-export the two caps above for
+// gateway's /api/stats "api_caps" section, so the number shown there is
+// literally the one enforced here rather than a copy that could drift.
+// (Brave's is already exported as brave.MonthlyCap.)
+const (
+	ParallelMonthlyCap = parallelMonthlyCap
+	TavilyMonthlyCap   = tavilyMonthlyCap
+)
+
 // webSearchMaxDomains caps the domains list the same way highlightMaxItems
 // caps highlight's items — a small, deliberate ceiling the model gets back
 // as a correctable tool error, not a silent truncation. Five matches

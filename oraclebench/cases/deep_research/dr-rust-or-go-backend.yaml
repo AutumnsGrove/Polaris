@@ -1,0 +1,16 @@
+id: dr-rust-or-go-backend
+track: deep_research
+disputed_label: true
+rationale: >-
+  A multi-factor technology comparison (performance, ecosystem, hiring, learning curve) that is
+  genuinely on the line. Read as a multi-factor comparison it is a yes; read as a decision a
+  knowledgeable answer handles from a handful of sources it is a no. Both are defensible, so both
+  are accepted and the case is judge-routed.
+state:
+  latest: "Should I use Rust or Go for a new backend service? Compare them on performance, ecosystem maturity, hiring, and how long each takes to learn, since we're a small team."
+expect:
+  deep_research: {answer: "no", accept: ["no", "yes"]}
+  task: {answer: decide}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,12 @@
+id: hs-cosign-brothers-loan
+track: high_stakes
+disputed_label: true
+rationale: >-
+  Cosigning a loan is both a money decision (debt, financial option) and a legal obligation
+  (contracts, legal option). Which source guidance helps more depends on whether the user
+  worries about credit exposure or liability; informed labelers split. Financial is the
+  label; legal is also accepted.
+state:
+  latest: "My brother has asked me to cosign a $22k car loan for him. What exactly would I be responsible for if he stopped making the payments?"
+expect:
+  high_stakes: {answer: financial, accept: [financial, legal]}

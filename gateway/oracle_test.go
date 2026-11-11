@@ -9,28 +9,28 @@ import (
 	"testing"
 
 	"polaris/config"
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/prompts"
 	"polaris/store"
 )
 
-// stubJevClient is a canned-response jevAskChoicer for RunOracle tests —
-// same spirit as llm/llmtest.MockClient, just for the one jev.Client method
-// RunOracle needs (see jevAskChoicer's doc comment).
-type stubJevClient struct {
-	resp *jev.Response
+// stubDecisionsClient is a canned-response decisionsAskChoicer for RunOracle tests —
+// same spirit as llm/llmtest.MockClient, just for the one decisions.Client method
+// RunOracle needs (see decisionsAskChoicer's doc comment).
+type stubDecisionsClient struct {
+	resp *decisions.Response
 	err  error
 }
 
-func (s stubJevClient) AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error) {
+func (s stubDecisionsClient) AskChoice(ctx context.Context, state interface{}, questions map[string]decisions.ChoiceQuestion) (*decisions.Response, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.resp, nil
 }
 
-func answer(choice string, prob float64) jev.ChoiceAnswer {
-	return jev.ChoiceAnswer{Choice: choice, Probabilities: map[string]float64{choice: prob}}
+func answer(choice string, prob float64) decisions.ChoiceAnswer {
+	return decisions.ChoiceAnswer{Choice: choice, Probabilities: map[string]float64{choice: prob}}
 }
 
 // outcomeFor returns the CheckOutcome for one check key, or nil — a small
@@ -51,16 +51,16 @@ func TestRunOracle_NilClientNeverFails(t *testing.T) {
 	}
 }
 
-func TestRunOracle_JevErrorNeverFails(t *testing.T) {
-	stub := stubJevClient{err: errors.New("connection reset")}
+func TestRunOracle_DecisionsErrorNeverFails(t *testing.T) {
+	stub := stubDecisionsClient{err: errors.New("connection reset")}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	if len(result.Checks) != 0 {
-		t.Errorf("want zero-value result on Jev failure, got %+v", result)
+		t.Errorf("want zero-value result on decisions failure, got %+v", result)
 	}
 }
 
 func TestRunOracle_HighStakesInjectsMedicalAndCompareSources(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("off", 0.9),
 		"high_stakes": answer("medical", 0.95),
 	}}}
@@ -71,7 +71,7 @@ func TestRunOracle_HighStakesInjectsMedicalAndCompareSources(t *testing.T) {
 }
 
 func TestRunOracle_HighStakesBriefOverrideReplacesNotStacks(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("off", 0.9),
 		"high_stakes": answer("medical", 0.95),
 	}}}
@@ -85,7 +85,7 @@ func TestRunOracle_HighStakesBriefOverrideReplacesNotStacks(t *testing.T) {
 }
 
 func TestRunOracle_FocusNeverPicksBriefWithHighStakes(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("brief", 0.99),
 		"high_stakes": answer("medical", 0.95),
 	}}}
@@ -96,7 +96,7 @@ func TestRunOracle_FocusNeverPicksBriefWithHighStakes(t *testing.T) {
 }
 
 func TestRunOracle_FocusPicksBriefWithoutHighStakes(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("brief", 0.9),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "quick question: what year is it"})
@@ -106,7 +106,7 @@ func TestRunOracle_FocusPicksBriefWithoutHighStakes(t *testing.T) {
 }
 
 func TestRunOracle_FocusRespectsOptionThreshold(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("brief", 0.75), // above the check's 0.70 floor, below brief's own 0.80 bar
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
@@ -120,7 +120,7 @@ func TestRunOracle_FocusRespectsOptionThreshold(t *testing.T) {
 // 0.87 and Oracle left the turn in no mode. Pinned at the exact observed
 // confidence so a future bump back above it fails loudly.
 func TestRunOracle_FocusPicksSafariAtTheObservedConfidence(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("safari", 0.87),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "take me on a safari of the industrial complex"})
@@ -133,7 +133,7 @@ func TestRunOracle_FocusPicksSafariAtTheObservedConfidence(t *testing.T) {
 }
 
 func TestRunOracle_SafariIsStickyForTheThread(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("shopper", 0.99),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", PriorOracleFocusMode: "safari"})
@@ -143,7 +143,7 @@ func TestRunOracle_SafariIsStickyForTheThread(t *testing.T) {
 }
 
 func TestRunOracle_SwitchThresholdHigherThanInitialPick(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("news", 0.75), // clears the 0.70 initial-pick bar but not the 0.85 switch_threshold
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", PriorOracleFocusMode: "academic"})
@@ -165,7 +165,7 @@ func TestRunOracle_SwitchThresholdHigherThanInitialPick(t *testing.T) {
 // anyway. Oracle owns that mode, so its "no mode fits" verdict now retracts
 // it rather than leaving it sticky.
 func TestRunOracle_FocusClearsModeItSetWhenNoModeClearsTheBar(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("brief", 0.62), // below the check's 0.70 bar
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "research prada's background", PriorOracleFocusMode: "shopper"})
@@ -182,7 +182,7 @@ func TestRunOracle_FocusClearsModeItSetWhenNoModeClearsTheBar(t *testing.T) {
 }
 
 func TestRunOracle_FocusClearsOnExplicitOff(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("off", 0.9),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "hi", PriorOracleFocusMode: "shopper"})
@@ -194,7 +194,7 @@ func TestRunOracle_FocusClearsOnExplicitOff(t *testing.T) {
 // The clear must never touch a mode Oracle didn't set: with no prior Oracle
 // pick, a low-confidence/off verdict just leaves the turn's own mode alone.
 func TestRunOracle_FocusDoesNotClearAModeOracleDidNotSet(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("off", 0.95),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "hi", ActiveFocusMode: "brief"})
@@ -206,7 +206,7 @@ func TestRunOracle_FocusDoesNotClearAModeOracleDidNotSet(t *testing.T) {
 // A sticky mode outranks a clear too — safari owns the whole thread, and a
 // later "off" verdict must not silently drop it mid-exploration.
 func TestRunOracle_FocusDoesNotClearStickySafari(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("off", 0.99),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "next stop", PriorOracleFocusMode: "safari"})
@@ -216,7 +216,7 @@ func TestRunOracle_FocusDoesNotClearStickySafari(t *testing.T) {
 }
 
 func TestRunOracle_ManualFocusStillReportedButNotAppliedToInjections(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":  answer("shopper", 0.99),
 		"intent": answer("product", 0.9),
 	}}}
@@ -237,7 +237,7 @@ func TestRunOracle_ManualFocusStillReportedButNotAppliedToInjections(t *testing.
 }
 
 func TestRunOracle_IntentSkipsProductForShopper(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":  answer("shopper", 0.99),
 		"intent": answer("product", 0.9),
 	}}}
@@ -248,19 +248,19 @@ func TestRunOracle_IntentSkipsProductForShopper(t *testing.T) {
 }
 
 func TestRunOracle_ClarifySkippedWhenNotFirstMessage(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("off", 0.9),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", IsFirstMessage: false})
 	for _, c := range result.Checks {
 		if c.Key == "clarify" {
-			t.Errorf("want clarify never sent to Jev on a non-first message, got it in Checks: %+v", c)
+			t.Errorf("want clarify never sent to the decision model on a non-first message, got it in Checks: %+v", c)
 		}
 	}
 }
 
 func TestRunOracle_ResearchNoSetsHint(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":    answer("off", 0.9),
 		"research": answer("no", 0.9),
 	}}}
@@ -274,7 +274,7 @@ func TestRunOracle_ResearchNoSetsHint(t *testing.T) {
 }
 
 func TestRunOracle_ChipsFireAboveThreshold(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("off", 0.9),
 		"chip_pulsar": answer("yes", 0.9),
 		"chip_daily":  answer("no", 0.9),
@@ -286,7 +286,7 @@ func TestRunOracle_ChipsFireAboveThreshold(t *testing.T) {
 }
 
 func TestRunOracle_FieldChipSkippedWithoutOptions(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus": answer("off", 0.9),
 	}}}
 	// No FieldOptions set — the field chip question shouldn't even be
@@ -306,7 +306,7 @@ func TestRunOracle_FieldChipSkippedWithoutOptions(t *testing.T) {
 // offer (which just continues this thread), but withholds the chips that
 // create something permanent — see oracleGhostChips.
 func TestRunOracle_GhostKeepsSafariChipButWithholdsPermanentOnes(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("off", 0.9),
 		"chip_pulsar": answer("yes", 0.95),
 		"chip_daily":  answer("yes", 0.95),
@@ -321,6 +321,33 @@ func TestRunOracle_GhostKeepsSafariChipButWithholdsPermanentOnes(t *testing.T) {
 	})
 	if len(result.Chips) != 1 || result.Chips[0].Key != "safari" {
 		t.Errorf("want only the safari chip in a ghost turn, got %+v", result.Chips)
+	}
+}
+
+// Pulse and expanded Daily threads are already scheduled output, so they
+// get no offer chips at all (issue #146).
+func TestRunOracle_ThreadSourceWithholdsCircularChips(t *testing.T) {
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
+		"focus":       answer("off", 0.9),
+		"chip_pulsar": answer("yes", 0.95),
+		"chip_daily":  answer("yes", 0.95),
+		"chip_safari": answer("yes", 0.90),
+	}}}
+	keys := func(source string) map[string]bool {
+		got := map[string]bool{}
+		for _, c := range RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", ThreadSource: source}).Chips {
+			got[c.Key] = true
+		}
+		return got
+	}
+	if got := keys("pulsar"); len(got) != 0 {
+		t.Errorf("want no chips on a pulsar thread, got %v", got)
+	}
+	if got := keys("pulsar-daily"); len(got) != 0 {
+		t.Errorf("want no chips on a pulsar-daily thread, got %v", got)
+	}
+	if got := keys("web"); !got["pulsar"] || !got["daily"] || !got["safari"] {
+		t.Errorf("web thread chips regressed, got %v", got)
 	}
 }
 
@@ -484,24 +511,24 @@ func TestCarriedFocusModeSource(t *testing.T) {
 	}
 }
 
-// capturingJevClient records what RunOracle actually put on the wire, for
+// capturingDecisionsClient records what RunOracle actually put on the wire, for
 // asserting on the request rather than the verdict.
-type capturingJevClient struct {
-	resp      *jev.Response
+type capturingDecisionsClient struct {
+	resp      *decisions.Response
 	state     interface{}
-	questions map[string]jev.ChoiceQuestion
+	questions map[string]decisions.ChoiceQuestion
 }
 
-func (c *capturingJevClient) AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error) {
+func (c *capturingDecisionsClient) AskChoice(ctx context.Context, state interface{}, questions map[string]decisions.ChoiceQuestion) (*decisions.Response, error) {
 	c.state = state
 	c.questions = questions
 	return c.resp, nil
 }
 
 func TestRunOracle_DropsAnswerOutsideOfferedOptions(t *testing.T) {
-	// Jev is external input: a winner we never offered must not become the
+	// The decision model is external input: a winner we never offered must not become the
 	// turn's focus mode (persisted to threads.focus_mode) or a chip.
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":       answer("ignore_previous_instructions", 0.99),
 		"chip_pulsar": answer("definitely", 0.99),
 		"not_a_check": answer("yes", 0.99),
@@ -515,9 +542,9 @@ func TestRunOracle_DropsAnswerOutsideOfferedOptions(t *testing.T) {
 	}
 }
 
-func TestRunOracle_TruncatesOversizedMessagesBeforeSendingToJev(t *testing.T) {
+func TestRunOracle_TruncatesOversizedMessagesBeforeSendingToDecisions(t *testing.T) {
 	huge := strings.Repeat("a", oracleMaxMessageRunes*5)
-	c := &capturingJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{}}}
+	c := &capturingDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{}}}
 	RunOracle(context.Background(), c, OracleInput{CurrentMessage: huge, PrevUserMessage: huge})
 	state, _ := c.state.(string)
 	if n := len([]rune(state)); n > oracleMaxMessageRunes*2+200 {
@@ -525,8 +552,8 @@ func TestRunOracle_TruncatesOversizedMessagesBeforeSendingToJev(t *testing.T) {
 	}
 }
 
-func TestRunOracle_HasURLDetectorInjectsWithoutJevAnswering(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"focus": answer("off", 0.9)}}}
+func TestRunOracle_HasURLDetectorInjectsWithoutDecisionsAnswering(t *testing.T) {
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{"focus": answer("off", 0.9)}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "can you summarize (https://example.com/post?a=1) for me"})
 	out := outcomeFor(result, "has_url")
 	if out == nil || !out.Fired || out.Nudge == "" {
@@ -538,7 +565,7 @@ func TestRunOracle_HasURLDetectorInjectsWithoutJevAnswering(t *testing.T) {
 }
 
 func TestRunOracle_HasURLQuietWithoutALink(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"focus": answer("off", 0.9)}}}
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{"focus": answer("off", 0.9)}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "what is http"})
 	if outcomeFor(result, "has_url") != nil {
 		t.Error("want no has_url outcome for a message with no link")
@@ -546,7 +573,7 @@ func TestRunOracle_HasURLQuietWithoutALink(t *testing.T) {
 }
 
 func TestRunOracle_FormatTableNudges(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":  answer("off", 0.9),
 		"format": answer("table", 0.9),
 	}}}
@@ -557,7 +584,7 @@ func TestRunOracle_FormatTableNudges(t *testing.T) {
 }
 
 func TestRunOracle_FormatNoneAndBelowThresholdStayQuiet(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"focus":  answer("off", 0.9),
 		"format": answer("table", 0.5),
 		"depth":  answer("standard", 0.99),
@@ -569,7 +596,7 @@ func TestRunOracle_FormatNoneAndBelowThresholdStayQuiet(t *testing.T) {
 }
 
 func TestRunOracle_DepthAndFormatNotAskedUnderTheirSkipFocus(t *testing.T) {
-	c := &capturingJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{}}}
+	c := &capturingDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{}}}
 	RunOracle(context.Background(), c, OracleInput{CurrentMessage: "x", ActiveFocusMode: "brief"})
 	if _, asked := c.questions["depth"]; asked {
 		t.Error("want depth skipped under Brief focus")
@@ -578,7 +605,7 @@ func TestRunOracle_DepthAndFormatNotAskedUnderTheirSkipFocus(t *testing.T) {
 		t.Error("want format still asked under Brief focus")
 	}
 
-	c = &capturingJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{}}}
+	c = &capturingDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{}}}
 	RunOracle(context.Background(), c, OracleInput{CurrentMessage: "x", ActiveFocusMode: "safari"})
 	for _, k := range []string{"format", "depth", "task"} {
 		if _, asked := c.questions[k]; asked {
@@ -588,7 +615,7 @@ func TestRunOracle_DepthAndFormatNotAskedUnderTheirSkipFocus(t *testing.T) {
 }
 
 func TestRunOracle_SourceTypeAcademicSkippedUnderAcademicFocus(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"source_type": answer("academic", 0.9),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", ActiveFocusMode: "academic"})
@@ -603,7 +630,7 @@ func TestRunOracle_SourceTypeAcademicSkippedUnderAcademicFocus(t *testing.T) {
 
 func TestRunOracle_NewIntentOptionsInject(t *testing.T) {
 	for _, opt := range []string{"academic_paper", "image", "person_org", "recipe", "travel", "sports", "event", "datetime"} {
-		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"intent": answer(opt, 0.9)}}}
+		stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{"intent": answer(opt, 0.9)}}}
 		result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
 		if len(result.Injections) != 1 {
 			t.Errorf("intent %q: want exactly one injection, got %v", opt, result.Injections)
@@ -612,7 +639,7 @@ func TestRunOracle_NewIntentOptionsInject(t *testing.T) {
 }
 
 func TestRunOracle_SafariChipFiresAndHidesInSafari(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"chip_safari": answer("yes", 0.95),
 	}}}
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
@@ -626,7 +653,7 @@ func TestRunOracle_SafariChipFiresAndHidesInSafari(t *testing.T) {
 }
 
 func TestRunOracle_EmotionalHoldsBackStructureButNotFacts(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"emotional":   answer("yes", 0.95),
 		"format":      answer("steps", 0.95),
 		"depth":       answer("thorough", 0.95),
@@ -651,11 +678,11 @@ func TestRunOracle_EmotionalHoldsBackStructureButNotFacts(t *testing.T) {
 }
 
 func TestRunOracle_EmotionalNoOrBelowBarSuppressesNothing(t *testing.T) {
-	for name, emotional := range map[string]jev.ChoiceAnswer{
+	for name, emotional := range map[string]decisions.ChoiceAnswer{
 		"answered no at full confidence": answer("no", 1.0),
 		"yes but under the bar":          answer("yes", 0.6),
 	} {
-		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 			"emotional": emotional,
 			"format":    answer("steps", 0.95),
 		}}}
@@ -758,7 +785,7 @@ func TestOracleFieldOptions_CapsHowManyAreSent(t *testing.T) {
 }
 
 func TestRunOracle_FieldChipCarriesFieldID(t *testing.T) {
-	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
 		"chip_field": answer("Home Lab", 0.9),
 	}}}
 	in := OracleInput{
@@ -784,13 +811,291 @@ func TestRunOracle_FieldChipBelowThresholdOrNoneStaysQuiet(t *testing.T) {
 		FieldOptions:   map[string]string{"Home Lab": "d"},
 		FieldIDs:       map[string]string{"Home Lab": "f1"},
 	}
-	for name, ans := range map[string]jev.ChoiceAnswer{
+	for name, ans := range map[string]decisions.ChoiceAnswer{
 		"below the bar": answer("Home Lab", 0.5),
 		"none":          answer("none", 0.99),
 	} {
-		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"chip_field": ans}}}
+		stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{"chip_field": ans}}}
 		if r := RunOracle(context.Background(), stub, in); len(r.Chips) != 0 {
 			t.Errorf("%s: want no chip, got %+v", name, r.Chips)
 		}
+	}
+}
+
+// --- Prism: the ui check --------------------------------------------------
+
+// recordingDecisions answers like stubDecisionsClient but also remembers which questions
+// RunOracle actually sent, since "the ui question was not asked" is itself
+// the behaviour under test for Off / Brief / Safari.
+type recordingDecisions struct {
+	resp *decisions.Response
+	sent map[string]decisions.ChoiceQuestion
+}
+
+func (r *recordingDecisions) AskChoice(ctx context.Context, state interface{}, questions map[string]decisions.ChoiceQuestion) (*decisions.Response, error) {
+	r.sent = questions
+	return r.resp, nil
+}
+
+func uiAnswers(uiChoice string, uiProb float64, extra map[string]decisions.ChoiceAnswer) *decisions.Response {
+	answers := map[string]decisions.ChoiceAnswer{"ui": answer(uiChoice, uiProb)}
+	for k, v := range extra {
+		answers[k] = v
+	}
+	return &decisions.Response{Answers: answers}
+}
+
+func TestRunOracle_UIQuestionOnlyAskedWhenBlocksAreOffered(t *testing.T) {
+	cases := []struct {
+		name    string
+		visuals string
+		focus   string
+		wantAsk bool
+	}{
+		{"normal asks", "normal", "", true},
+		{"low asks", "low", "", true},
+		{"off never asks", "off", "", false},
+		{"unset (voice call / non-offering entry point) never asks", "", "", false},
+		{"brief skips it", "normal", "brief", false},
+		{"safari skips it", "normal", "safari", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec := &recordingDecisions{resp: uiAnswers("none", 0.9, nil)}
+			RunOracle(context.Background(), rec, OracleInput{CurrentMessage: "x", Visuals: c.visuals, ActiveFocusMode: c.focus})
+			if _, asked := rec.sent["ui"]; asked != c.wantAsk {
+				t.Errorf("ui question asked = %v, want %v", asked, c.wantAsk)
+			}
+		})
+	}
+}
+
+func TestRunOracle_UINudgeNamesTheBlockWithItsExemplar(t *testing.T) {
+	for opt, want := range map[string]string{"compare": `"c":"compare"`, "steps": `"c":"steps"`} {
+		t.Run(opt, func(t *testing.T) {
+			stub := stubDecisionsClient{resp: uiAnswers(opt, 0.95, nil)}
+			result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+			if len(result.Injections) != 1 || !strings.Contains(result.Injections[0], want) {
+				t.Errorf("want one injection carrying the %s exemplar line, got %v", opt, result.Injections)
+			}
+			if o := outcomeFor(result, "ui"); o == nil || !o.Fired {
+				t.Errorf("want the ui check recorded as fired, got %+v", o)
+			}
+		})
+	}
+}
+
+func TestRunOracle_UINoneInjectsNothing(t *testing.T) {
+	stub := stubDecisionsClient{resp: uiAnswers("none", 0.99, nil)}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+	if len(result.Injections) != 0 {
+		t.Errorf("a none winner must add no nudge, got %v", result.Injections)
+	}
+}
+
+// The Low dial raises the bar by VisualsLowOffset: a 0.75 compare that clears
+// Normal's 0.70 must NOT clear Low's 0.85.
+func TestRunOracle_UILowDialRaisesTheBar(t *testing.T) {
+	at := func(visuals string, prob float64) bool {
+		stub := stubDecisionsClient{resp: uiAnswers("compare", prob, nil)}
+		result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: visuals})
+		o := outcomeFor(result, "ui")
+		return o != nil && o.Fired
+	}
+	if !at("normal", 0.75) {
+		t.Error("0.75 should clear Normal's 0.70 bar")
+	}
+	if at("low", 0.75) {
+		t.Error("0.75 should NOT clear Low's raised 0.85 bar")
+	}
+	if !at("low", 0.90) {
+		t.Error("0.90 should clear Low's 0.85 bar")
+	}
+}
+
+// in.Rules.Checks is the live config's map, shared by every turn. Raising the
+// Low bar must be done on a copy or one Low turn would permanently tighten (and
+// the next would tighten again) the real threshold.
+func TestRunOracle_UILowOffsetNeverMutatesSharedRules(t *testing.T) {
+	rules := config.DefaultOracle()
+	before := rules.Checks["ui"].Threshold
+	stub := stubDecisionsClient{resp: uiAnswers("compare", 0.9, nil)}
+	for i := 0; i < 3; i++ {
+		RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "low", Rules: rules})
+	}
+	if after := rules.Checks["ui"].Threshold; after != before {
+		t.Errorf("shared ui threshold changed from %v to %v after Low-dial turns", before, after)
+	}
+}
+
+// Both are answer-shape nudges; "give numbered steps" stacked on "write a steps
+// block" would contradict itself, so a fired ui holds format back.
+func TestRunOracle_UIFiringHoldsBackFormat(t *testing.T) {
+	stub := stubDecisionsClient{resp: uiAnswers("steps", 0.95, map[string]decisions.ChoiceAnswer{"format": answer("steps", 0.95)})}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+	f := outcomeFor(result, "format")
+	if f == nil || !f.Suppressed || f.Fired {
+		t.Errorf("want format held back by a fired ui, got %+v", f)
+	}
+	for _, inj := range result.Injections {
+		if strings.Contains(inj, "numbered steps in order") {
+			t.Errorf("format's own steps nudge leaked alongside the ui block nudge: %q", inj)
+		}
+	}
+}
+
+// ...but only when ui actually fired. A ui "none" must leave format alone, so
+// Prism being on doesn't silently disable format's table/list advice.
+func TestRunOracle_UINoneLeavesFormatAlone(t *testing.T) {
+	stub := stubDecisionsClient{resp: uiAnswers("none", 0.99, map[string]decisions.ChoiceAnswer{"format": answer("steps", 0.95)})}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+	if f := outcomeFor(result, "format"); f == nil || !f.Fired || f.Suppressed {
+		t.Errorf("want format to fire normally when ui picked none, got %+v", f)
+	}
+}
+
+// Found by the spike (dev/ui_spike): a message asking for a Safari got a steps
+// nudge because Safari was picked by this same Oracle call, after the
+// question-time skip_for_focus had already looked at the (empty) prior mode.
+func TestRunOracle_UISkippedWhenOracleItselfPicksSafariOrBrief(t *testing.T) {
+	for _, mode := range []string{"safari", "brief"} {
+		t.Run(mode, func(t *testing.T) {
+			stub := stubDecisionsClient{resp: uiAnswers("steps", 0.95, map[string]decisions.ChoiceAnswer{
+				"focus":  answer(mode, 0.95),
+				"format": answer("steps", 0.95),
+			})}
+			result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+			if result.FocusMode != mode {
+				t.Fatalf("setup: want Oracle to pick %s, got %q", mode, result.FocusMode)
+			}
+			u := outcomeFor(result, "ui")
+			if u == nil || u.Fired || u.Nudge != "" {
+				t.Errorf("want the ui check recorded but not fired under Oracle's own %s pick, got %+v", mode, u)
+			}
+			for _, inj := range result.Injections {
+				if strings.Contains(inj, `"c":"steps"`) {
+					t.Errorf("a ui block nudge reached a %s turn: %q", mode, inj)
+				}
+			}
+			// A ui that didn't act must not silence format either.
+			if mode == "brief" {
+				if f := outcomeFor(result, "format"); f == nil || f.Suppressed || !f.Fired {
+					t.Errorf("a skipped ui must not hold back format, got %+v", f)
+				}
+			}
+		})
+	}
+}
+
+// Someone distressed gets acknowledgment, not a comparison widget.
+func TestRunOracle_EmotionalHoldsBackUI(t *testing.T) {
+	stub := stubDecisionsClient{resp: uiAnswers("compare", 0.95, map[string]decisions.ChoiceAnswer{"emotional": answer("yes", 0.95)})}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+	u := outcomeFor(result, "ui")
+	if u == nil || !u.Suppressed || u.Fired {
+		t.Errorf("want ui held back by a fired emotional check, got %+v", u)
+	}
+	for _, inj := range result.Injections {
+		if strings.Contains(inj, `"c":"compare"`) {
+			t.Errorf("a block nudge reached an emotional turn: %q", inj)
+		}
+	}
+}
+
+// The deep_research question is its own decision-model question, and is only asked where a
+// "yes" could actually be acted on (OracleInput.OffersDeepResearch) and no
+// focus mode already rules it out.
+func TestRunOracle_DeepResearchQuestionOnlyAskedWhenOffered(t *testing.T) {
+	cases := []struct {
+		name    string
+		offers  bool
+		focus   string
+		wantAsk bool
+	}{
+		{"offered asks", true, "", true},
+		{"not offered (API, voice, already on, research off) never asks", false, "", false},
+		{"brief skips it", true, "brief", false},
+		{"safari skips it", true, "safari", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec := &recordingDecisions{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{"deep_research": answer("no", 0.9)}}}
+			RunOracle(context.Background(), rec, OracleInput{CurrentMessage: "x", OffersDeepResearch: c.offers, ActiveFocusMode: c.focus})
+			if _, asked := rec.sent["deep_research"]; asked != c.wantAsk {
+				t.Errorf("deep_research question asked = %v, want %v", asked, c.wantAsk)
+			}
+			// Dedicated question: its wording must not be shared with research/focus.
+			if q, ok := rec.sent["deep_research"]; ok && q.Instructions == rec.sent["research"].Instructions {
+				t.Error("deep_research must be its own question, not a copy of research's")
+			}
+		})
+	}
+}
+
+func TestRunOracle_DeepResearchYesPromotesWithoutAnInjection(t *testing.T) {
+	stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{
+		"focus":         answer("off", 0.9),
+		"deep_research": answer("yes", 0.9),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", OffersDeepResearch: true})
+	if !result.DeepResearch {
+		t.Fatalf("want DeepResearch promoted at 0.90, got %+v", result)
+	}
+	if len(result.Injections) != 0 {
+		t.Errorf("promotion is the effect, not an injected note, got %v", result.Injections)
+	}
+	if out := outcomeFor(result, "deep_research"); out == nil || !out.Fired || out.Winner != "yes" {
+		t.Errorf("want a fired deep_research outcome with winner yes, got %+v", out)
+	}
+}
+
+func TestRunOracle_DeepResearchNeedsItsOwnBar(t *testing.T) {
+	cases := []struct {
+		name   string
+		choice string
+		prob   float64
+	}{
+		{"yes below the 0.85 bar", "yes", 0.80},
+		{"confident no", "no", 0.99},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stub := stubDecisionsClient{resp: &decisions.Response{Answers: map[string]decisions.ChoiceAnswer{"deep_research": answer(c.choice, c.prob)}}}
+			result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", OffersDeepResearch: true})
+			if result.DeepResearch {
+				t.Errorf("want no promotion, got %+v", result)
+			}
+		})
+	}
+}
+
+// A message that's still ambiguous, or from someone distressed, must not get a
+// multi-agent fan-out — and neither must one Oracle itself picked Brief for in
+// the very same call (the question-time skip only saw the pre-Oracle mode).
+func TestRunOracle_DeepResearchHeldBackOrSkipped(t *testing.T) {
+	cases := []struct {
+		name    string
+		answers map[string]decisions.ChoiceAnswer
+		held    bool
+	}{
+		{"clarify yes", map[string]decisions.ChoiceAnswer{"clarify": answer("yes", 0.95)}, true},
+		{"emotional yes", map[string]decisions.ChoiceAnswer{"emotional": answer("yes", 0.95)}, true},
+		{"oracle picks brief in the same call", map[string]decisions.ChoiceAnswer{"focus": answer("brief", 0.95)}, false},
+		{"oracle picks safari in the same call", map[string]decisions.ChoiceAnswer{"focus": answer("safari", 0.95)}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.answers["deep_research"] = answer("yes", 0.95)
+			stub := stubDecisionsClient{resp: &decisions.Response{Answers: c.answers}}
+			result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", OffersDeepResearch: true, IsFirstMessage: true})
+			if result.DeepResearch {
+				t.Errorf("want no promotion, got %+v", result)
+			}
+			if out := outcomeFor(result, "deep_research"); out != nil && out.Fired {
+				t.Errorf("want deep_research not reported as fired, got %+v", out)
+			} else if c.held && (out == nil || !out.Suppressed) {
+				t.Errorf("want deep_research reported as held back, got %+v", out)
+			}
+		})
 	}
 }

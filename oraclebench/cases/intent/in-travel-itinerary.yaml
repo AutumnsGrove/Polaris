@@ -1,0 +1,13 @@
+id: in-travel-itinerary
+track: intent
+rationale: >-
+  Trip planning with destination and duration: travel ("destinations, routes, itineraries, visas").
+  Clean positive.
+state:
+  latest: "Planning 5 days in Lisbon in May. Can you suggest an itinerary and tell me if I need a visa as a US citizen?"
+expect:
+  intent: {answer: travel}
+  task: {answer: plan}
+quiet:
+  - emotional
+  - private_person

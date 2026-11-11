@@ -36,6 +36,9 @@ const checkCheckIconSVG =
  * content of that cell (an item name, a project title) — replacing it with
  * a generic source name like "Github" destroys the one piece of data the
  * row exists to show, with no surrounding sentence to recover it from.
+ * allowTableCells opts out for the one caller whose links are source markers
+ * by construction — UiSources' `[hostname](url)` — so a compare block's
+ * desktop table can show the same ticks its phone cards do.
  *
  * verification, when present, marks the specific chip a "found in source"
  * check passed for — see docs/plans/source-verification-badge.md and
@@ -46,24 +49,53 @@ const checkCheckIconSVG =
  * threshold, not every chip citing that URL (the source-list chip's own
  * aggregate mark, Citation.verified, covers "any claim for this URL" —
  * see ChatTurnView.svelte's .source-chip).
+ *
+ * occurrenceByUrl is the running per-URL counter for that nth-occurrence
+ * match. A caller rendering the answer in several pieces (renderAnswer.ts
+ * splits it around mermaid/ui fences) passes ONE map through every piece in
+ * document order, so the nth occurrence is still counted across the whole
+ * answer — the server's extractClaims (gateway/verification.go) numbers them
+ * that way, and a per-piece restart would put a tick on the wrong chip.
  */
-export function renderInlineCitations(html: string, citations: Citation[], verification?: VerificationMark[]): string {
+export function renderInlineCitations(
+	html: string,
+	citations: Citation[],
+	verification?: VerificationMark[],
+	occurrenceByUrl: Map<string, number> = new Map(),
+	locator?: { prefix: string; marks: VerificationMark[] },
+	/** Set only by UiText when its caller is UiSources (see the doc comment above). */
+	allowTableCells = false
+): string {
 	if (typeof document === 'undefined' || citations.length === 0 || !html) return html;
 
 	const urlToCitation = new Map(citations.map((c) => [c.url, c]));
 	const verifiedClaimIndexes = new Map<string, Set<number>>();
 	for (const mark of verification ?? []) {
+		// A block link's mark is addressed by its locator, not an occurrence
+		// number; it must never tick the nth prose chip of the same URL.
+		if (mark.locator) continue;
 		if (mark.choice !== 'supported') continue;
 		if (!verifiedClaimIndexes.has(mark.url)) verifiedClaimIndexes.set(mark.url, new Set());
 		verifiedClaimIndexes.get(mark.url)!.add(mark.claim_index);
 	}
 
+	// Block links (UiText): ticks come from locator marks, matched by "this
+	// field's nth tracked link" instead of a document-wide occurrence number.
+	// `locator.prefix` is the field's address; the server builds the same string
+	// (uiblocks/sites.go). A disagreement loses a tick, never moves one.
+	const verifiedLocators = new Set<string>();
+	if (locator) {
+		for (const mark of locator.marks) {
+			if (mark.locator && mark.choice === 'supported') verifiedLocators.add(`${mark.locator}\u0000${mark.url}`);
+		}
+	}
+	let fieldLink = 0;
+
 	const container = document.createElement('div');
 	container.innerHTML = html;
 
-	const occurrenceByUrl = new Map<string, number>();
 	for (const anchor of container.querySelectorAll('a[href]')) {
-		if (anchor.closest('td, th')) continue;
+		if (!allowTableCells && anchor.closest('td, th')) continue;
 
 		const href = anchor.getAttribute('href') ?? '';
 		const citation = urlToCitation.get(href);
@@ -77,7 +109,10 @@ export function renderInlineCitations(html: string, citations: Citation[], verif
 		anchor.setAttribute('target', '_blank');
 		anchor.setAttribute('rel', 'noreferrer');
 		anchor.textContent = '';
-		if (verifiedClaimIndexes.get(href)?.has(occurrence)) {
+		const verified = locator
+			? verifiedLocators.has(`${locator.prefix}#${fieldLink++}\u0000${href}`)
+			: !!verifiedClaimIndexes.get(href)?.has(occurrence);
+		if (verified) {
 			anchor.insertAdjacentHTML('afterbegin', checkCheckIconSVG);
 			anchor.setAttribute('title', `${citation.title || href} — found in source`);
 		} else {

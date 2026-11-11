@@ -1,0 +1,16 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                               score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err   p50    p95   cost    
+1   perplexity/pplx-decider-v1.2        86.5   82.6-90.0  85.6       96%      92%    95%      90%    1%         0%    871ms  3.7s  $0.094  
+x   perplexity/pplx-decider-flash-v1.2  0.0    0.0-0.0    0.0        0%       0%     0%       0%     0%         100%  -      -     $0.000  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+x = disqualified:
+  perplexity/pplx-decider-flash-v1.2: error/refusal rate above 5%
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  perplexity/pplx-decider-v1.2  █████░░░░░░░░░░░░░░░░░░         |         p50 871ms  p95 3.7s  
+
+Tracks scoring 25+ points below the model's own headline:
+  perplexity/pplx-decider-v1.2: clarify 50, emotional 42

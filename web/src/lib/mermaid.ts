@@ -6,40 +6,55 @@ import { copyToClipboard } from './clipboard';
 // this operates directly on the container ChatTurnView hands it. See
 // docs/plans/mermaid-rendering.md for the full design rationale.
 
-// Lazy module-level import — mermaid (~a few hundred KB gzipped) is only
-// ever fetched by a client that actually renders a diagram, keeping it off
-// the critical path of every other reply. The promise is cached so a second
-// diagram in the same reply (or a later reply) doesn't re-fetch or
-// re-initialize.
-let mermaidPromise: ReturnType<typeof loadMermaid> | undefined;
+// Diagrams are drawn by Pele (obsidianmd/pele), a Mermaid-syntax-compatible
+// renderer, not mermaid.js: ~230 kB gzipped with no dependencies against
+// mermaid's ~1.6 MB, and it re-lays a diagram out for the width it is given
+// (a wide `flowchart LR` stacks vertically on a phone instead of shrinking
+// to an unreadable strip, which is what mermaid did). The model still writes
+// ```mermaid fences — only the renderer changed.
+//
+// Lazy module-level import — the library is only ever fetched by a client
+// that actually renders a diagram, keeping it off the critical path of every
+// other reply. The promise is cached so a second diagram in the same reply
+// (or a later reply) doesn't re-fetch.
+type Pele = typeof import('pele');
+let pelePromise: Promise<Pele> | undefined;
+// Set once the import has resolved, so handlers that run long after the first
+// render (lightbox open, resize re-layout) can render synchronously instead of
+// bouncing through a promise for a module that is certainly already there.
+let peleLoaded: Pele | undefined;
 
-async function loadMermaid() {
-	const mod = await import('mermaid');
-	return mod.default;
-}
-
-function getMermaid() {
-	if (!mermaidPromise) {
+function getPele(): Promise<Pele> {
+	if (!pelePromise) {
 		// If the dynamic import itself rejects (a transient network blip, a
 		// stale chunk hash after a deploy), don't leave that rejected promise
-		// cached — every later call would reuse it and mermaid rendering
+		// cached — every later call would reuse it and diagram rendering
 		// would stay silently broken for the rest of the tab's life. Clear
 		// the cache on failure so the next render attempt gets a fresh try.
-		mermaidPromise = loadMermaid().catch((err) => {
-			mermaidPromise = undefined;
-			throw err;
-		});
+		pelePromise = import('pele').then(
+			(mod) => (peleLoaded = mod),
+			(err) => {
+				pelePromise = undefined;
+				throw err;
+			}
+		);
 	}
-	return mermaidPromise;
+	return pelePromise;
 }
 
-// Dark-by-default app ("night-sky-not-tech-neon") — 'default' is mermaid's
-// light theme and would pin a bright white diagram background into an
-// otherwise dark thread, so anything other than the explicit 'light' theme
-// attribute maps to mermaid's 'dark' theme.
-function mermaidTheme(): 'dark' | 'default' {
-	if (typeof document === 'undefined') return 'dark';
-	return document.documentElement.dataset.theme === 'light' ? 'default' : 'dark';
+// Theming is pure CSS, not a render-time option: Pele emits `var(--pele-*)`
+// and ChatTurnView.svelte maps those onto the app's own --color-* tokens, so
+// a theme change repaints existing diagrams with no re-render (mermaid needed
+// a stale-theme pass for exactly this).
+
+// Width a diagram should lay itself out for. Pele adapts its layout to this
+// (the reason it's passed at all); 680 is the chat column's desktop width
+// and only a fallback for a host that hasn't been laid out yet.
+const FALLBACK_WIDTH = 680;
+
+function layoutWidth(host: Element): number {
+	const w = Math.floor(host.getBoundingClientRect().width);
+	return w > 0 ? w : FALLBACK_WIDTH;
 }
 
 // Best-effort repair for the single most common real failure (confirmed
@@ -74,22 +89,20 @@ function autoQuoteLabels(source: string): string {
 }
 
 // A `style NodeId fill:#f9f,stroke:#333` line customizes a node's
-// background but, without an explicit `color:` property, leaves the text
-// color at mermaid's theme default — confirmed live: a light custom fill
-// (e.g. pale yellow) under this app's dark theme default label color
-// produces near-illegible light-on-light text. This isn't a parse failure
-// (mermaid renders it "successfully"), so nothing in the render/retry path
-// above would ever catch it — it's a proactive readability pass, not error
-// recovery, and runs unconditionally on every diagram rather than only
-// after a failed render.
+// background but, without an explicit `color:` property, leaves the label at
+// the theme's text color (--pele-fg) — confirmed live against pele: a dark
+// custom fill under the light theme renders dark-on-dark, and a light fill
+// under the dark theme light-on-light, both near-illegible. Pele does no
+// contrast correction of its own. This isn't a parse failure (it renders
+// "successfully"), so nothing in the render/retry path would ever catch it —
+// it's a proactive readability pass, not error recovery, and runs
+// unconditionally on every diagram rather than only after a failed render.
+// Picking the text color from the fill (not the theme) also makes the result
+// theme-independent, which matters now that a theme switch doesn't re-render.
 const STYLE_FILL_LINE = /^(\s*style\s+\S+\s+)([^\n]*\bfill:\s*#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b[^\n]*)$/gm;
-// `classDef className fill:#f5f5f0,stroke:#ccc` hits an even worse version
-// of the same problem, confirmed live: mermaid emits that same `fill` onto
-// both the node shape *and* the label's `span` (`.className span{fill:...}`)
-// when no `color:` is given, so the label text isn't just low-contrast —
-// it's the exact same color as its own background and vanishes entirely,
-// in either theme, not just this app's dark one. Same fix, different
-// mermaid directive.
+// `classDef className fill:#f5f5f0,stroke:#ccc` is the same problem for a
+// whole class of nodes (mermaid.js was worse here, putting the fill on the
+// label too so it vanished outright). Same fix, different directive.
 const CLASSDEF_FILL_LINE = /^(\s*classDef\s+\S+\s+)([^\n]*\bfill:\s*#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b[^\n]*)$/gm;
 const HAS_COLOR_PROP = /(^|,)\s*color:/;
 
@@ -123,19 +136,14 @@ function ensureStyleContrast(source: string): string {
 
 let renderCounter = 0;
 
-async function renderOne(mermaid: Awaited<ReturnType<typeof loadMermaid>>, source: string): Promise<string> {
-	const id = `mermaid-${Date.now()}-${renderCounter++}`;
-	try {
-		const { svg } = await mermaid.render(id, source);
-		return svg;
-	} finally {
-		// mermaid.render can leave a detached error node behind in the DOM
-		// even on failure — clean it up so it doesn't linger invisibly.
-		// Best-effort: it may not exist under every failure path, and is a
-		// no-op on success once mermaid has already removed its own scratch
-		// node.
-		document.getElementById(id)?.remove();
-	}
+// links/images off: the source is model-written text that may echo a fetched
+// page, and a diagram has no business making network requests or navigating —
+// the same stance `securityLevel: 'strict'` took under mermaid. Pele never
+// emits scripts, event handlers or HTML labels regardless. Throws a
+// PeleError (syntax/unsupported-diagram/limit) on anything it can't draw.
+function renderOne(pele: Pele, source: string, width?: number): string {
+	const id = `pele-${Date.now()}-${renderCounter++}`;
+	return pele.render(source, { idPrefix: id, maxWidth: width, responsive: width !== undefined, links: false, images: false }).svg;
 }
 
 // Inline SVG markup matching the exact path data of the @lucide/svelte
@@ -180,13 +188,17 @@ function iconButton(icon: string, title: string, className = 'icon-btn mermaid-b
 // not screenshot-equivalent XML) and a toggle between the rendered SVG and
 // the raw source, so a reader can drop into "code block" mode the same way
 // they could before this fence ever rendered as a diagram.
-function buildToolbar(source: string, renderPane: HTMLElement, sourcePane: HTMLElement): HTMLDivElement {
+//
+// getSource, not a captured string: a streaming diagram (mountMermaidStream)
+// keeps this same wrapper while its source grows line by line, so the copy
+// button has to read the current source at click time.
+function buildToolbar(getSource: () => string, renderPane: HTMLElement, sourcePane: HTMLElement): HTMLDivElement {
 	const toolbar = document.createElement('div');
 	toolbar.className = 'mermaid-toolbar';
 
 	const copyBtn = iconButton(COPY_ICON, 'Copy diagram source');
 	copyBtn.addEventListener('click', () => {
-		void copyToClipboard(source).then(() => {
+		void copyToClipboard(getSource()).then(() => {
 			copyBtn.innerHTML = CHECK_ICON;
 			setTimeout(() => {
 				copyBtn.innerHTML = COPY_ICON;
@@ -531,17 +543,61 @@ function openLightbox(source: string, svg: string) {
 	document.body.style.overflow = 'hidden';
 }
 
-function buildDiagramWrapper(source: string, svg: string, theme: string): HTMLDivElement {
+// Re-lays a diagram out when its container's width changes (a phone rotating,
+// a sidebar opening) — Pele picks the layout from the width, so a one-time
+// render would stay in whatever shape the first width produced. rAF-coalesced
+// so a drag-resize doesn't render per pixel. Reads the source live from the
+// wrapper for the same reason the click handler does.
+function observeWidth(wrapper: HTMLDivElement, renderPane: HTMLElement): void {
+	if (typeof ResizeObserver === 'undefined') return;
+	let lastWidth = layoutWidth(wrapper);
+	let frame = 0;
+	new ResizeObserver(() => {
+		if (frame) return;
+		frame = requestAnimationFrame(() => {
+			frame = 0;
+			const width = layoutWidth(wrapper);
+			if (width === lastWidth || !wrapper.isConnected) return;
+			lastWidth = width;
+			// A wrapper only exists after a successful render, so the module
+			// is loaded by the time this fires.
+			if (!peleLoaded) return;
+			try {
+				renderPane.innerHTML = renderOne(peleLoaded, wrapper.dataset.mermaidSource ?? '', width);
+			} catch {
+				// The source rendered at the first width; keep that SVG
+				// rather than blanking the diagram over a resize.
+			}
+		});
+	}).observe(wrapper);
+}
+
+function buildDiagramWrapper(source: string, svg: string): HTMLDivElement {
 	const wrapper = document.createElement('div');
 	wrapper.className = 'mermaid-diagram';
 	wrapper.dataset.mermaidSource = source;
-	wrapper.dataset.mermaidTheme = theme;
 
 	const renderPane = document.createElement('div');
 	renderPane.className = 'mermaid-render';
 	renderPane.innerHTML = svg;
 	renderPane.title = 'Tap to enlarge';
-	renderPane.addEventListener('click', () => openLightbox(source, svg));
+	// Read live from the wrapper rather than closing over `source`/`svg`: both
+	// get replaced in place (a resize re-layout, and every new line of a
+	// streaming diagram), and a closure would open the lightbox on the stale
+	// first render. The lightbox lays the diagram out at natural size
+	// (responsive: false) instead of reusing the inline SVG: inline it is
+	// fitted to the chat column (a phone gets the stacked layout), but the
+	// lightbox's pan/zoom wants the full-size drawing to zoom into.
+	renderPane.addEventListener('click', () => {
+		const current = wrapper.dataset.mermaidSource ?? '';
+		let full = renderPane.innerHTML;
+		try {
+			if (peleLoaded) full = renderOne(peleLoaded, current);
+		} catch {
+			// Fall back to what's already on screen.
+		}
+		openLightbox(current, full);
+	});
 
 	const sourcePane = document.createElement('pre');
 	sourcePane.className = 'mermaid-source-view';
@@ -550,33 +606,64 @@ function buildDiagramWrapper(source: string, svg: string, theme: string): HTMLDi
 	code.textContent = source;
 	sourcePane.appendChild(code);
 
-	wrapper.append(buildToolbar(source, renderPane, sourcePane), renderPane, sourcePane);
+	wrapper.append(buildToolbar(() => wrapper.dataset.mermaidSource ?? '', renderPane, sourcePane), renderPane, sourcePane);
+	observeWidth(wrapper, renderPane);
 	return wrapper;
 }
 
+// Swaps a new render into an existing wrapper, keeping its toolbar and the
+// user's view-source toggle state.
+function updateDiagramWrapper(wrapper: HTMLDivElement, source: string, svg: string) {
+	wrapper.dataset.mermaidSource = source;
+	const renderPane = wrapper.querySelector<HTMLElement>('.mermaid-render');
+	const code = wrapper.querySelector<HTMLElement>('.mermaid-source-view code');
+	if (renderPane) renderPane.innerHTML = svg;
+	if (code) code.textContent = source;
+}
+
+function appendErrorNote(block: HTMLElement) {
+	if (block.querySelector('.mermaid-error-note')) return;
+	const note = document.createElement('div');
+	note.className = 'mermaid-error-note';
+	note.textContent = "Couldn't render this diagram — showing the source instead.";
+	block.appendChild(note);
+}
+
+// Tries the source as-is, then once more with unquoted-label punctuation
+// repaired (see autoQuoteLabels — Pele's grammar fails on the same input
+// mermaid's did, confirmed against the real package). Returns the source that
+// actually produced the SVG: the corrected text, not the original, is what
+// "view source" and copy should hand back. null means neither attempt
+// rendered.
+function renderWithRepair(pele: Pele, source: string, width: number): { source: string; svg: string } | null {
+	try {
+		return { source, svg: renderOne(pele, source, width) };
+	} catch {
+		// Fall through to the auto-quote retry below before giving up.
+	}
+	const fixed = autoQuoteLabels(source);
+	if (fixed === source) return null;
+	try {
+		return { source: fixed, svg: renderOne(pele, fixed, width) };
+	} catch {
+		// Punctuation wasn't the (only) problem.
+		return null;
+	}
+}
+
 // Replaces every `pre[data-mermaid]` inside `container` with its rendered
-// SVG, and re-renders any diagram from a previous pass whose theme no
-// longer matches the current one (see ChatTurnView.svelte's $effect doc
-// comment: a loaded thread's mermaid blocks render before the user's real
-// theme preference finishes loading, so a later theme change/settled
-// preference needs a second pass against DOM this function already
-// replaced once). A block that fails to parse/render is left as its
-// original `<pre>` (today's plain-code-block behavior) plus a small note —
-// never a broken hole, never a throw that could take down the rest of the
-// turn's render.
+// SVG. A block that fails to parse/render is left as its original `<pre>`
+// (today's plain-code-block behavior) plus a small note — never a broken
+// hole, never a throw that could take down the rest of the turn's render.
 export async function renderMermaidIn(container: HTMLElement): Promise<void> {
 	const freshBlocks = Array.from(
 		container.querySelectorAll<HTMLPreElement>('pre[data-mermaid]:not([data-mermaid-failed])')
 	);
-	const theme = mermaidTheme();
-	const staleDiagrams = Array.from(
-		container.querySelectorAll<HTMLDivElement>(`.mermaid-diagram[data-mermaid-source]:not([data-mermaid-theme="${theme}"])`)
-	);
-	if (freshBlocks.length === 0 && staleDiagrams.length === 0) return;
+	if (freshBlocks.length === 0) return;
 
-	let mermaid: Awaited<ReturnType<typeof loadMermaid>>;
+	let pele: Pele;
 	try {
-		mermaid = await getMermaid();
+		pele = await getPele();
 	} catch {
 		// The library itself failed to load (as opposed to a single
 		// diagram's source failing to parse) — every fresh block in this
@@ -588,79 +675,188 @@ export async function renderMermaidIn(container: HTMLElement): Promise<void> {
 		// silent, invisible failure).
 		for (const block of freshBlocks) {
 			block.dataset.mermaidFailed = 'true';
-			if (!block.querySelector('.mermaid-error-note')) {
-				const note = document.createElement('div');
-				note.className = 'mermaid-error-note';
-				note.textContent = "Couldn't render this diagram — showing the source instead.";
-				block.appendChild(note);
-			}
+			appendErrorNote(block);
 		}
 		return;
 	}
-	// Re-initialized on every pass (cheap, synchronous) rather than once at
-	// load — theme is read live so a mid-session theme toggle, or the
-	// settings fetch settling after a diagram's first paint, affects
-	// what's on screen rather than whichever theme was active on first
-	// import. securityLevel: 'strict' is the real risk here: a page's
-	// fetched text echoed by the model into a diagram label is
-	// attacker-controlled input reaching innerHTML, and strict mode strips
-	// HTML tags from rendered labels instead of passing them through.
-	mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme });
 
 	for (const block of freshBlocks) {
 		const code = block.querySelector('code');
 		// The browser has already HTML-unescaped the fence's textContent for
 		// us (markdown.ts escaped it only so it survives as literal text
 		// inside the <code> tag) — this is the original mermaid source.
-		const source = ensureStyleContrast(code?.textContent ?? '');
-		try {
-			const svg = await renderOne(mermaid, source);
-			block.replaceWith(buildDiagramWrapper(source, svg, theme));
+		const rendered = renderWithRepair(pele, ensureStyleContrast(code?.textContent ?? ''), layoutWidth(block));
+		if (rendered) {
+			block.replaceWith(buildDiagramWrapper(rendered.source, rendered.svg));
 			continue;
-		} catch {
-			// Fall through to the auto-quote retry below before giving up.
 		}
-		const fixed = autoQuoteLabels(source);
-		if (fixed !== source) {
-			try {
-				const svg = await renderOne(mermaid, fixed);
-				// The corrected source, not the original, becomes what
-				// "view source" and the copy button hand back — it's the
-				// text that actually produced what's on screen, and the
-				// original was, by definition, invalid mermaid anyway.
-				block.replaceWith(buildDiagramWrapper(fixed, svg, theme));
-				continue;
-			} catch {
-				// Punctuation wasn't the (only) problem — fall through to
-				// the same failure note a plain parse error gets.
-			}
-		}
-		// Parse errors are a property of the source, not the theme — mark so
-		// a later theme-only pass doesn't retry a diagram that's already
-		// known to fail (it never would, but it fails the same way every
-		// time and there's no reason to redo the work, including the
-		// auto-quote retry above). The existing note check still avoids a
-		// duplicate note within this same pass.
+		// Mark so a later pass doesn't retry a diagram that's already known
+		// to fail (it fails the same way every time, auto-quote retry
+		// included). The note check still avoids a duplicate note within
+		// this same pass.
 		block.dataset.mermaidFailed = 'true';
-		if (!block.querySelector('.mermaid-error-note')) {
-			const note = document.createElement('div');
-			note.className = 'mermaid-error-note';
-			note.textContent = "Couldn't render this diagram — showing the source instead.";
-			block.appendChild(note);
+		appendErrorNote(block);
+	}
+}
+
+// --- Streaming ----------------------------------------------------------
+//
+// The DOM pass above only ever sees a finished turn, because an UNCLOSED fence
+// is briefly a half-diagram and parsing that flashes a failure note. That is a
+// reason not to render an open fence, not a reason to wait for the whole turn:
+// docs/plans/intelligent-ui.md "Streaming mermaid" spiked real mermaid 11 at
+// every complete-line prefix (flowchart 9/9 valid, sequence 8/8, gantt 8/8, ER
+// 5/8 — only inside an open `{ ... }` attribute block). So a streaming diagram
+// is re-rendered on each new complete line, and a prefix that doesn't parse
+// simply keeps the last good render on screen.
+//
+// Phone render cost is unmeasured (desktop median ~29ms under mermaid; Pele
+// is sub-millisecond on its own benchmarks, unverified here); the throttle below
+// is what keeps a slow device from falling behind rather than a guess at it.
+
+// Wait this many multiples of the last render's duration between renders, so
+// a slow phone renders fewer intermediate frames instead of queueing them.
+const THROTTLE_FACTOR = 3;
+
+export interface MermaidStream {
+	/** `src` is the fence body; while !closed its last line may be partial. */
+	update(src: string, closed: boolean): void;
+	destroy(): void;
+}
+
+export function mountMermaidStream(host: HTMLElement): MermaidStream {
+	let destroyed = false;
+	let running = false;
+	let wanted: { src: string; closed: boolean } | null = null;
+	let wrapper: HTMLDivElement | undefined;
+	let lastAttempt: string | null = null;
+	let lastDuration = 0;
+	let lastEnd = 0;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	function show(source: string, svg: string) {
+		if (!wrapper) {
+			wrapper = buildDiagramWrapper(source, svg);
+			host.replaceChildren(wrapper);
+		} else {
+			updateDiagramWrapper(wrapper, source, svg);
+		}
+		// Short fade so the swap reads as growth, not a flash. Restarting the
+		// CSS animation needs the class removed and a reflow in between; the
+		// animation itself is switched off under prefers-reduced-motion (CSS).
+		const pane = wrapper.querySelector<HTMLElement>('.mermaid-render');
+		if (pane) {
+			pane.classList.remove('mermaid-fade');
+			void pane.offsetWidth;
+			pane.classList.add('mermaid-fade');
 		}
 	}
 
-	for (const wrapper of staleDiagrams) {
-		const source = wrapper.dataset.mermaidSource ?? '';
-		const renderPane = wrapper.querySelector<HTMLElement>('.mermaid-render');
-		if (!renderPane) continue;
+	function showFailure(source: string) {
+		wrapper = undefined;
+		// Same shape markdown.ts emits for a fence, pre-marked as failed so the
+		// ChatTurnView DOM pass doesn't retry it.
+		const pre = document.createElement('pre');
+		pre.className = 'mermaid-source';
+		pre.dataset.mermaid = '';
+		pre.dataset.mermaidFailed = 'true';
+		const code = document.createElement('code');
+		code.className = 'language-mermaid';
+		code.textContent = source;
+		pre.appendChild(code);
+		appendErrorNote(pre);
+		host.replaceChildren(pre);
+	}
+
+	function showPending() {
+		if (host.firstChild) return;
+		const note = document.createElement('div');
+		note.className = 'mermaid-pending';
+		note.textContent = 'Drawing diagram…';
+		host.appendChild(note);
+	}
+
+	async function renderJob(text: string, closed: boolean) {
+		let pele: Pele;
 		try {
-			renderPane.innerHTML = await renderOne(mermaid, source);
-			wrapper.dataset.mermaidTheme = theme;
+			pele = await getPele();
 		} catch {
-			// A diagram that rendered fine once will keep rendering fine —
-			// source doesn't change between passes. Leave the old (now
-			// theme-mismatched) SVG in place rather than losing it.
+			// Library failed to load. Mid-stream, stay on whatever is showing;
+			// at the end, fall back to the source like the DOM pass does.
+			if (closed && !destroyed) showFailure(text);
+			return;
+		}
+		if (destroyed) return;
+		const width = layoutWidth(host);
+
+		if (closed) {
+			// Final render exactly as the DOM pass does it, repair included.
+			const rendered = renderWithRepair(pele, ensureStyleContrast(text), width);
+			if (rendered) show(rendered.source, rendered.svg);
+			else showFailure(text);
+			return;
+		}
+
+		// The repair runs on every prefix, not just the final one: a bad
+		// label or a pale `style` fill is just as likely on line 3. render() throws on an invalid
+		// prefix (checked: flowchart/sequence/ER prefixes fail exactly where
+		// mermaid's parse did), which is the normal case mid-stream, not an
+		// error — keep the last good render and wait for the next line.
+		const prepared = ensureStyleContrast(autoQuoteLabels(text));
+		try {
+			show(prepared, renderOne(pele, prepared, width));
+		} catch {
+			// Invalid prefix; see above.
 		}
 	}
+
+	async function pump() {
+		timer = undefined;
+		if (running || destroyed || !wanted) return;
+		const job = wanted;
+		// Only complete lines are parseable; the partial one is still arriving.
+		const text = job.closed ? job.src : job.src.slice(0, job.src.lastIndexOf('\n') + 1);
+		if (!job.closed) {
+			if (!text.trim() || text === lastAttempt) {
+				wanted = null;
+				return;
+			}
+			const wait = lastEnd + THROTTLE_FACTOR * lastDuration - performance.now();
+			if (wait > 0) {
+				timer = setTimeout(() => void pump(), wait);
+				return;
+			}
+		}
+		wanted = null;
+		lastAttempt = text;
+		running = true;
+		const start = performance.now();
+		try {
+			await renderJob(text, job.closed);
+		} finally {
+			running = false;
+			lastEnd = performance.now();
+			lastDuration = lastEnd - start;
+		}
+		// Latest wins: anything that arrived during the render supersedes it.
+		if (wanted) void pump();
+	}
+
+	return {
+		update(src, closed) {
+			if (destroyed) return;
+			if (!closed) showPending();
+			wanted = { src, closed };
+			// A closing fence must not sit behind a throttle wait.
+			if (closed && timer !== undefined) {
+				clearTimeout(timer);
+				timer = undefined;
+			}
+			if (timer === undefined) void pump();
+		},
+		destroy() {
+			destroyed = true;
+			if (timer !== undefined) clearTimeout(timer);
+		}
+	};
 }

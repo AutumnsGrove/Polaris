@@ -43,7 +43,7 @@ var highlightDef = llm.ToolDef{
 						"properties": map[string]interface{}{
 							"image_index": map[string]interface{}{"type": "integer",
 								"description": "Instead of typing out title/url/image_url: the number of an image_search " +
-									"result to build this card from. Anything else you set on the item overrides it."},
+									"result (or books/movies/music recommendation) to build this card from. Anything else you set on the item overrides it."},
 							"title": map[string]interface{}{"type": "string"},
 							"url":   map[string]interface{}{"type": "string"},
 							"price": map[string]interface{}{"type": "string",

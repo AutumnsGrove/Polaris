@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type Thread struct {
 	ID      string  `json:"id"`
@@ -99,8 +102,63 @@ func (s *Store) PromoteGhostThread(id string) error {
 // untouched. Only call this after waiting out any goroutine that might
 // still be writing to this thread — see gateway/ws.go's connWG.
 func (s *Store) DeleteThreadPermanently(id string) error {
-	_, err := s.db.Exec(`DELETE FROM threads WHERE id = ? AND ghost = 1`, id)
-	return err
+	return s.deleteGhostThreads(`id = ?`, id)
+}
+
+// deleteGhostThreads hard-deletes the ghost threads matching where (with args),
+// removing the rows that reference threads *without* an ON DELETE CASCADE first.
+//
+// messages and events cascade on their own, but shooting_star_runs and
+// star_sources declare a plain REFERENCES threads(id), so a ghost thread that
+// Weaver had ever looked at could not be deleted at all: the whole statement
+// failed on a FOREIGN KEY constraint. Found live on 2026-10-28 — one incognito
+// thread had 12,800 shooting_star_runs rows (see
+// EligibleConstellationThreads' comment for how Weaver got hold of it), which
+// made every startup sweep in cmd/run.go log "sweeping leftover ghost threads
+// failed" and leave the thread behind, forever.
+//
+// Deleting those two tables' rows here rather than adding ON DELETE CASCADE to
+// them keeps this a leaf change: SQLite cannot alter a foreign key in place, so
+// a cascade would mean rebuilding both tables (and copying star_sources) for a
+// case that is now unreachable anyway — Weaver can no longer be pointed at a
+// ghost thread. This is the cleanup for the rows that already exist.
+func (s *Store) deleteGhostThreads(where string, args ...any) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	ghosts := `SELECT id FROM threads WHERE ghost = 1 AND ` + where
+	// Embeddings first, and inside this same transaction, because they are
+	// the one thing that does NOT cascade with the messages they describe:
+	// the embeddings table is polymorphic (kind, ref_id) with no FOREIGN KEY
+	// it could cascade through. Leaving this to the periodic sweep would
+	// mean a window — up to a scheduler tick, and unbounded if the process
+	// died first — where a forgotten conversation's vectors were still on
+	// disk. See docs/plans/embeddings.md's "Privacy and eligibility".
+	embeddingsPurged, err := purgeEmbeddingsForThread(tx, ghosts, args...)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM shooting_star_runs WHERE thread_id IN (`+ghosts+`)`, args...); err != nil {
+		return fmt.Errorf("deleting ghost threads' shooting star runs: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM star_sources WHERE thread_id IN (`+ghosts+`)`, args...); err != nil {
+		return fmt.Errorf("deleting ghost threads' star sources: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM threads WHERE ghost = 1 AND `+where, args...); err != nil {
+		return fmt.Errorf("deleting ghost threads: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Only after the commit: a rollback must not tell the in-memory vector
+	// cache to reload (see purgeEmbeddingsForThread's doc comment).
+	if embeddingsPurged > 0 {
+		s.bumpEmbeddingsEpoch()
+	}
+	return nil
 }
 
 // DeleteAllGhostThreads hard-deletes every thread still tagged ghost —
@@ -130,7 +188,11 @@ func (s *Store) DeleteAllGhostThreads() ([]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	if _, err := s.db.Exec(`DELETE FROM threads WHERE ghost = 1`); err != nil {
+	// Shares DeleteThreadPermanently's dependent-row cleanup: a ghost thread Weaver
+	// had touched holds shooting_star_runs/star_sources rows that do NOT cascade,
+	// and a bare DELETE here failed the whole sweep on a FOREIGN KEY constraint
+	// (a real, every-startup warning until 2026-10-28).
+	if err := s.deleteGhostThreads(`1 = 1`); err != nil {
 		return nil, err
 	}
 	return ids, nil
@@ -280,7 +342,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, field_id, created_at, updated_at
 		 FROM threads
-		 WHERE disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)
+		 WHERE disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND source != 'comet_approach' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -330,4 +392,17 @@ func (s *Store) AddCost(threadID string, costUSD float64) error {
 func (s *Store) SetContextTokens(threadID string, tokens int) error {
 	_, err := s.db.Exec(`UPDATE threads SET context_tokens = ? WHERE id = ?`, tokens, threadID)
 	return err
+}
+
+// CountThreadsBySource counts every thread with the given source value —
+// including the hidden/internal sources (weaver, comet_approach) that
+// ListThreads/ListThreadsPage deliberately filter out of the sidebar. For
+// tests and diagnostics that need to see those rows, which no listing
+// method exposes.
+func (s *Store) CountThreadsBySource(source string) (int, error) {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM threads WHERE source = ?`, source).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }

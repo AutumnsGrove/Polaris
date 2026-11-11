@@ -2,15 +2,18 @@
 	import type { ChatTurn, FocusMode } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import ToolEvent from './ToolEvent.svelte';
+	import SubAgentCard from './SubAgentCard.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
 	import ImageGallery from './ImageGallery.svelte';
 	import HighlightCarousel from './HighlightCarousel.svelte';
 	import ChartCard from './ChartCard.svelte';
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import WaveformAudioPlayer from './WaveformAudioPlayer.svelte';
-	import { marked } from '$lib/markdown';
+	import MermaidBlock from './MermaidBlock.svelte';
+	import UiBlocks from './ui/UiBlocks.svelte';
 	import { renderMermaidIn } from '$lib/mermaid';
-	import DOMPurify from 'dompurify';
+	import { renderAnswer } from '$lib/uiBlocks/renderAnswer';
+	import { flattenAnswer } from '$lib/uiBlocks/flatten';
 	import {
 		Pencil,
 		RotateCcw,
@@ -27,7 +30,7 @@
 	} from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
-	import { renderInlineCitations, sourceHostname as hostname } from '$lib/citations';
+	import { sourceHostname as hostname } from '$lib/citations';
 import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
 	import OracleConstellation from './OracleConstellation.svelte';
@@ -100,37 +103,36 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// chip keeps its real href and opens the source directly, so there's
 	// no detour through the source list below to find out what a bare
 	// number pointed at.
-	let renderedHtml = $derived(
-		renderInlineCitations(
-			DOMPurify.sanitize(marked.parse(turn.content || '') as string),
-			turn.citations ?? [],
-			turn.verification
-		)
+	//
+	// The answer is split around its column-0 ```mermaid fences (see
+	// uiBlocks/renderAnswer.ts): Markdown pieces go through the pipeline above,
+	// each fence gets a MermaidBlock that owns its own DOM and renders as the
+	// fence streams. Pieces are keyed by index, so a finished piece's {@html}
+	// string doesn't change and isn't repainted while a later one grows.
+	let segments = $derived(
+		renderAnswer(turn.content || '', !!turn.streaming, turn.citations ?? [], turn.verification)
 	);
 
-	// Runs after renderedHtml (re)paints proseEl's DOM. Gated on
-	// !turn.streaming: while a reply is still streaming, a ```mermaid fence
-	// is briefly unclosed, and marked renders an unclosed fence as a full
-	// code block the instant it opens — parsing that half-diagram live
-	// would flash a render-failure note that vanishes once the fence
-	// actually closes. Retry/regenerate and variant switching all replace
-	// turn.content wholesale, so this just re-runs on the fresh DOM with no
-	// manual cleanup of the old pass's output needed.
+	// Runs after segments (re)paint proseEl's DOM. This DOM pass only covers
+	// what the segment split leaves inside Markdown: a mermaid fence nested
+	// in a list item (indented, so not a column-0 fence) still reaches here
+	// as a data-mermaid <pre>. Gated on !turn.streaming: marked renders an
+	// unclosed nested fence as a full code block the instant it opens, and
+	// parsing that half-diagram live would flash a render-failure note that
+	// vanishes once the fence closes. (Column-0 fences stream through
+	// MermaidBlock instead, which knows open from closed.) Retry/regenerate
+	// and variant switching all replace turn.content wholesale, so this just
+	// re-runs on the fresh DOM with no manual cleanup of the old pass's
+	// output needed.
 	//
-	// Also re-tracks appState.settings.theme, not just renderedHtml — a
-	// real bug found live: SettingsState.load() sets data-theme
-	// asynchronously after mount (it's an /api/settings fetch), while a
-	// loaded thread's content is already there on first render. Without
-	// this dependency, a turn's mermaid blocks render once against
-	// whatever data-theme happened to be set at that first paint (theme
-	// defaults to 'dark' until the fetch resolves) and never get a second
-	// chance — a light-theme user reopening an old thread saw dark-themed
-	// diagrams stuck in their light UI permanently. Reading the theme here
-	// makes the effect re-fire (and mermaid.ts re-render) once the real
-	// preference lands, and again on any later in-session theme toggle.
+	// No theme dependency: diagrams are themed by CSS variables (see the
+	// --pele-* block in this file's styles), so a theme change — including
+	// the settings fetch landing after a loaded thread's first paint, which
+	// used to leave a light-theme user's old threads stuck with dark
+	// diagrams — repaints them with no re-render.
 	let proseEl = $state<HTMLElement>();
 	$effect(() => {
-		void renderedHtml;
+		void segments;
 		void appState.settings.theme;
 		if (proseEl && !turn.streaming) void renderMermaidIn(proseEl);
 	});
@@ -185,7 +187,9 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 
 	async function copyAnswer() {
 		try {
-			await copyToClipboard(turn.content);
+			// Flattened so a pasted answer has readable lines, not a ui
+			// block's raw JSON.
+			await copyToClipboard(flattenAnswer(turn.content));
 			flashCopied('answer');
 			appState.showToast('Copied answer');
 		} catch (err) {
@@ -210,7 +214,13 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	});
 
 	let oracleNote = $derived(
-		buildOracleNote(turn.oracleResult, turn.oracleFocusModeSource, turn.appliedFocusMode, previousAppliedFocusMode)
+		buildOracleNote(
+			turn.oracleResult,
+			turn.oracleFocusModeSource,
+			turn.appliedFocusMode,
+			previousAppliedFocusMode,
+			turn.content
+		)
 	);
 
 	// F1 (mockups/oracle-mode.html): a mid-thread switch's note is a
@@ -274,10 +284,16 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// this very chip just moved it, the composer picker did, or a later turn
 	// on an older reply re-renders it — so it's filtered against the live
 	// thread instead of only being dropped once, on click.
+	//
+	// Pulse ('pulsar') and Daily ('pulsar-daily') threads get no chips
+	// (issue #146). The server now withholds these before persisting,
+	// so this only hides chips already stored on older turns.
 	let offers = $derived(
 		(turn.oracleResult?.chips ?? []).flatMap((c) => {
 			const meta = OFFER_META[c.key];
 			if (!meta) return [];
+			const source = appState.currentThread?.source;
+			if (source === 'pulsar' || source === 'pulsar-daily') return [];
 			if (c.key === 'field' && (!c.field_id || appState.activeFieldId)) return [];
 			return [{ key: c.key, label: c.label, fieldId: c.field_id, meta }];
 		})
@@ -361,7 +377,8 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		const sources = (turn.citations ?? [])
 			.map((c, i) => `${i + 1}. ${c.title || hostname(c.url)} — ${c.url}`)
 			.join('\n');
-		const text = sources ? `${turn.content}\n\nSources:\n${sources}` : turn.content;
+		const answer = flattenAnswer(turn.content);
+		const text = sources ? `${answer}\n\nSources:\n${sources}` : answer;
 		try {
 			await copyToClipboard(text);
 			flashCopied('withSources');
@@ -441,6 +458,8 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 							{#if i === lastHighlightTimelineIndex && highlightCards.length}
 								<HighlightCarousel cards={highlightCards} />
 							{/if}
+						{:else if item.kind === 'subagent'}
+							<SubAgentCard agent={item} />
 						{:else}
 							<ToolEvent {item} />
 						{/if}
@@ -451,7 +470,17 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 			{#if turn.errorKind === 'network'}
 				<NetworkErrorBanner disabled={appState.busy} onRetry={() => appState.retry(index)} />
 			{:else if turn.content}
-				<div class="prose" bind:this={proseEl}>{@html renderedHtml}</div>
+				<div class="prose" bind:this={proseEl}>
+					{#each segments as seg, i (i)}
+						{#if seg.kind === 'md'}
+							{@html seg.html}
+						{:else if seg.kind === 'ui'}
+							<UiBlocks src={seg.src} citations={turn.citations ?? []} fence={seg.fence ?? 0} verification={turn.verification} />
+						{:else}
+							<MermaidBlock src={seg.src} closed={seg.closed} />
+						{/if}
+					{/each}
+				</div>
 			{:else if turn.streaming}
 				<div class="pending">…</div>
 			{/if}
@@ -993,9 +1022,59 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		overflow-x: auto;
 	}
 
+	/* Pele (mermaid.ts) emits var(--pele-*) everywhere; pointing those at the
+	   app's own tokens themes diagrams in both light and dark with no
+	   render-time option. Series colors (pie slices, gantt/xy categories) are
+	   the app's category hues plus accent so a chart doesn't arrive in
+	   Pele's stock blue/orange palette. */
+	.prose :global(.mermaid-render) {
+		--pele-bg: var(--color-bg);
+		--pele-fg: var(--color-text);
+		--pele-muted: var(--color-text-dim);
+		--pele-line: var(--color-border-strong);
+		--pele-surface: var(--color-surface-2);
+		--pele-surface-alt: var(--color-surface);
+		--pele-border: var(--color-border-strong);
+		--pele-accent: var(--color-accent);
+		--pele-series-1: var(--color-cat-technology);
+		--pele-series-2: var(--color-cat-space-astronomy);
+		--pele-series-3: var(--color-cat-politics-world-affairs);
+		--pele-series-4: var(--color-cat-internet-social-media);
+		--pele-series-5: var(--color-cat-film-tv);
+		--pele-series-6: var(--color-cat-food-drink);
+		--pele-series-7: var(--color-cat-home-diy);
+		--pele-series-8: var(--color-cat-relationships-family);
+		--pele-critical: var(--color-danger);
+	}
+
 	.prose :global(.mermaid-render svg) {
 		max-width: 100%;
 		height: auto;
+	}
+
+	/* Each streamed re-render of a growing diagram (mermaid.ts's
+	   mountMermaidStream) fades in from a dimmer state so the swap reads as
+	   the diagram growing, not flashing. Reduced motion is handled globally
+	   in app.css. */
+	.prose :global(.mermaid-fade) {
+		animation: mermaid-fade-in 0.25s var(--ease-out-expo);
+	}
+
+	@keyframes mermaid-fade-in {
+		from {
+			opacity: 0.45;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	/* Shown only until a streaming diagram's first valid prefix renders. */
+	.prose :global(.mermaid-pending) {
+		margin: 0 0 var(--space-md) 0;
+		font-size: 11.5px;
+		font-style: italic;
+		color: var(--color-text-dim);
 	}
 
 	/* The whole render pane (not just the SVG) is the tap target
@@ -1051,6 +1130,9 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	   throws — a syntax error degrades to exactly today's plain-code-block
 	   behavior, plus this note explaining why it isn't a diagram. */
 	.prose :global(.mermaid-error-note) {
+		/* The note lives inside the <pre>, which doesn't wrap: on a phone the
+		   sentence ran off the edge and had to be scrolled to read. */
+		white-space: normal;
 		margin-top: var(--space-sm);
 		font-size: 11.5px;
 		font-style: italic;

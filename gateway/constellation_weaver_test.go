@@ -51,7 +51,7 @@ func TestRunShootingStar_FirstPass_CreatesStarAndLinksSource(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "Noted a new interest in Cloudflare Workers."}},
 	}}
 
-	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model"); err != nil {
+	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model", nil, nil, ""); err != nil {
 		t.Fatalf("RunShootingStar: %v", err)
 	}
 
@@ -91,6 +91,50 @@ func TestRunShootingStar_FirstPass_CreatesStarAndLinksSource(t *testing.T) {
 	}
 }
 
+// TestRunShootingStar_UnreadableThread_FinishesAsNoOpNotRetry pins the other
+// half of the 2026-10-27 ghost-thread loop. Excluding ghost threads from
+// EligibleConstellationThreads stops them being *scheduled*; this covers a
+// thread that is unreadable by the time the pass runs — a ghost thread queued
+// before that filter existed, or any thread deleted between scheduling and the
+// pass. store.ReadThread returns sql.ErrNoRows for those by design, and marking
+// that as retryable is what turned one refusal into 12,789 attempts at one per
+// minute: the retry gate re-selects any thread whose last run needs a retry, so
+// the refusal could never be escaped. It must finish as a clean run instead.
+func TestRunShootingStar_UnreadableThread_FinishesAsNoOpNotRetry(t *testing.T) {
+	db := openTestStoreForConstellation(t)
+	id := uuid.NewString()
+	if err := db.CreateGhostThread(id, "Test incognito", "deepseek", "web"); err != nil {
+		t.Fatalf("CreateGhostThread: %v", err)
+	}
+	if _, err := db.AddMessage(id, "user", "something private", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	// No queued responses: any model call at all fails this test, which is the
+	// point — an unreadable thread must not be analyzed at all, let alone retried.
+	mock := &llmtest.MockClient{}
+	if err := RunShootingStar(context.Background(), db, mock, id, "test-model", nil, nil, ""); err != nil {
+		t.Fatalf("RunShootingStar on an unreadable thread = %v, want a clean no-op", err)
+	}
+	if len(mock.Calls) != 0 {
+		t.Errorf("made %d model call(s) on an unreadable thread, want 0", len(mock.Calls))
+	}
+
+	run, err := db.LastShootingStarRun(id)
+	if err != nil {
+		t.Fatalf("LastShootingStarRun: %v", err)
+	}
+	if run == nil {
+		t.Fatal("no run recorded; the pass should leave a finished no-op run behind")
+	}
+	if run.NeedsRetry {
+		t.Error("run.NeedsRetry = true; an unreadable thread would be retried forever")
+	}
+	if run.Error != "" {
+		t.Errorf("run.Error = %q, want empty on a no-op", run.Error)
+	}
+}
+
 func TestRunShootingStar_Revisit_FeedsFilteredDeltaNotRawThread(t *testing.T) {
 	db := openTestStoreForConstellation(t)
 	threadID := seedWeaverThread(t, db, "What's the deal with Cloudflare Workers?", "They run JS at the edge.")
@@ -125,7 +169,7 @@ func TestRunShootingStar_Revisit_FeedsFilteredDeltaNotRawThread(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "No new star needed, just an addendum noted."}},                    // Weaver's own turn
 	}}
 
-	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model"); err != nil {
+	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model", nil, nil, ""); err != nil {
 		t.Fatalf("RunShootingStar: %v", err)
 	}
 
@@ -172,7 +216,7 @@ func TestRunShootingStar_HitsTurnCap_SetsNeedsRetryAndError(t *testing.T) {
 	responses = append(responses, llmtest.Response{Resp: &llm.ChatResponse{Content: "forced wrap-up text"}})
 	mock := &llmtest.MockClient{Responses: responses}
 
-	err := RunShootingStar(context.Background(), db, mock, threadID, "test-model")
+	err := RunShootingStar(context.Background(), db, mock, threadID, "test-model", nil, nil, "")
 	if err == nil {
 		t.Fatal("RunShootingStar should return an error when the turn cap is hit")
 	}
@@ -224,7 +268,7 @@ func TestRunShootingStar_LinkStarsRejectsUnseenStarID(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "done"}},
 	}}
 
-	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model"); err != nil {
+	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model", nil, nil, ""); err != nil {
 		t.Fatalf("RunShootingStar: %v", err)
 	}
 

@@ -200,7 +200,7 @@ func memoryChatLLMServer(t *testing.T, toolArgsJSON, confirmation string) *httpt
 			lines = round2
 		}
 		for _, line := range lines {
-			fmt.Fprintf(w, "%s\n", line)
+			fmt.Fprintf(w, "%s\n\n", line)
 			flusher.Flush()
 		}
 	}))

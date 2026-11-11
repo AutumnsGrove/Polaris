@@ -51,7 +51,19 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 // scheduler and the bare-metal CLI path — a Docker install shouldn't get
 // weaker off-device protection than a bare-metal one just because this is
 // the handler that actually runs Create for it.
+//
+// backup.TryStart makes this single-flight against the scheduler: two runs at
+// once would race over the same one-second-granularity filename, and holding
+// the flag is also what keeps a self-update from recreating the container
+// mid-create (see backup.runInProgress).
 func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
+	release, ok := backup.TryStart()
+	if !ok {
+		http.Error(w, "a backup is already in progress", http.StatusConflict)
+		return
+	}
+	defer release()
+
 	cfg := s.liveConfig()
 	info, err := backup.Create(cfg.Database.Path, cfg.Backup.Dir)
 	if err != nil {

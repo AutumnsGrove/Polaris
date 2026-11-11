@@ -1,0 +1,9 @@
+id: em-icu-terse
+track: emotional
+rationale: >-
+  Very terse, phone-typed message about a parent in the ICU with a mix of fear and a practical
+  question. The fear dominates, so emotional=yes.
+state:
+  latest: "cant sleep. my mom is in the icu and nobody will tell us anything"
+expect:
+  emotional: {answer: "yes"}

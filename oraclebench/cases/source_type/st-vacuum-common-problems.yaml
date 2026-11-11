@@ -1,0 +1,11 @@
+id: st-vacuum-common-problems
+track: source_type
+rationale: >-
+  Reliability and "common problems" after long use are named under community; a robot-vacuum
+  spec sheet won't say. Terse phone voice.
+state:
+  latest: "roborock s8 common problems after a year or so"
+expect:
+  source_type: {answer: community}
+quiet:
+  - emotional

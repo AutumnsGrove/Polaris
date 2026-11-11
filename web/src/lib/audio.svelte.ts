@@ -1,5 +1,6 @@
 import type { ChatTurn } from './types';
 import { synthesizeStream } from './speech';
+import { flattenAnswer } from './uiBlocks/flatten';
 
 // Manual per-message read-aloud, split out of state.svelte.ts since it's a
 // self-contained concern (one async action + its loading state) with
@@ -88,7 +89,9 @@ export class AudioPlayer {
 		const token = ++this.sessionToken;
 		this.speakingIndex = assistantTurnIndex;
 
-		const result = await synthesizeStream(turn.content, threadId ?? undefined, turn.id);
+		// flattenAnswer: a `ui` block is JSON lines in the stored text, which
+		// would be spoken verbatim; speak its readable form instead.
+		const result = await synthesizeStream(flattenAnswer(turn.content), threadId ?? undefined, turn.id);
 
 		if (token !== this.sessionToken) return; // stopped/superseded meanwhile
 		this.speakingIndex = null;

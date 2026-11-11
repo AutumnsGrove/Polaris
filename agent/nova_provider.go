@@ -1,0 +1,233 @@
+package agent
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/provider/openrouter"
+
+	"polaris/llm"
+	"polaris/tools"
+)
+
+// novaRequestTimeout bounds a single provider call, matching llm.Client's
+// requestTimeout (passed as agent.Config.RequestTimeout).
+const novaRequestTimeout = 3 * time.Minute
+
+// novaRetry matches llm.Client exactly — three total attempts, 2s then 4s
+// (docs/plans/nova-loop.md §12.2). Nova's own defaults are deliberately wider
+// and are not used; widening is a later, deliberate change.
+var novaRetry = struct {
+	Max  int
+	Base time.Duration
+}{Max: 2, Base: 2 * time.Second}
+
+// ProviderCall is one completed model call's attribution: which backend
+// served it and what that call consumed. A spilled turn has one entry per
+// attempt (the failed Go leg's tokens fold into the row written under the
+// serving provider); the common case is exactly one entry.
+type ProviderCall struct {
+	Provider string
+	Usage    provider.Usage
+}
+
+// novaModel is everything about the model that goes on the Nova agent.Config
+// rather than into the provider.
+type novaModel struct {
+	Name        string
+	ModelID     string
+	Temperature float64
+	MaxTokens   int
+	PromptCache bool
+	Options     map[string]any
+}
+
+// novaProviderFor builds the provider for one run from the turn's context.
+//
+// When the context carries a Router and a ModelID, the run goes through
+// the router: ModelID (the Polaris registry id) resolves the attempt chain
+// while the wire slug travels as Model for the rewrite. A wire slug alone
+// can never name a backend, so a missing ModelID falls back to direct —
+// the router would key on the slug, find no route, and silently bill
+// OpenRouter while looking exactly like success (docs/plans/nova-loop.md
+// §5.2, multi-provider §8).
+//
+// A real *llm.Client describes itself (llm.SettingsProvider), so the run gets
+// a genuine Nova OpenRouter provider carrying the same base URL, key, routing
+// and reasoning. Anything else — llmtest.MockClient, in practice — is bridged
+// as-is, so the existing scripted-model tests drive the Nova loop unchanged
+// instead of needing a second mock.
+func novaProviderFor(ctx *tools.Context) (*polarisProvider, novaModel) {
+	client := ctx.LLM
+	sp, ok := client.(llm.SettingsProvider)
+	if !ok {
+		return &polarisProvider{inner: chatClientProvider{client}}, novaModel{Name: "chat-client"}
+	}
+	s := sp.Settings()
+	m := novaModel{Name: s.Model, Temperature: s.Temperature, MaxTokens: s.MaxTokens, PromptCache: s.PromptCaching}
+	m.Options = providerOptionsForSettings(s)
+	if ctx.Router != nil && ctx.ModelID != "" {
+		// Routed path: the router owns the wire (attempt slugs, session
+		// header, failover). The request's Model stays the OpenRouter
+		// slug the client was built with; the router rewrites it to the
+		// attempt's slug, and ModelID picks the chain.
+		m.ModelID = ctx.ModelID
+		return &polarisProvider{inner: ctx.Router}, m
+	}
+	inner := openrouter.New(openrouter.Config{
+		APIKey:  s.APIKey,
+		BaseURL: s.BaseURL,
+		Referer: "https://github.com/AutumnsGrove/Polaris",
+		Title:   "Polaris",
+		// llm.Client always sent "content":"" on a tool-call-only assistant
+		// message; keeping it means replayed history re-encodes to the same
+		// bytes and the provider's prompt cache survives the switch.
+		EmptyToolCallContent: true,
+	})
+	return &polarisProvider{inner: inner}, m
+}
+
+// polarisProvider layers what llm.Client did that Nova's provider does not onto
+// any inner provider: the OpenRouter metadata header and the reasoning-leak
+// re-filing. (The per-call deadline is agent.Config.RequestTimeout, and
+// Polaris's user-facing error type is translateRunError, applied by the caller.)
+//
+// OnCall, when set, fires once per completed provider call with the
+// finalized response — how the run attributes each call to the backend
+// that served it (Response.Provider) and what it consumed. It fires for
+// the answering call only on a spill; the failed leg's spend is already
+// folded into the returned usage by the router.
+type polarisProvider struct {
+	inner  provider.Provider
+	OnCall func(resp *provider.Response)
+}
+
+func (p *polarisProvider) Name() string { return p.inner.Name() }
+
+func (p *polarisProvider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
+	if req.ExtraHeaders == nil {
+		req.ExtraHeaders = map[string]string{}
+	}
+	// Asks OpenRouter to attach per-provider attempt metadata, which the 429
+	// message surfaces ("providers tried: ...").
+	req.ExtraHeaders["X-OpenRouter-Metadata"] = "enabled"
+
+	var content strings.Builder
+	leaked := false
+	emit := func(ev provider.StreamEvent) {
+		if onEvent != nil {
+			onEvent(ev)
+		}
+	}
+	filter := llm.NewLeakFilter(func(s string) {
+		content.WriteString(s)
+		emit(provider.StreamEvent{Type: provider.StreamTextDelta, Text: s})
+	}, func(s string) {
+		leaked = true
+		emit(provider.StreamEvent{Type: provider.StreamReasoningDelta, Text: s})
+	})
+	resp, err := p.inner.Stream(ctx, req, func(ev provider.StreamEvent) {
+		switch ev.Type {
+		case provider.StreamTextDelta:
+			filter.Content(ev.Text)
+		case provider.StreamReasoningDelta:
+			emit(ev)
+			filter.ReasoningSeen()
+		default:
+			emit(ev)
+		}
+	})
+	filter.Flush()
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil && leaked {
+		resp.Message.Content = content.String()
+	}
+	// Attribute the call to the backend that ran it: a router stamps the
+	// answering attempt; a plain provider may leave it empty, in which
+	// case the inner provider's own name is the honest answer (direct
+	// OpenRouter, or the chat-client bridge in tests).
+	if resp != nil && resp.Provider == "" {
+		resp.Provider = p.inner.Name()
+	}
+	if resp != nil && p.OnCall != nil {
+		p.OnCall(resp)
+	}
+	return resp, nil
+}
+
+// translateRunError turns Nova's provider errors back into the types the rest
+// of Polaris keys on: *llm.APIError (whose Error() is the user-facing text,
+// including the friendly 429 message) for an HTTP failure. Transport errors
+// keep their *url.Error in the chain, so llm.IsNetworkError still works.
+func (p *polarisProvider) translateRunError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var pe *provider.Error
+	if errors.As(err, &pe) && pe.Status != 0 {
+		body := pe.Body
+		if body == "" {
+			body = pe.Message
+		}
+		return &llm.APIError{StatusCode: pe.Status, Body: body}
+	}
+	return err
+}
+
+// chatClientProvider bridges an llm.ChatClient to a Nova provider.
+type chatClientProvider struct {
+	client llm.ChatClient
+}
+
+func (chatClientProvider) Name() string { return "chat-client" }
+
+func (p chatClientProvider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
+	msgs := fromNovaMessages(req.Messages)
+	emit := func(ev provider.StreamEvent) {
+		if onEvent != nil {
+			onEvent(ev)
+		}
+	}
+	onChunk := func(s string) { emit(provider.StreamEvent{Type: provider.StreamTextDelta, Text: s}) }
+	onReasoning := func(s string) { emit(provider.StreamEvent{Type: provider.StreamReasoningDelta, Text: s}) }
+
+	var resp *llm.ChatResponse
+	var err error
+	if len(req.Tools) > 0 {
+		resp, err = p.client.ChatCompletionWithTools(ctx, msgs, fromNovaDefs(req.Tools), onChunk, onReasoning)
+	} else {
+		resp, err = p.client.ChatCompletionStreaming(ctx, msgs, onChunk, onReasoning)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		resp = &llm.ChatResponse{}
+	}
+	out := &provider.Response{
+		Message:      message.Message{Role: message.RoleAssistant, Content: resp.Content},
+		FinishReason: resp.FinishReason,
+		Model:        resp.Model,
+		Usage: provider.Usage{
+			PromptTokens:     resp.PromptTokens,
+			CompletionTokens: resp.CompletionTokens,
+			TotalTokens:      resp.TotalTokens,
+			CachedTokens:     resp.CacheReadTokens,
+			CacheWriteTokens: resp.CacheWriteTokens,
+			CostUSD:          resp.CostUSD,
+		},
+	}
+	for _, tc := range resp.ToolCalls {
+		c := message.ToolCall{ID: tc.ID, Type: tc.Type, Function: message.FunctionCall{Name: tc.Function.Name, Arguments: tc.Function.Arguments}}
+		out.Message.ToolCalls = append(out.Message.ToolCalls, c)
+		call := c
+		emit(provider.StreamEvent{Type: provider.StreamToolCall, ToolCall: &call})
+	}
+	return out, nil
+}

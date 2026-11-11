@@ -29,6 +29,97 @@ describe('buildOracleNote', () => {
 		);
 	});
 
+	describe('the Deep Research clause', () => {
+		const promoted = (extra: Partial<OracleResult> = {}): OracleResult => ({
+			deep_research: true,
+			checks: [{ key: 'deep_research', winner: 'yes', probabilities: { yes: 0.91 }, fired: true }],
+			...extra
+		});
+
+		it('is a note of its own when nothing else fired', () => {
+			expect(buildOracleNote(promoted(), undefined, undefined, undefined)).toBe('Promoted to <b>Deep Research</b>');
+		});
+
+		it('sits between the focus clause and the ui clause', () => {
+			const result = promoted({
+				checks: [
+					{ key: 'high_stakes', winner: 'medical', probabilities: { medical: 0.9 }, fired: true },
+					{ key: 'ui', winner: 'compare', probabilities: { compare: 0.9 }, fired: true },
+					{ key: 'deep_research', winner: 'yes', probabilities: { yes: 0.91 }, fired: true }
+				]
+			});
+			const answer = 'Answer.\n\n```ui\n{"c":"compare","cols":["A","B"]}\n```\n';
+			expect(buildOracleNote(result, 'oracle', 'shopper', undefined, answer)).toBe(
+				'Read as <b>medical</b> · answered as <b>Shopper</b> · promoted to <b>Deep Research</b> · shown as a <b>compare</b> block'
+			);
+		});
+
+		it('says it is continuing when the mode was carried over a plan confirmation, even with no checks', () => {
+			const carried: OracleResult = { deep_research_carried: true };
+			expect(buildOracleNote(carried, undefined, undefined, undefined)).toBe('Continuing <b>Deep Research</b>');
+		});
+
+		it('is absent when the promotion did not take effect', () => {
+			const held = promoted({ deep_research: undefined });
+			expect(buildOracleNote(held, undefined, undefined, undefined)).toBeNull();
+		});
+	});
+
+	describe('the ui (Prism) clause', () => {
+		const ui = (winner: string, fired = true): OracleResult => ({
+			checks: [{ key: 'ui', winner, probabilities: { [winner]: 0.9 }, fired }]
+		});
+		const answerWithBlock = 'Short answer.\n\n```ui\n{"c":"compare","cols":["A","B"]}\n```\n';
+
+		it('names the block when the answer really contains one', () => {
+			expect(buildOracleNote(ui('compare'), undefined, undefined, undefined, answerWithBlock)).toBe(
+				'Shown as a <b>compare</b> block'
+			);
+		});
+
+		it('claims nothing when the model was nudged but wrote no block', () => {
+			expect(buildOracleNote(ui('compare'), undefined, undefined, undefined, 'Just prose.')).toBeNull();
+			expect(buildOracleNote(ui('compare'), undefined, undefined, undefined, undefined)).toBeNull();
+		});
+
+		it('claims nothing for a check that did not fire, or an option this build cannot name', () => {
+			expect(buildOracleNote(ui('compare', false), undefined, undefined, undefined, answerWithBlock)).toBeNull();
+			expect(buildOracleNote(ui('map'), undefined, undefined, undefined, answerWithBlock)).toBeNull();
+		});
+
+		it('names the group (a) blocks it can draw', () => {
+			expect(buildOracleNote(ui('timeline'), undefined, undefined, undefined, answerWithBlock)).toBe(
+				'Shown as a <b>timeline</b> block'
+			);
+		});
+
+		it('joins after the read-as and focus clauses, in that order', () => {
+			const result: OracleResult = {
+				checks: [
+					{ key: 'task', winner: 'decide', probabilities: { decide: 0.9 }, fired: true },
+					{ key: 'ui', winner: 'compare', probabilities: { compare: 0.9 }, fired: true }
+				]
+			};
+			expect(buildOracleNote(result, 'oracle', 'shopper', undefined, answerWithBlock)).toBe(
+				'Read as <b>a decision</b> · answered as <b>Shopper</b> · shown as a <b>compare</b> block'
+			);
+		});
+
+		it('does not recognize an indented or tagged fence as a block', () => {
+			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '  ```ui\n{}\n```')).toBeNull();
+			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '```ui title\n{}\n```')).toBeNull();
+		});
+
+		it('matches exactly what the renderer splits: a longer fence counts, a quoted ```ui does not', () => {
+			// Any 3+ backticks is a real `ui` fence to split.ts, so the note must still claim it.
+			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '````ui\n{"c":"steps"}\n````')).toBe(
+				'Shown as a <b>steps</b> block'
+			);
+			// A ```ui line inside a longer fence is inert example code, not a block.
+			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '````md\n```ui\n{}\n```\n````')).toBeNull();
+		});
+	});
+
 	it('says nothing when a check fired only on its no-op option', () => {
 		const result: OracleResult = {
 			checks: [{ key: 'high_stakes', winner: 'none', probabilities: { none: 0.95 }, fired: true }]

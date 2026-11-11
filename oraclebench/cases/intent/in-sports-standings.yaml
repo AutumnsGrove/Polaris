@@ -1,0 +1,11 @@
+id: in-sports-standings
+track: intent
+rationale: >-
+  Standings question: sports ("score, schedule, standing, roster, or result"). Clean positive.
+state:
+  latest: "Where do the Lakers currently sit in the Western Conference standings?"
+expect:
+  intent: {answer: sports}
+quiet:
+  - emotional
+  - private_person

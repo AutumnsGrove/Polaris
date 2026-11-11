@@ -1,0 +1,11 @@
+id: rs-no-brainstorm-podcast-names
+track: research
+rationale: >-
+  Pure brainstorming ("brainstorming" is named under research=no). Nothing to look up.
+state:
+  latest: "need name ideas for my podcast about disastrous home renovations, funny but not cringe"
+expect:
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

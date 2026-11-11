@@ -1,0 +1,11 @@
+id: st-official-irs-home-office
+track: source_type
+rationale: >-
+  Tax rules are set by the IRS, so the agency's own publication is the authority (official), not
+  a tax-prep blog or a vendor's help page.
+state:
+  latest: "What does the IRS say are the requirements to claim the home office deduction?"
+expect:
+  source_type: {answer: official}
+quiet:
+  - emotional

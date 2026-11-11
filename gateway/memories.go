@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"polaris/agent"
 	"polaris/llm"
 	"polaris/prompts"
 	"polaris/store"
@@ -165,7 +166,7 @@ func (s *Server) serveMemoryChat(w http.ResponseWriter, r *http.Request, c memor
 	}
 	defer s.FinishTurn()
 
-	confirmation, err := s.runMemoryToolLoop(r.Context(), c, prompts.Get().Turn.MemoryChatSystem, instruction, maxMemoryChatToolTurns)
+	confirmation, err := s.runMemoryToolLoop(r.Context(), c, prompts.Get().Turn.MemoryChatSystem, instruction, maxMemoryChatToolTurns, "memory-chat")
 	if err != nil {
 		log.Warn("memory chat completion failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -191,7 +192,7 @@ func (s *Server) serveMemoryChat(w http.ResponseWriter, r *http.Request, c memor
 // current memory index exactly like every other %s-templated prompt in
 // prompts.yaml. c picks which store the memory tool is bound to — the global
 // list for settings/import, one field's own store for a Field page.
-func (s *Server) runMemoryToolLoop(ctx context.Context, c memoryClosures, systemPromptFmt, userMessage string, maxTurns int) (string, error) {
+func (s *Server) runMemoryToolLoop(ctx context.Context, c memoryClosures, systemPromptFmt, userMessage string, maxTurns int, sessionID string) (string, error) {
 	memCtx := &tools.Context{
 		Ctx:          ctx,
 		Emit:         func(string, map[string]interface{}) {},
@@ -218,16 +219,24 @@ func (s *Server) runMemoryToolLoop(ctx context.Context, c memoryClosures, system
 
 	var confirmation string
 	for i := 0; i < maxTurns; i++ {
-		resp, err := client.ChatCompletionWithTools(ctx, messages, memoryOnlyDefs, func(string) {}, nil)
+		res, err := agent.CompleteOneShot(ctx, cfg, client, modelCfg.ID, agent.OneShotOptions{
+			SessionID: sessionID,
+			UserAgent: "Polaris/" + s.version,
+			Tools:     memoryOnlyDefs,
+			OnFallback: func(from, to string, err error) {
+				log.Warn("memory tool loop spilled providers", "from", from, "to", to, "err", err)
+			},
+		}, messages)
 		if err != nil {
 			return "", err
 		}
-		if len(resp.ToolCalls) == 0 {
-			confirmation = strings.TrimSpace(resp.Content)
+		s.logOneShotProviderUsage(res, modelCfg.ID)
+		if len(res.ToolCalls) == 0 {
+			confirmation = strings.TrimSpace(res.Text)
 			break
 		}
-		messages = append(messages, llm.ChatMessage{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls})
-		for _, tc := range resp.ToolCalls {
+		messages = append(messages, res.Message)
+		for _, tc := range res.ToolCalls {
 			result := tools.Dispatch(tc.Function.Name, tc.Function.Arguments, memCtx, tc.ID)
 			messages = append(messages, llm.ChatMessage{Role: "tool", ToolCallID: tc.ID, Content: result})
 		}

@@ -1,5 +1,6 @@
 name: read_star
 requires: weaver_run
+export_privacy: personal
 description: >-
   read one star's full card.
 api_description: >-

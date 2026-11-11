@@ -1,0 +1,10 @@
+id: em-drowning-overwhelmed
+track: emotional
+rationale: >-
+  "Drowning" here is sincere overwhelm (newborn, thesis, a parent's new diagnosis), not
+  hyperbole about a to-do list. The stacked real stressors make emotional=yes the right call;
+  the check text lists "feeling overwhelmed" explicitly.
+state:
+  latest: "i have a newborn, my thesis is due in 3 weeks and my mom just got diagnosed with cancer. im drowning"
+expect:
+  emotional: {answer: "yes"}

@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sidebar connection indicator — options</title>
+<!--
+  The sidebar footer's connection readout (Sidebar.svelte's .status strip:
+  an 8px dot + the word "connected" / "reconnecting…"). Today only the hue
+  changes — gold vs. red — behind a ring, which is the single most generic
+  status idiom on the web.
+
+  Four alternatives below plus the current dot for reference, each rendered
+  in the REAL footer strip at its real 260px width, in both states, plus a
+  zoomed view of the mark alone. All four deliberately signal by SHAPE or
+  POSITION (broken line, star below the limb, dashed/crawling rule, swinging
+  needle) so they still read in grayscale — a dot can only ever say "colored
+  thing present."
+
+  Tokens are copied from web/src/app.css so colors and the --shadow-well
+  recessed strip match the real app. Flip the theme with the button.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Asimovian&family=Lexend:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-bg: oklch(15% 0.014 65);
+    --color-surface: oklch(19% 0.014 65);
+    --color-surface-2: oklch(23% 0.016 65);
+    --color-surface-3: oklch(28% 0.018 65);
+    --color-border: oklch(30% 0.016 65);
+    --color-border-strong: oklch(40% 0.02 65);
+    --color-text: oklch(93% 0.01 75);
+    --color-text-dim: oklch(64% 0.014 70);
+    --color-accent: oklch(82% 0.17 78);
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+    --color-accent-2: oklch(78% 0.06 235);
+    --color-danger: oklch(65% 0.19 25);
+    --shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+    --shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+    --space-2xl: 32px;
+    --font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  :root[data-theme='light'] {
+    --color-bg: oklch(97% 0.008 75);
+    --color-surface: oklch(99% 0.004 80);
+    --color-surface-2: oklch(95% 0.01 75);
+    --color-surface-3: oklch(91% 0.012 75);
+    --color-border: oklch(87% 0.012 75);
+    --color-text: oklch(24% 0.016 60);
+    --color-text-dim: oklch(46% 0.018 60);
+    --color-accent: oklch(54% 0.17 68);
+    --color-accent-2: oklch(48% 0.1 240);
+    --color-danger: oklch(52% 0.19 25);
+    --shadow-well: inset 0 1px 3px rgba(50, 40, 28, 0.16), inset 0 0 0 1px rgba(50, 40, 28, 0.08);
+    --shadow-md: 0 8px 24px -8px rgba(60, 48, 32, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: var(--space-2xl) var(--space-lg) var(--space-2xl);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1240px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: var(--space-lg); flex-wrap: wrap; }
+  h1 {
+    font-family: var(--font-wordmark);
+    font-weight: 400;
+    font-size: 24px;
+    letter-spacing: 0.02em;
+    margin: 0;
+  }
+  .theme-btn {
+    margin-left: auto;
+    font: inherit;
+    font-size: 12px;
+    color: var(--color-text-dim);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+  .theme-btn:hover { color: var(--color-text); border-color: var(--color-border-strong); }
+  .lede {
+    color: var(--color-text-dim);
+    font-size: 13.5px;
+    line-height: 1.65;
+    max-width: 84ch;
+    margin: var(--space-md) 0 0;
+  }
+  .lede b { color: var(--color-text); font-weight: 500; }
+  .lede code {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 0.92em;
+    background: var(--color-surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(352px, 1fr));
+    gap: var(--space-xl);
+    margin-top: var(--space-2xl);
+  }
+  .card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg) var(--space-lg) var(--space-md);
+    box-shadow: var(--shadow-md);
+  }
+  .card-head { display: flex; align-items: baseline; gap: var(--space-sm); }
+  .tag {
+    font-family: var(--font-wordmark);
+    font-size: 15px;
+    color: var(--color-accent);
+    line-height: 1;
+  }
+  .card-head h2 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.005em; }
+  .idea {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--color-text-dim);
+    margin: var(--space-sm) 0 var(--space-lg);
+  }
+  .idea b { color: var(--color-text); font-weight: 500; }
+
+  .state-label {
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-dim);
+    opacity: 0.6;
+    margin: 0 0 var(--space-xs);
+  }
+  .state-label + .strip { margin-bottom: var(--space-md); }
+
+  /* ---------------------------------------------------------------
+     The real footer strip: Sidebar.svelte's .status. Width is the
+     desktop sidebar's 260px, --shadow-well makes it read as a shallow
+     well carved into the panel rather than a bordered box.
+     --------------------------------------------------------------- */
+  .strip {
+    width: 260px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    box-shadow: var(--shadow-well);
+    font-size: 12px;
+    color: var(--color-text-dim);
+    white-space: nowrap;
+  }
+  .status-text { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .foot { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .foot .ib {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-sm);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-dim);
+  }
+
+  /* ---- current: the plain dot ---- */
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot.connected {
+    background: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+  }
+  .dot.down { background: var(--color-danger); }
+
+  /* ---------------------------------------------------------------
+     .mk = a self-contained mark (state lives on the mark itself, not
+     an ancestor, so the zoomed clones below restyle correctly).
+     --------------------------------------------------------------- */
+  .mk { display: inline-flex; align-items: center; flex-shrink: 0; }
+  .mk svg { display: block; overflow: visible; }
+
+  /* ---- A. Tether ---- */
+  .tether svg { width: 26px; height: 12px; }
+  .t-line { stroke: var(--color-accent); stroke-width: 1; stroke-linecap: round; opacity: 0.5; }
+  .t-you { fill: var(--color-accent); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 55%, transparent)); }
+  .t-server { fill: var(--color-accent-2); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent-2) 60%, transparent)); }
+  .mk.tether[data-state='down'] .t-line {
+    stroke-dasharray: 2.5 3.5;
+    opacity: 0.32;
+    animation: tether-crawl 3.4s linear infinite;
+  }
+  .mk.tether[data-state='down'] .t-you { opacity: 0.75; filter: none; }
+  .mk.tether[data-state='down'] .t-server {
+    fill: none;
+    stroke: var(--color-accent-2);
+    stroke-width: 1;
+    opacity: 0.5;
+    filter: none;
+  }
+  @keyframes tether-crawl { to { stroke-dashoffset: -12; } }
+
+  /* ---- B. Limb ---- */
+  .limb svg { width: 15px; height: 15px; }
+  .l-rim { fill: none; stroke: var(--color-text-dim); stroke-width: 1; stroke-linecap: round; opacity: 0.5; }
+  .l-star {
+    fill: var(--color-accent);
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 60%, transparent));
+    transition: transform 0.45s var(--ease-out-expo), opacity 0.3s ease;
+  }
+  /* Down: the star drops below the limb and loses its glow. Deliberately a
+     small FILLED disc with a visible gap under the curve — a hollow ring
+     centred under a centred arc reads as an eye, and a half-disc flush
+     against the curve reads as a smudge. */
+  .l-set {
+    /* Cooled ember, not gray debris — still reads as "a star", just unlit. */
+    fill: color-mix(in srgb, var(--color-accent) 28%, var(--color-text-dim));
+    opacity: 0;
+    transform: translateY(-2.4px);
+    transition: opacity 0.3s ease, transform 0.45s var(--ease-out-expo);
+  }
+  .mk.limb[data-state='down'] .l-star {
+    opacity: 0;
+    transform: translateY(2.6px);
+    filter: none;
+  }
+  .mk.limb[data-state='down'] .l-set {
+    opacity: 0.55;
+    transform: translateY(0);
+    animation: limb-dim 3.2s ease-in-out infinite;
+  }
+  @keyframes limb-dim { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.3; } }
+
+  /* ---- C. Rule (no glyph at all) ---- */
+  .rule { gap: var(--space-sm); }
+  .rule-mark {
+    display: block;
+    width: 20px;
+    height: 1px;
+    flex-shrink: 0;
+    background: var(--color-accent);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  .rule-word {
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-dim);
+    line-height: 1;
+  }
+  .mk.rule[data-state='down'] .rule-mark {
+    height: 1px;
+    background-image: repeating-linear-gradient(90deg, var(--color-danger) 0 3px, transparent 3px 7px);
+    background-size: 13px 1px;
+    background-repeat: repeat-x;
+    box-shadow: none;
+    opacity: 0.85;
+    animation: rule-crawl 1.5s linear infinite;
+  }
+  .mk.rule[data-state='down'] .rule-word { color: var(--color-text-dim); }
+  @keyframes rule-crawl { to { background-position-x: 13px; } }
+
+  /* ---- D. Needle ---- */
+  .needle svg { width: 16px; height: 16px; }
+  .n-dial { fill: none; stroke: var(--color-text-dim); stroke-width: 1; stroke-linecap: round; opacity: 0.38; }
+  .n-arm {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    transition: transform 0.5s var(--ease-out-expo);
+  }
+  .n-stem { stroke: var(--color-accent); stroke-width: 1.2; stroke-linecap: round; }
+  .n-head { fill: var(--color-accent); }
+  .n-pivot { fill: var(--color-accent); opacity: 0.9; }
+  .mk.needle[data-state='down'] .n-stem { stroke: var(--color-text-dim); opacity: 0.7; }
+  .mk.needle[data-state='down'] .n-head { fill: var(--color-text-dim); opacity: 0.7; }
+  .mk.needle[data-state='down'] .n-pivot { fill: var(--color-text-dim); opacity: 0.6; }
+  /* Base tilt is on the arm itself, not only inside the keyframes: with
+     prefers-reduced-motion the animation is dropped entirely, and a still
+     frame of the wobble must never land back at 0deg or down would look
+     exactly like up. The wobble stays inside 6-26deg for the same reason. */
+  .mk.needle[data-state='down'] .n-arm {
+    transform: rotate(14deg);
+    animation: needle-wobble 5.4s ease-in-out infinite;
+  }
+  @keyframes needle-wobble {
+    0%, 100% { transform: rotate(9deg); }
+    22% { transform: rotate(25deg); }
+    44% { transform: rotate(7deg); }
+    68% { transform: rotate(21deg); }
+    86% { transform: rotate(11deg); }
+  }
+
+  /* ---- zoom row ---- */
+  .zoom-row {
+    display: flex;
+    gap: var(--space-lg);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-surface-3);
+    margin-top: var(--space-xs);
+  }
+  .zoom { display: flex; flex-direction: column; gap: var(--space-xs); }
+  .stage {
+    height: 40px;
+    width: 96px;
+    display: flex;
+    align-items: center;
+  }
+  .stage > .mk { transform: scale(2.6); transform-origin: left center; }
+  /* C's mark includes its word, so zoom the rule itself at 4x instead —
+     the solid vs. crawling-dash difference is the thing worth inspecting. */
+  .stage-rule { width: 108px; }
+  .stage-rule > .mk { transform: scale(4); }
+  .zoom .cap {
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-dim);
+    opacity: 0.55;
+  }
+
+  .note {
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--color-text-dim);
+    margin: var(--space-md) 0 var(--space-xs);
+  }
+  .note .k { color: var(--color-text); font-weight: 500; }
+  .note.warn { opacity: 0.92; }
+
+  .footer {
+    margin-top: var(--space-2xl);
+    padding-top: var(--space-lg);
+    border-top: 1px solid var(--color-border);
+    font-size: 12px;
+    color: var(--color-text-dim);
+    line-height: 1.7;
+  }
+  .footer code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mk, .mk * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>Sidebar connection indicator</h1>
+    <button class="theme-btn" id="themeBtn" type="button">light theme</button>
+  </div>
+  <p class="lede">
+    Today: an 8px dot, gold with a ring when the socket is open, red when it isn't — the same idiom as
+    every status readout on the web. These four all signal by <b>shape or position</b> instead of hue,
+    so they survive grayscale, colorblindness, and being glanced at on a phone at arm's length.
+    Each is shown in the real 260px footer strip, in both states, plus a zoomed view of the mark alone.
+    <br><br>
+    Worth noting while judging these: down here means <i>nothing runs</i> — the agent loop, sending,
+    streaming all dead until the socket comes back (<code>ws.ts</code> retries every 2s). So a down mark
+    is allowed to be a little more present than a "nice to know" badge would be.
+  </p>
+
+  <div class="cards">
+
+    <!-- ============================ CURRENT ============================ -->
+    <div class="card">
+      <div class="card-head"><span class="tag">—</span><h2>What's there now</h2></div>
+      <p class="idea">
+        An 8px filled circle: <b>gold + 3px ring</b> when up, <b>red</b> when down. Only the hue changes.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="dot connected"></span>
+        <span class="status-text">connected</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">reconnecting…</div>
+      <div class="strip">
+        <span class="dot down"></span>
+        <span class="status-text">reconnecting…</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="zoom-row">
+        <div class="zoom"><div class="stage"><span class="mk dotbase mk-dot-up"><span class="dot connected"></span></span></div><span class="cap">up</span></div>
+        <div class="zoom"><div class="stage"><span class="mk dotbase mk-dot-down"><span class="dot down"></span></span></div><span class="cap">down</span></div>
+      </div>
+
+      <p class="note">
+        <span class="k">Trouble:</span> a colored circle is the default answer to "show state," so it reads as
+        autogenerated chrome — and red/green is the one pairing roughly 8% of people can't separate.
+      </p>
+      <p class="note warn">
+        Also worth seeing in context: this same 8px gold circle already marks unread Pulsar pulses and a new
+        Daily edition in this same sidebar column — so the connection dot is the third identical mark stacked
+        under two others that mean something else entirely.
+      </p>
+    </div>
+
+    <!-- ============================== A ============================== -->
+    <div class="card">
+      <div class="card-head"><span class="tag">A</span><h2>Tether</h2></div>
+      <p class="idea">
+        Two stars on a hairline: <b>you</b> (warm gold, near) and the <b>server</b> (blue-white hot star, far),
+        with the link drawn between them. Up = unbroken line. Down = the line frays into crawling dashes and
+        the far star goes hollow.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="mk tether" data-state="up">
+          <svg viewBox="0 0 26 12" aria-hidden="true">
+            <line class="t-line" x1="5" y1="6" x2="21" y2="6"/>
+            <circle class="t-you" cx="3" cy="6" r="2.1"/>
+            <circle class="t-server" cx="23" cy="6" r="1.7"/>
+          </svg>
+        </span>
+        <span class="status-text">connected</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">reconnecting…</div>
+      <div class="strip">
+        <span class="mk tether" data-state="down">
+          <svg viewBox="0 0 26 12" aria-hidden="true">
+            <line class="t-line" x1="5" y1="6" x2="21" y2="6"/>
+            <circle class="t-you" cx="3" cy="6" r="2.1"/>
+            <circle class="t-server" cx="23" cy="6" r="1.7"/>
+          </svg>
+        </span>
+        <span class="status-text">reconnecting…</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="zoom-row">
+        <div class="zoom">
+          <div class="stage">
+            <span class="mk tether" data-state="up">
+              <svg viewBox="0 0 26 12"><line class="t-line" x1="5" y1="6" x2="21" y2="6"/><circle class="t-you" cx="3" cy="6" r="2.1"/><circle class="t-server" cx="23" cy="6" r="1.7"/></svg>
+            </span>
+          </div>
+          <span class="cap">up</span>
+        </div>
+        <div class="zoom">
+          <div class="stage">
+            <span class="mk tether" data-state="down">
+              <svg viewBox="0 0 26 12"><line class="t-line" x1="5" y1="6" x2="21" y2="6"/><circle class="t-you" cx="3" cy="6" r="2.1"/><circle class="t-server" cx="23" cy="6" r="1.7"/></svg>
+            </span>
+          </div>
+          <span class="cap">down</span>
+        </div>
+      </div>
+
+      <p class="note">
+        <span class="k">Why it isn't generic:</span> it diagrams the actual thing — a link between two points —
+        instead of labeling it. <span class="k">Grayscale:</span> intact vs. broken line, filled vs. hollow.
+      </p>
+      <p class="note warn">
+        Watch: introduces a second hue into the footer (accent-2, already reserved for links/info chrome).
+        If the two-tone feels like too much, both stars gold, far star smaller and dimmer.
+      </p>
+    </div>
+
+    <!-- ============================== B ============================== -->
+    <div class="card">
+      <div class="card-head"><span class="tag">B</span><h2>Limb</h2></div>
+      <p class="idea">
+        A tiny planet limb and one star. Up = the star rides <b>above</b> the horizon, lit. Down = it slips
+        <b>below</b> the limb and goes hollow, a slow fade telling you it's still hunting for the signal.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="mk limb" data-state="up">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path class="l-rim" d="M1.2 13.4 Q 8 7.6 14.8 13.4"/>
+            <circle class="l-star" cx="8" cy="4.6" r="1.9"/>
+            <circle class="l-set" cx="8.6" cy="12.5" r="1.7"/>
+          </svg>
+        </span>
+        <span class="status-text">connected</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">reconnecting…</div>
+      <div class="strip">
+        <span class="mk limb" data-state="down">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path class="l-rim" d="M1.2 13.4 Q 8 7.6 14.8 13.4"/>
+            <circle class="l-star" cx="8" cy="4.6" r="1.9"/>
+            <circle class="l-set" cx="8.6" cy="12.5" r="1.7"/>
+          </svg>
+        </span>
+        <span class="status-text">reconnecting…</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="zoom-row">
+        <div class="zoom">
+          <div class="stage">
+            <span class="mk limb" data-state="up">
+              <svg viewBox="0 0 16 16"><path class="l-rim" d="M1.2 13.4 Q 8 7.6 14.8 13.4"/><circle class="l-star" cx="8" cy="4.6" r="1.9"/><circle class="l-set" cx="8.6" cy="12.5" r="1.7"/></svg>
+            </span>
+          </div>
+          <span class="cap">up</span>
+        </div>
+        <div class="zoom">
+          <div class="stage">
+            <span class="mk limb" data-state="down">
+              <svg viewBox="0 0 16 16"><path class="l-rim" d="M1.2 13.4 Q 8 7.6 14.8 13.4"/><circle class="l-star" cx="8" cy="4.6" r="1.9"/><circle class="l-set" cx="8.6" cy="12.5" r="1.7"/></svg>
+            </span>
+          </div>
+          <span class="cap">down</span>
+        </div>
+      </div>
+
+      <p class="note">
+        <span class="k">Why it isn't generic:</span> the state is a position, not a color — the quietest of the
+        four, and the only one that reads as a small illustration rather than a widget.
+        <span class="k">Grayscale:</span> star above vs. dipping through the line.
+      </p>
+      <p class="note warn">
+        Watch: least literal of the set. A stranger may not decode "star went below the line" without the word
+        next to it — fine here, since the word is always there, but don't reuse this mark alone anywhere.
+      </p>
+    </div>
+
+    <!-- ============================== C ============================== -->
+    <div class="card card-c">
+      <div class="card-head"><span class="tag">C</span><h2>Rule</h2></div>
+      <p class="idea">
+        <b>No dot at all.</b> A short gold rule leading into a small-caps word — typography as the indicator.
+        Down, the rule turns into a crawling dashed thread in danger red and the word becomes
+        <code>reconnecting</code>.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="mk rule" data-state="up">
+          <i class="rule-mark"></i><span class="rule-word">connected</span>
+        </span>
+        <span class="status-text"></span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">reconnecting…</div>
+      <div class="strip">
+        <span class="mk rule" data-state="down">
+          <i class="rule-mark"></i><span class="rule-word">reconnecting</span>
+        </span>
+        <span class="status-text"></span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="zoom-row">
+        <div class="zoom">
+          <div class="stage stage-rule">
+            <span class="mk rule" data-state="up"><i class="rule-mark"></i></span>
+          </div>
+          <span class="cap">up — solid</span>
+        </div>
+        <div class="zoom">
+          <div class="stage stage-rule">
+            <span class="mk rule" data-state="down"><i class="rule-mark"></i></span>
+          </div>
+          <span class="cap">down — crawling</span>
+        </div>
+      </div>
+
+      <p class="note">
+        <span class="k">Why it isn't generic:</span> nothing is drawn that isn't language. Smallest footprint
+        of the four (~14px reclaimed for the text), and the only color anywhere is a 1px line, so it can never
+        be mistaken for a notification badge — which the current dot already risks, sharing its exact shape
+        and color with the Pulsar/Daily unread dots a few rows above it.
+      </p>
+      <p class="note warn">
+        Watch: relies on the word, so the word had to get shorter — drop the ellipsis and use
+        <code>reconnecting</code>; at 10.5px/0.14em tracking it still fits beside the three footer icons.
+      </p>
+    </div>
+
+    <!-- ============================== D ============================== -->
+    <div class="card">
+      <div class="card-head"><span class="tag">D</span><h2>Needle</h2></div>
+      <p class="idea">
+        A compass needle on a dial arc. Up = locked upright and gold, pointing at the pole. Down = loose, dim,
+        and slowly swinging — you can see it hunting for a bearing. Polaris is the pole star; this is that
+        name doing the work.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="mk needle" data-state="up">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path class="n-dial" d="M4.4 12.3 A 5.2 5.2 0 0 1 11.6 12.3"/>
+            <g class="n-arm">
+              <path class="n-head" d="M8 1.6 L9.9 5.7 L8 5 L6.1 5.7 Z"/>
+              <line class="n-stem" x1="8" y1="5" x2="8" y2="13"/>
+            </g>
+            <circle class="n-pivot" cx="8" cy="13" r="1"/>
+          </svg>
+        </span>
+        <span class="status-text">connected</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">reconnecting…</div>
+      <div class="strip">
+        <span class="mk needle" data-state="down">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path class="n-dial" d="M4.4 12.3 A 5.2 5.2 0 0 1 11.6 12.3"/>
+            <g class="n-arm">
+              <path class="n-head" d="M8 1.6 L9.9 5.7 L8 5 L6.1 5.7 Z"/>
+              <line class="n-stem" x1="8" y1="5" x2="8" y2="13"/>
+            </g>
+            <circle class="n-pivot" cx="8" cy="13" r="1"/>
+          </svg>
+        </span>
+        <span class="status-text">reconnecting…</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="zoom-row">
+        <div class="zoom">
+          <div class="stage">
+            <span class="mk needle" data-state="up">
+              <svg viewBox="0 0 16 16"><path class="n-dial" d="M4.4 12.3 A 5.2 5.2 0 0 1 11.6 12.3"/><g class="n-arm"><path class="n-head" d="M8 1.6 L9.9 5.7 L8 5 L6.1 5.7 Z"/><line class="n-stem" x1="8" y1="5" x2="8" y2="13"/></g><circle class="n-pivot" cx="8" cy="13" r="1"/></svg>
+            </span>
+          </div>
+          <span class="cap">up</span>
+        </div>
+        <div class="zoom">
+          <div class="stage">
+            <span class="mk needle" data-state="down">
+              <svg viewBox="0 0 16 16"><path class="n-dial" d="M4.4 12.3 A 5.2 5.2 0 0 1 11.6 12.3"/><g class="n-arm"><path class="n-head" d="M8 1.6 L9.9 5.7 L8 5 L6.1 5.7 Z"/><line class="n-stem" x1="8" y1="5" x2="8" y2="13"/></g><circle class="n-pivot" cx="8" cy="13" r="1"/></svg>
+            </span>
+          </div>
+          <span class="cap">down</span>
+        </div>
+      </div>
+
+      <p class="note">
+        <span class="k">Why it isn't generic:</span> motion carries the state — the only one of the four that
+        catches the eye from across the room, which matters given down means "nothing works."
+        <span class="k">Grayscale:</span> upright vs. tilted, solid vs. dim.
+      </p>
+      <p class="note warn">
+        Watch: a moving mark in a resting-state footer is the riskiest of the four. The wobble only runs while
+        disconnected (never as ambient decoration), and it's slow — 5.4s, damped, not a spinner.
+      </p>
+    </div>
+
+  </div>
+
+  <p class="footer">
+    Pick a direction and it goes in <code>web/src/lib/components/Sidebar.svelte</code>'s
+    <code>.status</code> block — all four drop into the same flex slot the dot occupies now, need no new
+    tokens (<code>--color-accent</code> / <code>-2</code> / <code>--color-danger</code> only), and each is a
+    single inline SVG plus two or three rules. All animation is suppressed under
+    <code>prefers-reduced-motion</code>, and the up/down difference survives without it since it's shape,
+    position, or fill — never hue alone.
+  </p>
+</main>
+
+<script>
+  const btn = document.getElementById('themeBtn');
+  const root = document.documentElement;
+  const setTheme = (light) => {
+    root.setAttribute('data-theme', light ? 'light' : 'dark');
+    btn.textContent = light ? 'dark theme' : 'light theme';
+  };
+  // ?theme=light, so a screenshot pass can grab both without clicking.
+  setTheme(new URLSearchParams(location.search).get('theme') === 'light');
+  btn.addEventListener('click', () => setTheme(root.getAttribute('data-theme') !== 'light'));
+</script>
+</body>
+</html>

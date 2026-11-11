@@ -1,0 +1,13 @@
+id: st-community-magnesium-routine
+track: source_type
+rationale: >-
+  Sounds like a health-evidence question (a trap toward academic), but the person says outright
+  they want what real users report rather than the studies: lived experience, so community.
+  Reasonable readers could argue for academic given the topic; the explicit "not just the
+  studies" is what tips it.
+state:
+  latest: "Has anyone here actually tried taking magnesium glycinate before bed? I would like to hear what real users report, not just what the studies say."
+expect:
+  source_type: {answer: community}
+quiet:
+  - emotional

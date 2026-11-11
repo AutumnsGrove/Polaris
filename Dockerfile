@@ -32,7 +32,7 @@ RUN pnpm run build
 # correctness benefit. TARGETOS/TARGETARCH (buildx-provided build args
 # describing what we're actually compiling *for*) drive the
 # cross-compilation directly instead.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 WORKDIR /src
 
@@ -92,8 +92,23 @@ FROM alpine:3.20
 # a Python script) plus a few MB for the package itself, not python3 +
 # ffmpeg + friends. Worth keeping an eye on if this ever needs to grow
 # (a future tool wanting actual video/audio would need ffmpeg back).
-RUN apk add --no-cache ca-certificates python3 py3-pip && \
-    pip install --break-system-packages --no-cache-dir yt-dlp && \
+#
+# nodejs + the `[default]` extra: YouTube now requires solving an "n
+# challenge" in JS before it hands out formats/captions. yt-dlp-ejs (pulled
+# in by `[default]`) carries the solver scripts; nodejs is the runtime that
+# runs them (yt-dlp's preferred deno has no musl build; the tool passes
+# --js-runtimes node, see tools/youtube_transcript.go). Costs ~45MB.
+#
+# YTDLP_REFRESH: yt-dlp ships fixes for YouTube's anti-bot changes
+# constantly, but this RUN line's text never changes, so CI's GHA layer
+# cache (cache-from: type=gha) kept reusing the August install forever —
+# the live container was six weeks stale. CI passes the ISO week here so
+# the layer rebuilds weekly. A changed ARG value invalidates every RUN
+# after it, hence the explicit reference below.
+ARG YTDLP_REFRESH=unset
+RUN : "yt-dlp refresh: ${YTDLP_REFRESH}" && \
+    apk add --no-cache ca-certificates python3 py3-pip nodejs && \
+    pip install --break-system-packages --no-cache-dir "yt-dlp[default]" && \
     find /usr/lib/python3* -name '__pycache__' -exec rm -rf {} + && \
     rm -rf /root/.cache /usr/lib/python3*/site-packages/pip* && \
     apk del py3-pip && \
@@ -128,4 +143,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- http://127.0.0.1:8899/healthz || exit 1
 
 ENTRYPOINT ["/app/polaris"]
-CMD ["run", "--config", "/data/config.yaml"]
+CMD ["run", "--config", "/data/config/config.yaml"]

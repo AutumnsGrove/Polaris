@@ -1,0 +1,11 @@
+id: fo-followup-brief-denver
+track: focus
+rationale: >-
+  Short follow-up "denver, just the number" resolves via the previous single-fact question
+  about boiling point. The explicit "just the number" is a brevity ask on a single fact
+  lookup, so `brief`.
+state:
+  previous: "whats the boiling point of water at altitude"
+  latest: "denver, just the number"
+expect:
+  focus: {answer: brief}

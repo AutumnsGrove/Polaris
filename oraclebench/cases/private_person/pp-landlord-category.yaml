@@ -1,0 +1,11 @@
+id: pp-landlord-category
+track: private_person
+rationale: >-
+  General discussion of a category (property owners) with no named individual. The question is
+  about how public records work. private_person=no.
+state:
+  latest: "how do i look up who owns a rental property in general, is that public record"
+expect:
+  private_person: {answer: "no"}
+quiet:
+  - emotional

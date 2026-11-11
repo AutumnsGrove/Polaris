@@ -1,0 +1,13 @@
+id: dr-fasting-longevity-evidence
+track: deep_research
+rationale: >-
+  An evidence review: the major trials, the animal-versus-human gap, and the published
+  criticisms all have to be cross-checked. Several bodies of sources with competing readings,
+  so deep_research=yes.
+state:
+  latest: "What does the evidence actually say about intermittent fasting and longevity? I want the major human trials cross-checked against the animal work, plus the main criticisms of the research."
+expect:
+  deep_research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,11 @@
+id: tk-explain-how-vpn-works
+track: task
+rationale: >-
+  "How does X actually work" wants understanding, not a fact: explain. Clean positive.
+state:
+  latest: "Can you explain how a VPN actually works? In particular, I'd like to know what happens to my traffic."
+expect:
+  task: {answer: explain}
+quiet:
+  - emotional
+  - private_person

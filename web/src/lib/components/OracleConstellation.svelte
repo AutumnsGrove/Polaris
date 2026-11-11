@@ -101,7 +101,7 @@
 	});
 
 	// cutShort can flip true well before the natural sequence above would
-	// have finished (a fast tool call) or after (a slow Jev response) —
+	// have finished (a fast tool call) or after (a slow decisions response) —
 	// either way, the first one to actually happen wins; fold() itself is
 	// idempotent via `done`.
 	$effect(() => {

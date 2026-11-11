@@ -67,58 +67,145 @@ var Registry = []config.ModelConfig{
 	// store/store.go's schema comment and migration for the retirement
 	// of that reference too.
 	{
-		// Deprecates the old V4 Flash "deepseek" entry (2026-09-22) —
-		// deepseek/deepseek-v4-flash-0731 with its five-deep Baidu/
-		// DeepInfra/StreamLake/BaseTen/Novita fallback chain — in favor of
-		// V4.1 Flash. Reused the "deepseek" ID (rather than dropping the
-		// separate "deepseek-v41-flash" ID) so existing thread selections
-		// and config.yaml's default_model/model_overrides keep resolving
-		// across the swap, same ID-stability approach as the MiMo v2.6
-		// replacement above.
+		// DeepSeek V4.1 Flash, moved onto the dated snapshot
+		// deepseek/deepseek-v4.1-flash-1017 (2026-10-19). The "deepseek"
+		// ID is kept across the swap — it's the shipped default_model, so
+		// existing thread selections and config.yaml's default_model/
+		// model_overrides must keep resolving — same ID-stability approach
+		// as the MiMo v2.6 and Mercury 3 bumps.
 		//
-		// Per a live GET /api/v1/models/deepseek/deepseek-v4.1-flash/
-		// endpoints survey (originally 2026-09-12, re-confirmed
-		// 2026-09-22). Genuinely multimodal per
-		// architecture.input_modalities (["text","image"]), unlike the V4
-		// Flash entry it replaces.
+		// Provider order re-surveyed 2026-10-27 against a live GET
+		// /api/v1/models/deepseek/deepseek-v4.1-flash-1017/endpoints
+		// (34 endpoints now) plus a streaming spike test: 3 trials per
+		// provider, ~3.2k-token prefix, reasoning effort medium,
+		// allow_fallbacks:false, measuring first delta, first *content*
+		// delta, and total turn wall clock.
 		//
-		// Provider order, re-surveyed and live-spiked 2026-09-30 (pinned
-		// each with allow_fallbacks:false, ~12.8k-token prefix, 3 calls):
-		// DeepInfra (fp8, $0.14/$0.42, $0.0042/M cache reads) first, then
-		// StreamLake (fp8, $0.147/$0.588, $0.00294/M reads), AtlasCloud
-		// (fp8, $0.114/$0.456, $0.0114/M reads), Fireworks (flat
-		// $0.22/$0.66; the "fireworks" tag, not "fireworks/us" at 2x), and
-		// the official route last. All five hit their prompt cache on the
-		// second identical request (~99% of tokens cached) and billed
-		// exactly the listed rates. Cache reads dominate an agent thread's
-		// cost, so they drove the ranking, not input price: per 100k
-		// cached + 5k fresh + 2k out, DeepInfra ~0.196c, StreamLake ~0.221c,
-		// official off-peak ~0.225c, official peak ~0.45c. Several
-		// cheap-input endpoints (Wafer, Relace, Io Net, CoreWeave) lose to
-		// the official route because their cache reads are 3-13x higher.
+		// Why this got reordered at all: the previous primary
+		// (deepinfra/fp8) was the cheapest route on paper and the
+		// slowest in practice — 4.4s to first answer *text* and ~6.5s
+		// for a full turn, with the 30-minute aggregate showing 62 tps
+		// versus Together's 235. Its fallback (cloudflare) was 2.9s /
+		// 3.8s, so a failover didn't rescue a slow turn, it just picked
+		// a different kind of slow. Cost was never the reason to keep
+		// it there: the whole spread across every route below is about
+		// $0.30 per 1,000 turns, which is noise for a single-operator
+		// tool next to seconds of added latency on every single turn.
 		//
-		// Official is last, not excluded: it is the fastest (~123 tok/s vs
-		// ~40-60 for the third-party fp8 tier) and most reliable (99.99%
-		// uptime), but its pricing.overrides double the rate to
-		// $0.30/$1.20/$0.006 on weekdays 01:00-04:00 and 06:00-10:00 UTC
-		// (~21% of the week); otherwise $0.15/$0.60/$0.003. DeepInfra and
-		// StreamLake list a `discount` (30%/51%) on their endpoints; if
-		// those are promotional, re-run the survey when they lapse. Don't
-		// copy this order onto other models without re-running the survey —
-		// pricing shape differs per model.
+		//   tag              1st tok / 1st content / total   agg tps   in / out per M   cache/M
+		//   together            339ms  /   777ms   / 1.09s     235     $0.30  / $1.20   $0.006
+		//   wafer/mxfp4         364ms  /  1307ms   / 2.05s     189     $0.13  / $0.50   $0.008
+		//   baseten             305ms  /  1004ms   / 1.73s     200     $0.30  / $1.20   $0.007
+		//   deepinfra/fp8       815ms  /  4422ms   / 6.55s      62     $0.098 / $0.294  $0.0029
+		//
+		// Together takes the hot path: fastest on every measured axis and
+		// by far the most exercised route on this model (565k requests in
+		// the 30 minutes surveyed, an order of magnitude past the next
+		// entry), full tool_choice, 100% uptime at 30m and 1d. Its prompt
+		// cache was the one thing worth proving rather than assuming,
+		// since a miss would erode the entire cost argument for moving
+		// off DeepInfra: an identical repeat call billed 98.2% of its
+		// 2,477-token prompt as cache reads, same rate DeepInfra hit.
+		//
+		// wafer/mxfp4 is second rather than first only because it's a
+		// 4-bit quantization and endpoint metadata can't certify output
+		// quality — it matches Together's speed and is cheaper on both
+		// token rates, so promoting it is a benchmark's job, not a
+		// latency table's. baseten third: comparable speed, dearer rate,
+		// and the thinnest traffic history of the four (15k requests).
+		// deepinfra/fp8 last but kept: still the cheapest per turn of
+		// anything here, still a conservative full-fp8 route, just no
+		// longer on the hot path. Its endpoints carry a `discount`
+		// (51%); if that's promotional, its list price ($0.20/$0.60)
+		// makes it strictly worse than wafer. Also lists
+		// deepinfra/fp8/flex ($0.0784/$0.2352) and deepinfra/fp8/priority
+		// ($0.147/$0.441) — this entry takes the plain fp8 tier.
+		//
+		// Dropped in the same pass: `cloudflare` (dominated — same prompt
+		// price as deepinfra, 3x its completion price, slower on every
+		// measurement; it was only ever the mid-rung because the official
+		// route's surge pricing was the thing to beat) and `deepseek`'s
+		// own route. The official endpoint was the *only* entry on this
+		// model whose supports_tool_choice lacks required/function, so a
+		// forced-tool call (Comet's trends extraction is the one caller)
+		// would have failed if it were ever actually reached; removing it
+		// retires that hazard. It was also the slowest of all 34
+		// endpoints at 48 tps, and its off-peak half-price tier only
+		// applies to ~79% of the week. Every remaining entry supports
+		// none/auto/required/function and all 1M-token context, so the
+		// wide-context escape hatch the official route used to cover is
+		// still covered.
+		//
+		// Don't copy this order onto other models without re-running the
+		// survey — pricing shape and provider lineup differ per model.
 		ID:          "deepseek",
 		Name:        "DeepSeek V4.1 Flash",
-		Model:       "deepseek/deepseek-v4.1-flash",
-		Provider:    []string{"deepinfra/fp8", "streamlake/fp8", "atlas-cloud/fp8", "fireworks", "deepseek"},
+		Model:       "deepseek/deepseek-v4.1-flash-1017",
+		Provider:    []string{"together", "wafer/mxfp4", "baseten", "deepinfra/fp8"},
+		Temperature: 0.4,
+		MaxTokens:   32000,
+		// OpenCode Go wire slug (bare, never vendor-prefixed). The only
+		// go_model in the registry for the first release — mimo follows
+		// as a one-line follow-up once the first window's numbers look
+		// right (docs/plans/multi-provider.md §12). Presence here is what
+		// makes the model Go-eligible; the routing policy decides whether
+		// it actually goes there.
+		GoModel: "deepseek-v4.1-flash",
+		Reasoning: &config.ReasoningConfig{
+			Enabled: true,
+			Effort:  "medium",
+		},
+		Multimodal: true,
+		// Primary route's (Together) list rate; see the comment above. This
+		// is what the picker shows, so the default now reads as 3x its old
+		// price — that's the honest number for the route we actually use,
+		// not a regression: deepinfra/fp8 is still the cheapest fallback
+		// and the per-turn difference is ~$0.30 per 1,000 turns.
+		Pricing: &config.PricingConfig{PromptPerM: 0.30, CompletionPerM: 1.20},
+	},
+	{
+		// Claude Haiku 5.5 (2026-10-08). Per GET /api/v1/models/anthropic/
+		// claude-haiku-5.5/endpoints: 1M-token context, text+image+file in,
+		// tools + reasoning_effort supported, tool_choice auto/none only
+		// (required/function are false), 100% 1-day uptime on every route.
+		//
+		// The pricing shape is the reason this entry carries
+		// CompactionTokens. Base is $0.10/$0.50 per M ($0.01 cache reads),
+		// but every endpoint has a pricing.overrides tier at
+		// min_prompt_tokens=100000 that reprices the *whole request* (not
+		// just the excess) to $0.50/$2.50 ($0.05 cache reads) — 5x. The
+		// global 200K compaction threshold would leave a thread paying that
+		// on every turn from 100K to 200K, and the compaction call (full
+		// history in) would be billed at it too. Compacting at 80K keeps
+		// requests under the cliff with ~20K of headroom for the next
+		// turn's user message and agent-loop tool results; a single very
+		// tool-heavy turn can still cross it mid-loop, which is accepted —
+		// the ledger uses usage.cost, so it's billed correctly, just dearer.
+		//
+		// Anthropic models don't cache implicitly; llm.NewClient sends a
+		// top-level cache_control for any anthropic/* slug (verified live
+		// 2026-10-08: 10x cheaper cache reads), so nothing to set here.
+		//
+		// Provider order: the three 1.0x "global" routes. The regional
+		// routes (google-vertex/us|europe, azure/us, amazon-bedrock/us-east-1
+		// |eu-west-1) list a flat 1.1x on every rate, so don't add them.
+		// Re-run the survey if the override tier or those rates change.
+		ID:          "haiku",
+		Name:        "Claude Haiku 5.5",
+		Model:       "anthropic/claude-haiku-5.5",
+		Provider:    []string{"anthropic", "google-vertex/global", "amazon-bedrock"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{
 			Enabled: true,
 			Effort:  "medium",
 		},
-		Multimodal: true,
-		// Primary route's (DeepInfra) list rate; see the comment above.
-		Pricing: &config.PricingConfig{PromptPerM: 0.14, CompletionPerM: 0.42},
+		Multimodal:       true,
+		CompactionTokens: 80_000,
+		Pricing: &config.PricingConfig{
+			PromptPerM: 0.10, CompletionPerM: 0.50,
+			LongPromptTokens: 100_000, LongPromptPerM: 0.50, LongCompletionPerM: 2.50,
+		},
 	},
 	{
 		// GPT-6 Luna, released 2026-09-22 alongside GPT-6 Sol — the
@@ -149,14 +236,19 @@ var Registry = []config.ModelConfig{
 		// Diffusion-based (dLLM), not autoregressive — generates/refines
 		// tokens in parallel instead of one at a time, which is the whole
 		// reason it's here: a speed comparison against the sequential
-		// models above. Text-only per live OpenRouter endpoint metadata
+		// models above. Bumped from Mercury 2.5 (2026-10-19) with the same
+		// ID kept stable so existing thread selections and
+		// model_overrides.mercury keep resolving, same pattern as the MiMo
+		// and DeepSeek bumps above. Per a live GET /api/v1/models/
+		// inception/mercury-3/endpoints survey: text-only
 		// (input_modalities: ["text"] only), single-provider (Inception
-		// itself, 99.99% 1-day uptime per GET /api/v1/models/inception/
-		// mercury-2.5-20260908/endpoints), full tool_choice support
-		// (none/auto/required/function all true).
+		// itself, ~97.8% 1-day uptime), 1M-token context (up from 2.5's
+		// 260K), full tool_choice support (none/auto/required/function all
+		// true), implicit caching. It costs ~2.5x Mercury 2.5 ($0.10/$0.35
+		// per M vs. $0.04/$0.15) — still among the cheapest here.
 		ID:          "mercury",
-		Name:        "Mercury 2.5",
-		Model:       "inception/mercury-2.5",
+		Name:        "Mercury 3",
+		Model:       "inception/mercury-3",
 		Provider:    []string{"inception"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
@@ -164,34 +256,33 @@ var Registry = []config.ModelConfig{
 			Enabled: true,
 			Effort:  "medium",
 		},
-		Pricing: &config.PricingConfig{PromptPerM: 0.04, CompletionPerM: 0.15},
+		Pricing: &config.PricingConfig{PromptPerM: 0.10, CompletionPerM: 0.35},
 	},
 	{
-		// Replaces nemotron-ultra (2026-09-14): that model's single free
-		// provider (Nvidia direct) was failing 2 of 3 concurrent requests
-		// with 502 "Service temporarily overloaded" in live testing, and
-		// even successful calls took 45-90s for a one-line reply (matches
-		// OpenRouter's own endpoint metadata: p50 latency ~47s).
-		// thinkingmachines/inkling:free was fast and multimodal too, but
-		// its free tier 403s on every request regardless of caller
-		// (`"failed_routing_step": "Gate Free Endpoints by Agentic
-		// Harness"`) unless the app is on OpenRouter's own allowlist of
-		// recognized coding-agent tools — no header combination gets past
-		// it, since the gate checks app identity at OpenRouter's routing
-		// layer, not request contents. google/gemma-4-26b-a4b-it:free
-		// worked but is served via Google AI Studio's BYOK quota
-		// (`is_byok: true` on every response) rather than a pooled
-		// OpenRouter allowance. This model live-tested clean on a pooled
-		// allowance (`is_byok: false`): 5/5 concurrent requests under
-		// 1.25s, plain text, tool calls, and reasoning all confirmed
-		// working via direct OpenRouter API calls. Genuinely multimodal
-		// per live endpoint metadata (input_modalities includes
-		// image+video) — the free-tier model a non-paying user can
-		// actually attach images to.
-		ID:          "ling-flash-vl",
-		Name:        "Ling 3.0 Flash VL (Free)",
-		Model:       "inclusionai/ling-3.0-flash-vl:free",
-		Provider:    []string{"novita/bf16"},
+		// Replaces ling-flash-vl (2026-10-05): inclusionai/ling-3.0-flash-
+		// vl:free stopped being free — OpenRouter now lists it at a paid
+		// rate — and every other :free model we tried (nemotron-ultra,
+		// inkling:free, gemma-4-26b-a4b-it:free) had unusable rate limits,
+		// gated routing, or poor quality. So the "cheapest model we offer"
+		// slot is now pinned to the cheapest *good* paid model instead of
+		// chasing a free one: $0.10/$0.20 per M in/out, $0.002/M cache
+		// reads, per GET /api/v1/models/meta/muse-spark-1.3-contributor/
+		// endpoints (single Meta provider, ~99.95% 1-day uptime).
+		// Multimodal (text+image+video+file in), 1M-token context,
+		// tool_choice none/auto/required/function all supported.
+		//
+		// Privacy tradeoff, accepted deliberately: the Contributor tier is
+		// NOT zero-data-retention. Meta retains prompts/completions and
+		// trains on them. That is the price of the lowest rate on the
+		// list; don't route anything sensitive here, and don't assume it
+		// shares the privacy posture of the other entries. New ID rather
+		// than reusing "ling-flash-vl" since this is a different model;
+		// threads still pointing at the old ID fall back to the default
+		// via config.ModelByID.
+		ID:          "muse-spark",
+		Name:        "Muse Spark 1.3 Contributor",
+		Model:       "meta/muse-spark-1.3-contributor",
+		Provider:    []string{"meta"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{
@@ -199,6 +290,6 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
-		Pricing:    &config.PricingConfig{PromptPerM: 0, CompletionPerM: 0},
+		Pricing:    &config.PricingConfig{PromptPerM: 0.10, CompletionPerM: 0.20},
 	},
 }

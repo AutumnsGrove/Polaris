@@ -1,5 +1,6 @@
 name: save_to_field
 requires: field_workspace
+export_privacy: personal
 description: >-
   copy a file from your workspace into this field's shared files, so every other conversation in
   the field can read it. Only offered inside a field.

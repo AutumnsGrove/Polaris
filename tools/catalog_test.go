@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"polaris/jev"
+	"polaris/decisions"
 	"polaris/store"
 )
 
@@ -43,11 +43,12 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.WriteMemory = func(name, memType, description, content, occurredAt string) error { return nil }
 	ctx.SearchThreads = func(query string, limit int) ([]store.MessageSearchResult, error) { return nil, nil }
 	ctx.StarsSearch = func(query string, limit int) ([]store.Star, error) { return nil, nil }
-	ctx.Jev = jev.NewClient("http://test", "test-key")
+	ctx.Decisions = decisions.NewClient("http://test", "test-key")
 	ctx.DeepResearch = true
 	ctx.SpawnResearchers = func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
 	ctx.Wizard = &WizardTarget{Kind: WizardPulsarRoutine}
 	ctx.PulsarDailyItems = true
+	ctx.PulseAlert = func(string) error { return nil }
 	ctx.CodeExecEnabled = true
 	ctx.CodeExecWorkspaceDir = "/ws"
 	ctx.FieldID = "proj" // save_to_field's "field_workspace" gate
@@ -60,7 +61,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	// turn's, so it gets its own ordering test (TestToolsPrompt_WeaverRunIsRestrictedToItsOwnTools).
 	lastIdx := -1
 	for _, name := range catalogOrder {
-		if catalogDefaults[name].Requires == "weaver_run" {
+		if catalogDefaults[name].Requires == "weaver_run" || catalogDefaults[name].Requires == "approach_run" {
 			continue
 		}
 		idx := strings.Index(prompt, "- "+name+":")
@@ -87,6 +88,24 @@ func TestToolsPrompt_WeaverRunIsRestrictedToItsOwnTools(t *testing.T) {
 	for _, name := range []string{"think", "calculator", "web_search", "web_read", "memory"} {
 		if strings.Contains(prompt, "- "+name+":") {
 			t.Errorf("ToolsPrompt() with WeaverRun should exclude %q (main catalog), got:\n%s", name, prompt)
+		}
+	}
+}
+
+func TestToolsPrompt_ApproachRunIsRestrictedToItsOwnTools(t *testing.T) {
+	ctx := newTestContext()
+	ctx.ApproachRun = true
+	ctx.ApproachSearchTrails = func(query string) ([]store.Trail, error) { return nil, nil }
+	prompt := ToolsPrompt(ctx)
+
+	for _, name := range []string{"view_image", "search_trails", "record_classification"} {
+		if !strings.Contains(prompt, "- "+name+":") {
+			t.Errorf("ToolsPrompt() with ApproachRun missing %q:\n%s", name, prompt)
+		}
+	}
+	for _, name := range []string{"think", "calculator", "web_search", "web_read", "memory", "search_stars"} {
+		if strings.Contains(prompt, "- "+name+":") {
+			t.Errorf("ToolsPrompt() with ApproachRun should exclude %q (main catalog), got:\n%s", name, prompt)
 		}
 	}
 }
@@ -154,6 +173,58 @@ func TestCatalogDefaults_HasEntryForEveryToolInOrder(t *testing.T) {
 		if entry.Name != name {
 			t.Errorf("catalogDefaults[%q].Name = %q, want %q — offered()'s gating keys off Name, so a mismatched "+
 				"fallback Name silently breaks it", name, entry.Name, name)
+		}
+	}
+}
+
+// TestExportPrivacyClass_ReadsRealCatalogFlags validates the export_privacy
+// declarations in the real tools/descriptions/*.yaml files (chdir to the repo
+// root, same as TestCatalog_AllFilesLoadAndNamesMatch) — a tool that gains a
+// memory or personalization surface but forgets to declare it here would
+// otherwise leak into a private export.
+func TestExportPrivacyClass_ReadsRealCatalogFlags(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(".."); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	memory, personal := ExportPrivacyClass()
+	if !memory["memory"] {
+		t.Errorf("memory tool not classified as memory: %v", memory)
+	}
+	for _, name := range []string{"search_chats", "stars", "read_star", "search_stars", "save_to_field"} {
+		if !personal[name] {
+			t.Errorf("%s not classified as personal", name)
+		}
+	}
+	for _, name := range []string{"web_search", "web_read", "think"} {
+		if memory[name] || personal[name] {
+			t.Errorf("%s should not be privacy-classified", name)
+		}
+	}
+}
+
+// TestCatalogDefaults_ExportPrivacyMatchesYAML guards the fallback path: if a
+// YAML file can't be loaded, catalogDefaults is used instead, so any tool whose
+// YAML declares export_privacy must declare the same value there or a broken
+// descriptions directory would quietly stop filtering it from a private export.
+func TestCatalogDefaults_ExportPrivacyMatchesYAML(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(".."); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	for name, entry := range loadCatalog() {
+		if want := catalogDefaults[name].ExportPrivacy; entry.ExportPrivacy != want {
+			t.Errorf("%s: YAML export_privacy=%q, catalogDefaults=%q — the two must agree", name, entry.ExportPrivacy, want)
 		}
 	}
 }

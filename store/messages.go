@@ -87,6 +87,10 @@ type Message struct {
 	// AppliedModel is this turn's own requested model id — see the schema
 	// comment above messages.applied_model.
 	AppliedModel string `json:"applied_model,omitempty"`
+	// Provider is the backend that actually served the turn — see the
+	// schema comment above messages.provider. Unlike AppliedModel (what
+	// was requested), a failover shows up here.
+	Provider string `json:"provider,omitempty"`
 	// CompletionTokens is this turn's summed output tokens — see the
 	// schema comment above messages.completion_tokens.
 	CompletionTokens int `json:"completion_tokens,omitempty"`
@@ -178,7 +182,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
 			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, transcript, created_at,
-			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model, completion_tokens, last_prompt_tokens, llm_calls
+			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model, provider, completion_tokens, last_prompt_tokens, llm_calls
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -192,7 +196,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
 			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.Transcript, &m.CreatedAt,
-			&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel, &m.CompletionTokens, &m.LastPromptTokens, &m.LLMCalls); err != nil {
+			&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel, &m.Provider, &m.CompletionTokens, &m.LastPromptTokens, &m.LLMCalls); err != nil {
 			return nil, err
 		}
 		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
@@ -212,12 +216,12 @@ func (s *Store) GetMessageByID(id int64) (Message, error) {
 	err := s.db.QueryRow(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
 			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at,
-			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model, completion_tokens, last_prompt_tokens, llm_calls
+			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model, provider, completion_tokens, last_prompt_tokens, llm_calls
 		FROM messages WHERE id = ?`,
 		id,
 	).Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
 		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt,
-		&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel, &m.CompletionTokens, &m.LastPromptTokens, &m.LLMCalls)
+		&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel, &m.Provider, &m.CompletionTokens, &m.LastPromptTokens, &m.LLMCalls)
 	if err != nil {
 		return Message{}, err
 	}
@@ -266,6 +270,19 @@ func (s *Store) LastUserMessage(threadID string) (string, error) {
 		return "", nil
 	}
 	return content, err
+}
+
+// LastAssistantPendingQuestionBefore returns the pending_question and
+// oracle_result JSON of the nearest assistant message in threadID with an id
+// below beforeID, "" for each if there is none or it has none. Bounded by beforeID (the current turn's user
+// message) rather than "latest overall" so an edit/retry deeper into a thread
+// reads the question that turn actually answers, not a later one.
+func (s *Store) LastAssistantPendingQuestionBefore(threadID string, beforeID int64) (pending, oracleResult string, err error) {
+	err = s.db.QueryRow(`SELECT pending_question, oracle_result FROM messages WHERE thread_id = ? AND role = 'assistant' AND id < ? ORDER BY id DESC LIMIT 1`, threadID, beforeID).Scan(&pending, &oracleResult)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return pending, oracleResult, err
 }
 
 // LastAssistantFocusModeSource returns the most recent assistant message's

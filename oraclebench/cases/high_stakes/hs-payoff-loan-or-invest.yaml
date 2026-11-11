@@ -1,0 +1,10 @@
+id: hs-payoff-loan-or-invest
+track: high_stakes
+rationale: >-
+  Short message weighing debt payoff against investing; debt and
+  investing are both named in the financial option.
+state:
+  latest: "I received a $15k bonus. Should I pay off my 6.8% student loan with it, or put the whole amount into index funds?"
+expect:
+  high_stakes: {answer: financial}
+  task: {answer: decide}

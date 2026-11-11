@@ -1,0 +1,11 @@
+id: fo-sticky-safari-bare-continue
+track: focus
+rationale: >-
+  Safari was set earlier. "ok next" is a continuation with no signal to leave; safari is
+  sticky and only a competing mode winning at 0.85 can move it. Stays safari.
+state:
+  previous: "lets explore the history of the roman republic step by step"
+  prior_oracle_focus: safari
+  latest: "ok next"
+expect:
+  focus: {answer: safari}

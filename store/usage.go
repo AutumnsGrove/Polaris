@@ -104,42 +104,70 @@ func (s *Store) RecordGhostCost(costUSD float64) error {
 	return err
 }
 
-// LogJevCost appends one row for a real Jev API call's cost — see
-// jev_usage's schema comment. Called after every call that actually went
+// LogDecisionsCost appends one row for a real decisions API call's cost — see
+// decisions_usage's schema comment. Called after every call that actually went
 // through (never for a call that errored before billing), same convention
 // as IncrementBraveUsage/IncrementParallelUsage only recording completed
 // calls.
-func (s *Store) LogJevCost(costUSD float64) error {
-	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd) VALUES (?)`, costUSD)
+func (s *Store) LogDecisionsCost(costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO decisions_usage (cost_usd) VALUES (?)`, costUSD)
 	return err
 }
 
-// LogOracleJevCost is LogJevCost for Oracle mode's pre-read call — same
-// ledger (so JevCostThisMonth's monthly cap counts it, which the plan's
+// LogOracleDecisionsCost is LogDecisionsCost for Oracle mode's pre-read call — same
+// ledger (so DecisionsCostThisMonth's monthly cap counts it, which the plan's
 // "Cost and budgets" section requires), tagged so Stats can show it apart
 // from verification spend (issue #125).
-func (s *Store) LogOracleJevCost(costUSD float64) error {
-	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd, source) VALUES (?, 'oracle')`, costUSD)
+func (s *Store) LogOracleDecisionsCost(costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO decisions_usage (cost_usd, source) VALUES (?, 'oracle')`, costUSD)
 	return err
+}
+
+// LogCompareDecisionsCost is LogDecisionsCost for the compare_sources tool — same
+// ledger (the monthly cap sums every row regardless of source), tagged so
+// Stats can count it apart from per-claim verification badges, which keep
+// source = ”. Rows written before this value existed stay lumped under ”
+// and read as badges (issue #151).
+func (s *Store) LogCompareDecisionsCost(costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO decisions_usage (cost_usd, source) VALUES (?, 'compare')`, costUSD)
+	return err
+}
+
+// AuxKindEmbedding is the aux_usage kind for embedding spend — the
+// indexer's sweeps and backfills (see gateway/embedsvc.go). One kind for
+// all of it, deliberately without the model in it: the model is already
+// recorded per row in the embeddings table, and a per-model kind would
+// leave stats accumulating a permanent bucket for every model ever tried.
+const AuxKindEmbedding = "embedding"
+
+// AuxCostByKind returns total aux_usage spend recorded under one kind —
+// used by stats' Embeddings bucket and by tests asserting that a provider's
+// reported cost actually landed in the ledger.
+func (s *Store) AuxCostByKind(kind string) (float64, error) {
+	var total float64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind = ?`, kind).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 // RecordAuxCost appends one row for real assistant-side LLM spend that no
 // turn owns — see aux_usage's schema comment. Called only after a call
 // actually completed and reported its cost, same convention as
-// LogJevCost/IncrementBraveUsage above.
+// LogDecisionsCost/IncrementBraveUsage above.
 func (s *Store) RecordAuxCost(kind string, costUSD float64) error {
 	_, err := s.db.Exec(`INSERT INTO aux_usage (kind, cost_usd) VALUES (?, ?)`, kind, costUSD)
 	return err
 }
 
-// JevCostThisMonth returns total Jev spend for the current calendar month —
-// 0 if nothing's been recorded yet. Checked before firing a new Jev call to
+// DecisionsCostThisMonth returns total decisions spend for the current calendar month —
+// 0 if nothing's been recorded yet. Checked before firing a new decisions call to
 // enforce the monthly dollar cap, same "check before spending, record after
 // spending succeeds" shape as GetAPIUsage/IncrementAPIUsage.
-func (s *Store) JevCostThisMonth() (float64, error) {
+func (s *Store) DecisionsCostThisMonth() (float64, error) {
 	var total float64
 	err := s.db.QueryRow(
-		`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`,
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM decisions_usage WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`,
 	).Scan(&total)
 	return total, err
 }

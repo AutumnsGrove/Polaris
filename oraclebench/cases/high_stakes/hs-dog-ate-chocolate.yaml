@@ -1,0 +1,14 @@
+id: hs-dog-ate-chocolate
+track: high_stakes
+disputed_label: true
+rationale: >-
+  Medical question about a pet. The option descriptions speak of "health, symptoms,
+  medications" without saying whose; a dog's chocolate toxicity is a real health emergency
+  with dose-dependent thresholds, which argues for medical (the source guidance fits: vet
+  and toxicology sources, exact thresholds), but the label is nominally human health and
+  some would call it safety (chemical hazard) or none. Split, so disputed. Medical is the
+  label; safety is also accepted.
+state:
+  latest: "my 30lb dog just ate half a dark chocolate bar like 5 mins ago, how worried should i be"
+expect:
+  high_stakes: {answer: medical, accept: [medical, safety]}

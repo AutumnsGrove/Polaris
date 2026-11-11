@@ -26,10 +26,11 @@ type AttachmentRef struct {
 // the original content unchanged; editing sends the revised text.
 type ClientMessage struct {
 	// Type is "message" for a normal turn, "stop" to cancel one in flight,
-	// or "location_response" replying to a server-initiated
-	// "location_request" (see ServerEvent's doc comment below) — only
-	// UserLocation is read for that last one, empty meaning denied/
-	// unavailable/timed out rather than "field omitted".
+	// "location_response" replying to a server-initiated
+	// "location_request" (see ServerEvent's doc comment below), or "ping"
+	// for the sidebar's connection heartbeat (answered with a "pong").
+	// Only UserLocation is read for the location_response one, empty meaning
+	// denied/unavailable/timed out rather than "field omitted".
 	Type       string `json:"type"`
 	ThreadID   string `json:"thread_id,omitempty"`
 	Content    string `json:"content"`
@@ -126,6 +127,13 @@ type ClientMessage struct {
 	// on for every other turn in the meantime. False (Oracle behaves
 	// exactly as its own setting/budget say) for every other caller.
 	NoOracle bool `json:"no_oracle,omitempty"`
+	// NoVisuals turns Prism off for this one turn: the `ui` grammar is left
+	// out of the system prompt and Oracle's ui check isn't asked. Set only by
+	// TurnInfoSheet.svelte's "Rerun as plain text", so one unwanted block can
+	// be re-asked as ordinary prose without flipping the Settings dial for
+	// every other turn. Client-settable on purpose (unlike OffersVisuals): it
+	// can only ever turn a feature off for the sender's own turn.
+	NoVisuals bool `json:"no_visuals,omitempty"`
 	// QuickMode mirrors tools.Context.QuickMode — set by Atlas's Quick
 	// Answer via POST /api/ask, never by the WebSocket chat client.
 	QuickMode bool `json:"quick_mode,omitempty"`
@@ -182,6 +190,16 @@ type ClientMessage struct {
 	// WebSocket client never sets this — a real chat turn always wants the
 	// non-blocking async path so the answer never stalls behind it.
 	WaitVerification bool `json:"-"`
+	// OffersVisuals marks a turn whose answer may be taught Intelligent UI
+	// `ui` blocks (the Prism dial). Set server-side only — ws.go for the live
+	// chat UI, and ask.go so the API can exercise the same behaviour end to
+	// end (its raw Answer keeps the fence; the CLI flattens it on print), and
+	// Pulsar's scheduler, since a pulse is a real thread shown in the normal
+	// chat view. json:"-", so a client can't claim it. Left false by Atlas's
+	// Quick Answer (ask.go: a plain-text card, so a block would show as raw
+	// JSON) and by anything that doesn't opt in. Voice calls are excluded
+	// separately (VoiceMode), since they are read aloud.
+	OffersVisuals bool `json:"-"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend
@@ -274,7 +292,7 @@ type ClientMessage struct {
 //	                  same marks. Only carries entries that actually cleared the confidence
 //	                  threshold — a claim/source pair that wasn't checked, wasn't supported, or
 //	                  fell below threshold is simply absent, not sent as an explicit "no" (mirrors
-//	                  "suggestions": may never arrive at all if Jev isn't configured, every source's
+//	                  "suggestions": may never arrive at all if the decisions client isn't configured, every source's
 //	                  budget cap was already hit, or nothing was found supported — the frontend
 //	                  should treat that as a normal, silent outcome, not an error).
 //	"error"         — message: something failed
@@ -287,11 +305,22 @@ type ServerEvent struct {
 	Result   string         `json:"result,omitempty"`
 	// CallID correlates a tool_result back to its own tool_call when the
 	// model fires 2+ concurrent calls to the same tool in one turn (see
-	// agent/driver.go's dispatchToolCallsConcurrently) — positional/
+	// Nova's parallel tool dispatch (agent/nova_tools.go)) — positional/
 	// name-based matching alone is ambiguous once results can complete out
 	// of call order, which caused two concurrent memory writes' results to
 	// get cross-wired onto the wrong timeline card in the frontend.
 	CallID string `json:"call_id,omitempty"`
+	// AgentID is set on every event a Deep Research sub-agent (see
+	// agent.SpawnResearchers) emits, and on its subagent_start/subagent_end
+	// lifecycle events: "<spawn_researchers call_id>.<task index>". The
+	// frontend files tagged events under that agent's own card instead of
+	// the main timeline. Empty for the orchestrator's own events. On
+	// subagent_start/_end, CallID is the parent spawn_researchers call and
+	// Objective/AgentStatus ("done" | "failed", end only) describe the agent;
+	// Result carries its findings summary and Citations its sources.
+	AgentID     string `json:"agent_id,omitempty"`
+	Objective   string `json:"objective,omitempty"`
+	AgentStatus string `json:"agent_status,omitempty"`
 	// Provider is web_search's normalized fallback-source key ("searxng",
 	// "brave", "parallel", "tavily") — set only on web_search's tool_result
 	// events, so store.Store.GetStats can tally how often each fallback
@@ -333,6 +362,13 @@ type ServerEvent struct {
 	CostUSD       float64 `json:"cost_usd"`
 	ContextTokens int     `json:"context_tokens"`
 	Message       string  `json:"message,omitempty"`
+	// From/To are the provider_fallback event's legs (attempt names, e.g.
+	// opencode-go -> openrouter) — which backend refused and which one
+	// answered the paid retry. Error is that event's classified failure
+	// text. Empty for every other event.
+	From  string `json:"from,omitempty"`
+	To    string `json:"to,omitempty"`
+	Error string `json:"error,omitempty"`
 	// ErrorKind classifies an "error" event's Message for the frontend —
 	// currently only ever "network" (see llm.IsNetworkError), meaning the
 	// request never reached the LLM provider at all (dropped wifi, DNS
@@ -432,9 +468,16 @@ type ServerEvent struct {
 // gateway/verification.go's doc comment on why only supported-at-threshold
 // entries are ever sent) but kept as a string, not a bool, so a future
 // "contradicted" warning mark doesn't need a wire-format change.
+//
+// Locator is set only for a link inside a Prism `ui` block, and then it, not
+// ClaimIndex, says which chip: a block link is addressed by where it sits
+// ("0.2.1.src#0", see uiblocks.Site) because the occurrence-number rule is
+// fragile for blocks. A mark with a Locator never counts toward the prose
+// chips' ClaimIndex matching; an old mark without one is a prose mark.
 type VerificationMark struct {
 	URL        string  `json:"url"`
 	ClaimIndex int     `json:"claim_index"`
 	Choice     string  `json:"choice"`
 	Confidence float64 `json:"confidence"`
+	Locator    string  `json:"locator,omitempty"`
 }

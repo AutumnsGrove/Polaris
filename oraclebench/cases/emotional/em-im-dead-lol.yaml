@@ -1,0 +1,11 @@
+id: em-im-dead-lol
+track: emotional
+rationale: >-
+  "im dead" is internet slang for laughing hard. Casual, upbeat, nothing painful, so
+  emotional=no. Catches models that pattern-match death words.
+state:
+  latest: "im dead lol the cat vs cucumber video. whats the song in it"
+expect:
+  emotional: {answer: "no"}
+quiet:
+  - private_person

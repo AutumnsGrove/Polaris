@@ -1,0 +1,13 @@
+id: dr-2008-crisis-explanations
+track: deep_research
+rationale: >-
+  An investigation of a complex topic where economists offer competing causal accounts. Weighing
+  them needs many sources compared, which is the yes option's "investigation of a complex topic
+  ... competing expert views".
+state:
+  latest: "Why did the 2008 financial crisis spread so far beyond the US housing market? Weigh the competing explanations economists give, and tell me which ones the evidence supports best."
+expect:
+  deep_research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

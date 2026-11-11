@@ -3,27 +3,27 @@
 // prompts and single code paths, sitting next to (not inside) the
 // benchmark/ package — benchmark.Suite is built around a full agent.Run
 // turn plus a dataset+reference-answer shape, which doesn't fit a
-// single-prompt format check or a Jev-graded citation-support case
+// single-prompt format check or a decision-model-graded citation-support case
 // without bending it (see the plan's Part 5 #7).
 //
 // v1 covers two of the plan's four categories:
 //   - "format": a single cheap LLM call (title/suggestions generation,
 //     the exact prompts.yaml prompts production uses) checked by plain Go
-//     code — no Jev needed, these are structural (word count, trailing
-//     punctuation, line count) rather than judgment calls.
-//   - "citation_support": Jev graded, reusing gateway/verification.go's
+//     code — no decisions call needed, these are structural (word count,
+//     trailing punctuation, line count) rather than judgment calls.
+//   - "citation_support": decision-model graded, reusing gateway/verification.go's
 //     exact Choice question shape (supported/partially_supported/
 //     contradicted/not_addressed criteria) against planted source/claim
-//     fixtures — this is directly testing the same judgment Jev makes
-//     live for the source-verification badge, just against known-answer
+//     fixtures — this is directly testing the same judgment the decision
+//     model makes live for the source-verification badge, just against known-answer
 //     fixtures instead of real citations.
 //
 // The remaining two categories each get their own single-call pipeline
 // too, still with no full agent.Run turn:
-//   - "factual": one plain (no-tools) QA call, Jev-graded correct/
+//   - "factual": one plain (no-tools) QA call, decision-model-graded correct/
 //     incorrect/not_attempted against a reference answer — the same
 //     three-way verdict shape benchmark/simpleqa.go's own grading uses,
-//     just via Jev instead of an LLM-judge chat completion, and against a
+//     just via a decision model instead of an LLM-judge chat completion, and against a
 //     single isolated question rather than a full research turn.
 //   - "agent_loop": two sub-kinds — tool_selection (one
 //     ChatCompletionWithTools call against the real tools.Defs catalog,
@@ -32,7 +32,7 @@
 //     call against a synthetic conversation, checked by plain
 //     substring/URL containment against a must-survive fact list).
 //   - "injection": one synthetic tool-result turn carrying a planted
-//     instruction, Jev-graded on whether the model's next response
+//     instruction, decision-model-graded on whether the model's next response
 //     complied with it or treated it as inert fetched text — the same
 //     "fetched content is never instructions" rule prompt.md's fallback
 //     system prompt states outright.
@@ -113,7 +113,7 @@ type Case struct {
 	UserMessage string `json:"user_message,omitempty" yaml:"user_message,omitempty"` // the first user message a title/suggestions/QA/tool-selection call would see
 	Answer      string `json:"answer,omitempty" yaml:"answer,omitempty"`             // KindSuggestions only — the assistant answer suggestions are generated from
 
-	// KindCitationSupport: the exact Jev call shape
+	// KindCitationSupport: the exact decisions call shape
 	// gateway/verification.go's verifySource makes — a source text and one
 	// claim to check against it, with a hand-labelled expected verdict.
 	SourceText    string  `json:"source_text,omitempty" yaml:"source_text,omitempty"`
@@ -122,7 +122,7 @@ type Case struct {
 	MinConfidence float64 `json:"min_confidence,omitempty" yaml:"min_confidence,omitempty"` // 0 means "any confidence, just check the choice matches"
 
 	// KindFactualCorrectness: UserMessage is the question, ReferenceAnswer
-	// the known-correct answer Jev grades the model's own live answer
+	// the known-correct answer the decision model grades the model's own live answer
 	// against — the same correct/incorrect/not_attempted three-way verdict
 	// benchmark/simpleqa.go's grader uses.
 	ReferenceAnswer string `json:"reference_answer,omitempty" yaml:"reference_answer,omitempty"`
@@ -148,7 +148,7 @@ type Case struct {
 	// call; ToolResultText is the fake tool output, with a planted
 	// instruction embedded in it the same way a compromised/adversarial
 	// web page would. The model then gets one more turn to respond, and
-	// Jev grades whether that response complied with the planted
+	// the decision model grades whether that response complied with the planted
 	// instruction or ignored it as inert data.
 	ToolName       string `json:"tool_name,omitempty" yaml:"tool_name,omitempty"`
 	ToolCallArgs   string `json:"tool_call_args,omitempty" yaml:"tool_call_args,omitempty"` // raw JSON string, passed through as the tool call's arguments

@@ -1,0 +1,195 @@
+{
+  "_comment": "Shared by uiblocks (Go) and web/src/lib/uiBlocks/flatten.test.ts (TS): both flatteners must turn `input` into exactly `want`. Expected values are hand-written, not generated, so a bug common to both implementations cannot hide. See docs/plans/intelligent-ui.md.",
+  "cases": [
+    {
+      "name": "no ui fence is returned unchanged",
+      "input": "Plain answer with a [link](https://example.com).\n",
+      "want": "Plain answer with a [link](https://example.com).\n"
+    },
+    {
+      "name": "answer callout carries its as-of date",
+      "input": "Intro\n\n```ui\n{\"c\":\"callout\",\"tone\":\"answer\",\"text\":\"Yes, with caveats.\",\"asof\":\"2026-10\"}\n```\n\nAfter\n",
+      "want": "Intro\n\nYes, with caveats. (as of Oct 2026)\n\nAfter\n"
+    },
+    {
+      "name": "as-of is ignored on a non-answer callout",
+      "input": "```ui\n{\"c\":\"callout\",\"tone\":\"warn\",\"text\":\"Careful.\",\"asof\":\"2026-10\"}\n```\n",
+      "want": "Careful.\n"
+    },
+    {
+      "name": "stat with label and note",
+      "input": "```ui\n{\"c\":\"stat\",\"label\":\"Boiling point\",\"value\":\"100 °C\",\"note\":\"at sea level\"}\n```\n",
+      "want": "Boiling point: 100 °C (at sea level)\n"
+    },
+    {
+      "name": "stat with a numeric value and no label",
+      "input": "```ui\n{\"c\":\"stat\",\"value\":3}\n```\n",
+      "want": "3\n"
+    },
+    {
+      "name": "numeric coercion matches JavaScript String() across the notation boundary",
+      "input": "```ui\n{\"c\":\"stat\",\"value\":1000000}\n```\n```ui\n{\"c\":\"stat\",\"value\":1e21}\n```\n```ui\n{\"c\":\"stat\",\"value\":1e-7}\n```\n```ui\n{\"c\":\"stat\",\"value\":0.000001}\n```\n```ui\n{\"c\":\"stat\",\"value\":-0}\n```\n```ui\n{\"c\":\"stat\",\"value\":1.2345678901234567}\n```\n",
+      "want": "1000000\n1e+21\n1e-7\n0.000001\n0\n1.2345678901234567\n"
+    },
+    {
+      "name": "compare: pick, padded cell, source host lowercased",
+      "input": "```ui\n{\"c\":\"compare\",\"cols\":[\"Moka pot\",\"AeroPress\"],\"pick\":1}\n{\"row\":\"Price\",\"v\":[\"$25\",\"$40\"],\"src\":[\"https://Example.com/a\"]}\n{\"row\":\"Weight\",\"v\":[\"0.4 kg\"]}\n```\n",
+      "want": "Moka pot: Price $25; Weight 0.4 kg\nAeroPress: Price $40; Weight — (recommended)\n[example.com](https://Example.com/a)\n"
+    },
+    {
+      "name": "compare: out-of-range pick is ignored",
+      "input": "```ui\n{\"c\":\"compare\",\"cols\":[\"A\",\"B\"],\"pick\":7}\n{\"row\":\"x\",\"v\":[\"1\",\"2\"]}\n```\n",
+      "want": "A: x 1\nB: x 2\n"
+    },
+    {
+      "name": "compare: a row missing its ] before } is repaired, not dropped",
+      "input": "```ui\n{\"c\":\"compare\",\"cols\":[\"A\",\"B\"]}\n{\"row\":\"Exam tell\",\"v\":[\"already-approved\",\"needs review\"}\n```\n",
+      "want": "A: Exam tell already-approved\nB: Exam tell needs review\n"
+    },
+    {
+      "name": "compare: six columns all render (the cap is six)",
+      "input": "```ui\n{\"c\":\"compare\",\"cols\":[\"A\",\"B\",\"C\",\"D\",\"E\",\"F\"]}\n{\"row\":\"x\",\"v\":[\"1\",\"2\",\"3\",\"4\",\"5\",\"6\"]}\n```\n",
+      "want": "A: x 1\nB: x 2\nC: x 3\nD: x 4\nE: x 5\nF: x 6\n"
+    },
+    {
+      "name": "steps with title, detail and duration",
+      "input": "```ui\n{\"c\":\"steps\",\"title\":\"Descale\"}\n{\"i\":\"Mix vinegar and water\",\"d\":\"Half and half\",\"t\":\"2 min\"}\n{\"i\":\"Run a cycle\"}\n```\n",
+      "want": "Descale:\n1. Mix vinegar and water — Half and half (2 min)\n2. Run a cycle\n"
+    },
+    {
+      "name": "links keep schema order: text link first, then src in array order",
+      "input": "```ui\n{\"c\":\"callout\",\"text\":\"See [NASA](https://nasa.gov/x).\",\"src\":[\"https://b.org/p\",\"https://a.org\"]}\n```\n",
+      "want": "See [NASA](https://nasa.gov/x). [b.org](https://b.org/p) [a.org](https://a.org)\n"
+    },
+    {
+      "name": "key order in the JSON never changes the output",
+      "input": "```ui\n{\"src\":[\"https://a.org\"],\"text\":\"Hi\",\"c\":\"callout\"}\n```\n",
+      "want": "Hi [a.org](https://a.org)\n"
+    },
+    {
+      "name": "unusable lines are dropped, good ones kept",
+      "input": "```ui\n{\"c\":\"callout\",\"text\":\"Heads up\"}\nnot json at all\n{\"c\":\"nope\"}\n{\"orphan\":true}\n```\n",
+      "want": "Heads up\n"
+    },
+    {
+      "name": "a fence with nothing usable disappears",
+      "input": "Before\n```ui\ngarbage\n```\nAfter\n",
+      "want": "Before\nAfter\n"
+    },
+    {
+      "name": "a fence cut off before its closing fence drops its partial line",
+      "input": "Before\n```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n{\"c\":\"stat\",\"val",
+      "want": "Before\n1\n"
+    },
+    {
+      "name": "two fences in one answer",
+      "input": "```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n```\nmid\n```ui\n{\"c\":\"stat\",\"value\":\"2\"}\n```\n",
+      "want": "1\nmid\n2\n"
+    },
+    {
+      "name": "a ui example inside a longer fence stays literal",
+      "input": "````md\n```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n````\n",
+      "want": "````md\n```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n````\n"
+    },
+    {
+      "name": "mermaid and ordinary code fences pass through untouched",
+      "input": "```mermaid\ngraph TD\nA-->B\n```\n```go\nfmt.Println(\"ui\")\n```\n",
+      "want": "```mermaid\ngraph TD\nA-->B\n```\n```go\nfmt.Println(\"ui\")\n```\n"
+    },
+    {
+      "name": "an indented fence inside a list item is not a ui block",
+      "input": "- item\n\n  ```ui\n  {\"c\":\"stat\",\"value\":\"1\"}\n  ```\n",
+      "want": "- item\n\n  ```ui\n  {\"c\":\"stat\",\"value\":\"1\"}\n  ```\n"
+    },
+    {
+      "name": "timeline: date before text, link after its own event",
+      "input": "```ui\n{\"c\":\"timeline\"}\n{\"when\":\"1969\",\"i\":\"First message\",\"src\":[\"https://Example.com/a\"]}\n{\"when\":\"1983\",\"i\":\"TCP/IP switch\"}\n{\"i\":\"no date, raw row dropped\"}\n```\n",
+      "want": "1969: First message [example.com](https://Example.com/a)\n1983: TCP/IP switch\n"
+    },
+    {
+      "name": "checklist: title then dashed items",
+      "input": "```ui\n{\"c\":\"checklist\",\"title\":\"Before you fly\"}\n{\"i\":\"Passport\"}\n{\"i\":\"Charger\"}\n```\n",
+      "want": "Before you fly:\n- Passport\n- Charger\n"
+    },
+    {
+      "name": "procon: default headings, custom headings, paired and interleaved lines",
+      "input": "```ui\n{\"c\":\"procon\"}\n{\"+\":\"Fast\"}\n{\"-\":\"Costly\"}\n{\"+\":\"Quiet\"}\n{\"+\":\"both\",\"-\":\"ambiguous\"}\n```\n```ui\n{\"c\":\"procon\",\"pro_h\":\"Why\",\"con_h\":\"Why not\"}\n{\"-\":\"Loud\"}\n```\n",
+      "want": "Pros: Fast; Quiet; both\nCons: Costly; ambiguous\nWhy not: Loud\n"
+    },
+    {
+      "name": "choose: each rule carries its own sources",
+      "input": "```ui\n{\"c\":\"choose\",\"title\":\"Which plan\"}\n{\"if\":\"you travel a lot\",\"then\":\"Annual\",\"src\":[\"https://example.com/p\"]}\n{\"if\":\"you rarely do\",\"then\":\"Pay as you go\"}\n{\"if\":\"missing a then\"}\n```\n",
+      "want": "Which plan:\nIf you travel a lot: Annual [example.com](https://example.com/p)\nIf you rarely do: Pay as you go\n"
+    },
+    {
+      "name": "facts: title and subtitle on one heading line",
+      "input": "```ui\n{\"c\":\"facts\",\"title\":\"Lisbon\",\"sub\":\"Capital of Portugal\"}\n{\"k\":\"Population\",\"v\":\"545,000\",\"src\":[\"https://example.com/pop\"]}\n{\"k\":\"Founded\",\"v\":\"c. 1200 BC\"}\n```\n",
+      "want": "Lisbon — Capital of Portugal:\nPopulation: 545,000 [example.com](https://example.com/pop)\nFounded: c. 1200 BC\n"
+    },
+    {
+      "name": "facts: a subtitle alone still heads the card",
+      "input": "```ui\n{\"c\":\"facts\",\"sub\":\"At a glance\"}\n{\"k\":\"A\",\"v\":\"1\"}\n```\n",
+      "want": "At a glance:\nA: 1\n"
+    },
+    {
+      "name": "flow: nodes then edges in arrival order, a late node resolves, dangling and duplicate lines are dropped",
+      "input": "```ui\n{\"c\":\"flow\"}\n{\"n\":\"a\",\"t\":\"Check the light\",\"d\":\"Is it blinking?\",\"src\":[\"https://example.com/led\"]}\n{\"e\":[\"a\",\"b\"],\"l\":\"Yes\"}\n{\"e\":[\"a\",\"ghost\"]}\n{\"n\":\"b\",\"t\":\"Replace the fuse\",\"kind\":\"decision\"}\n{\"n\":\"b\",\"t\":\"Duplicate id\"}\n{\"e\":[\"b\",\"a\"]}\n{\"e\":[\"a\",\"a\"]}\n```\n",
+      "want": "Check the light — Is it blinking? [example.com](https://example.com/led)\nReplace the fuse\nCheck the light → Replace the fuse (Yes)\nReplace the fuse → Check the light\n"
+    },
+    {
+      "name": "tabs: one line per tab",
+      "input": "```ui\n{\"c\":\"tabs\"}\n{\"tab\":\"macOS\",\"text\":\"Use `brew install`.\"}\n{\"tab\":\"Linux\",\"text\":\"Use apt.\"}\n{\"tab\":\"no body\"}\n```\n",
+      "want": "macOS: Use `brew install`.\nLinux: Use apt.\n"
+    },
+    {
+      "name": "disclose: title then every paragraph, the hidden ones included",
+      "input": "```ui\n{\"c\":\"disclose\",\"title\":\"Why this works\",\"hint\":\"3 min read\"}\n{\"p\":\"First reason.\"}\n{\"p\":\"Second reason.\"}\n```\n",
+      "want": "Why this works:\nFirst reason.\nSecond reason.\n"
+    },
+    {
+      "name": "quote: attribution and sources; a quote with no text is dropped",
+      "input": "```ui\n{\"c\":\"quote\",\"text\":\"The only way out is through.\",\"by\":\"Robert Frost\",\"src\":[\"https://example.com/frost\"]}\n{\"c\":\"quote\",\"by\":\"nobody\"}\n```\n",
+      "want": "\"The only way out is through.\" — Robert Frost [example.com](https://example.com/frost)\n"
+    },
+    {
+      "name": "claim: verdict worded as the model's read, supports then disputes, sources per line",
+      "input": "```ui\n{\"c\":\"claim\",\"text\":\"Cracking your knuckles causes arthritis\",\"verdict\":\"false\"}\n{\"-\":\"Studies found no link\",\"src\":[\"https://example.com/study\"]}\n{\"+\":\"Some people report swelling\"}\n{\"+\":\"both\",\"-\":\"ambiguous\"}\n```\n",
+      "want": "Claim: Cracking your knuckles causes arthritis (false)\nSupports: Some people report swelling\nDisputes: Studies found no link [example.com](https://example.com/study)\n"
+    },
+    {
+      "name": "claim: an unknown or missing verdict is unverified and not printed",
+      "input": "```ui\n{\"c\":\"claim\",\"text\":\"X\",\"verdict\":\"probably\"}\n{\"+\":\"Y\"}\n```\n```ui\n{\"c\":\"claim\",\"text\":\"Z\"}\n```\n",
+      "want": "Claim: X\nSupports: Y\nClaim: Z\n"
+    },
+    {
+      "name": "define: term, plain meaning, also-names and an example; a term without a meaning is dropped",
+      "input": "```ui\n{\"c\":\"define\"}\n{\"term\":\"Tailnet\",\"means\":\"Your private network of devices.\",\"also\":[\"VPN mesh\",\"overlay network\"],\"ex\":\"Your phone reaches the potato.\"}\n{\"term\":\"Exit node\",\"means\":\"A device other traffic routes through.\"}\n{\"term\":\"missing means\"}\n```\n",
+      "want": "Tailnet: Your private network of devices. (also called VPN mesh, overlay network) For example, Your phone reaches the potato.\nExit node: A device other traffic routes through.\n"
+    },
+    {
+      "name": "analogy: the mapping and its where-it-breaks line; a both-sided or duplicate line is raw",
+      "input": "```ui\n{\"c\":\"analogy\",\"x\":\"On the network\",\"y\":\"In the post\",\"like\":\"A postal system\"}\n{\"x\":\"Packet\",\"y\":\"Letter\"}\n{\"x\":\"Router\",\"y\":\"Sorting office\"}\n{\"breaks\":\"A letter arrives once and in one piece.\"}\n{\"x\":\"Port\",\"y\":\"Flat number\",\"breaks\":\"ambiguous\"}\n{\"breaks\":\"a second breaks line\"}\n```\n",
+      "want": "A postal system: Packet ↔ Letter; Router ↔ Sorting office\nWhere it breaks: A letter arrives once and in one piece.\n"
+    },
+    {
+      "name": "analogy: no like is not a block, and one with no pairs still names itself",
+      "input": "```ui\n{\"c\":\"analogy\",\"x\":\"a\",\"y\":\"b\"}\n```\n```ui\n{\"c\":\"analogy\",\"like\":\"Pipes\"}\n```\n",
+      "want": "Pipes\n"
+    },
+    {
+      "name": "views: a camp per line, its own sources, and a camp without a stance dropped",
+      "input": "```ui\n{\"c\":\"views\",\"title\":\"Does X beat Y?\"}\n{\"who\":\"Most reviews\",\"stance\":\"About the same\",\"t\":\"Randomised trials find similar loss.\",\"src\":[\"https://example.com/a\"]}\n{\"who\":\"Some researchers\",\"stance\":\"May help\",\"t\":\"Small studies show better sensitivity.\"}\n{\"who\":\"missing stance\"}\n```\n",
+      "want": "Does X beat Y?:\nMost reviews: About the same — Randomised trials find similar loss. [example.com](https://example.com/a)\nSome researchers: May help — Small studies show better sensitivity.\n"
+    },
+    {
+      "name": "readings: fixed level order however the lines arrive, missing level is next",
+      "input": "```ui\n{\"c\":\"readings\",\"title\":\"How Tailscale connects your devices\"}\n{\"lvl\":\"deep\",\"t\":\"WireGuard whitepaper\",\"why\":\"Dense; skim it last.\",\"src\":[\"https://wireguard.com/wg.pdf\"]}\n{\"lvl\":\"start\",\"t\":\"How Tailscale works\",\"why\":\"The whole picture.\",\"src\":[\"https://tailscale.com/how\"]}\n{\"t\":\"No level defaults to next\",\"src\":[\"https://example.com/x\"]}\n```\n",
+      "want": "How Tailscale connects your devices:\nStart here: How Tailscale works — The whole picture. [tailscale.com](https://tailscale.com/how)\nNext: No level defaults to next [example.com](https://example.com/x)\nGo deeper: WireGuard whitepaper — Dense; skim it last. [wireguard.com](https://wireguard.com/wg.pdf)\n"
+    },
+    {
+      "name": "a ui fence with extra info text is an ordinary code block",
+      "input": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n",
+      "want": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n"
+    }
+  ]
+}

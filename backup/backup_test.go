@@ -372,6 +372,72 @@ func TestParseTime_RejectsUnrecognizedNames(t *testing.T) {
 	}
 }
 
+// TestTryStart_SerializesBackupRuns covers the flag that is both the
+// scheduler's single-flight guard and part of /api/busy (see runInProgress):
+// two overlapping runs would target the same one-second-granularity filename,
+// and a recreate mid-run strands a partial snapshot or a half-sent upload.
+func TestTryStart_SerializesBackupRuns(t *testing.T) {
+	release, ok := TryStart()
+	if !ok {
+		t.Fatal("first TryStart returned ok=false, want it to claim the run")
+	}
+	defer release()
+
+	if !Busy() {
+		t.Error("Busy() = false while a run is in progress, want true")
+	}
+	if _, ok := TryStart(); ok {
+		t.Error("second TryStart returned ok=true, want it refused while a run is in progress")
+	}
+
+	release()
+	if Busy() {
+		t.Error("Busy() = true after release, want false")
+	}
+
+	releaseAgain, ok := TryStart()
+	if !ok {
+		t.Fatal("TryStart after release returned ok=false, want it to succeed")
+	}
+	releaseAgain()
+}
+
+// TestRunScheduler_ReleasesFlagAfterEachRun pins down that a scheduler run
+// claims and releases the flag at all — a flag left stuck true would block
+// every future self-update forever, since the watcher would wait out its full
+// ceiling on every attempt.
+func TestRunScheduler_ReleasesFlagAfterEachRun(t *testing.T) {
+	dbPath := openTestDB(t)
+	dir := Dir(dbPath)
+	done := make(chan struct{})
+	defer close(done)
+
+	go RunScheduler(done, dbPath, dir, 30*24*time.Hour, nil)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		infos, err := List(dir)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(infos) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("scheduler never produced a backup")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Give runOnce time to finish its prune/mirror tail and release.
+	for i := 0; i < 100 && Busy(); i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if Busy() {
+		t.Error("Busy() still true after the scheduled run finished, want it released")
+	}
+}
+
 func TestMirror_NilClientIsANoop(t *testing.T) {
 	dbPath := openTestDB(t)
 	info, err := Create(dbPath, Dir(dbPath))
@@ -519,4 +585,22 @@ func writeTempFile(t *testing.T, name, contents string) string {
 		t.Fatalf("writing %s: %v", path, err)
 	}
 	return path
+}
+
+// time.Parse accepts a fractional-seconds suffix the layout doesn't have, so
+// a file Polaris never wrote used to parse as a backup (and could be pruned
+// as one). Found by FuzzParseTime.
+func TestParseTime_RejectsNonCanonicalNames(t *testing.T) {
+	for _, name := range []string{
+		"polaris-20260102-030405.5.db",
+		"polaris-20260102-030405,0.db",
+		"polaris-20260102-030405.123456789.db",
+	} {
+		if got, ok := parseTime(name); ok {
+			t.Errorf("parseTime(%q) accepted a name fileName never produces (%v)", name, got)
+		}
+	}
+	if _, ok := parseTime("polaris-20260102-030405.db"); !ok {
+		t.Error("canonical name rejected")
+	}
 }

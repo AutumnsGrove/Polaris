@@ -1,0 +1,11 @@
+id: st-academic-preprints-scaling
+track: source_type
+rationale: >-
+  Explicitly wants the actual papers and preprints on a research topic: academic ("peer-reviewed
+  research, journals, or preprints"). Lowercase phone voice.
+state:
+  latest: "any good preprints on test time compute scaling for llms, want the actual papers not blog posts"
+expect:
+  source_type: {answer: academic}
+quiet:
+  - emotional

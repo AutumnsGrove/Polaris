@@ -1,5 +1,5 @@
 name: compare_sources
-requires: jev
+requires: decisions
 category: research
 description: >-
   check whether two or more of your own cited sources actually agree on a specific fact. Use this

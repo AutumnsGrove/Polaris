@@ -11,7 +11,7 @@ what it checks today.
 
 ## How it works
 
-1. When you send a message, Polaris asks a small classifier (Jev, through your existing OpenRouter
+1. When you send a message, Polaris asks a small decision model (Jev by default, through your existing OpenRouter
    key) a set of multiple-choice questions about it. All of them go out in **one** request, so adding
    a check costs a few tokens, not another round trip. Typical latency is a few hundred milliseconds.
 2. Each answer comes back with a probability. A check **fires** only if its winning option clears that
@@ -25,12 +25,13 @@ what it checks today.
 
 Guarantees worth knowing:
 
-- **It never blocks a turn.** If Jev is unconfigured, errors, or takes longer than 2.5 seconds, the turn
+- **It never blocks a turn.** If the decision model is unconfigured, errors, or takes longer than 2.5 seconds, the turn
   runs exactly as if Oracle were off.
 - **Manual always wins.** A focus mode you pick for a message is never overridden; Oracle still reports
   what it would have picked.
-- **It only nudges.** Oracle never removes tools from a turn, and it never turns on deep research —
-  that stays a deliberate choice.
+- **It mostly nudges.** Oracle never removes tools from a turn. The one thing it can switch on is
+  Deep Research, for that single message and only when the dedicated `deep_research` check is very
+  confident (see below); your thread's own Deep Research toggle is never touched.
 - **Ghost threads are your call.** By default a ghost (ephemeral) conversation skips Oracle entirely. Settings → Oracle mode has a second switch, **Also in ghost conversations**, that lets Oracle read and steer those turns too — but only the checks and focus mode: the offer chips that create something permanent (Pulsar, Daily, Field) stay hidden there, since a conversation meant to leave no trace shouldn't offer to file itself somewhere. Only the opening of long messages is sent to the classifier either way.
 
 ## Checks
@@ -71,6 +72,30 @@ How careful to be, and where to look.
 | `no` | Casual conversation, writing help, brainstorming, or genuinely stable general knowledge. | Yes |
 
 *fires at **85%+**.*
+
+### Deep Research — `deep_research`
+
+ Is this a deep, nuanced question that genuinely needs extensive, multi-angle research — many sources compared and cross-checked — rather than one good search? Pick "no" unless a thorough investigation would clearly produce a meaningfully better answer than a normal one.
+
+| Option | When it applies | Nudge |
+|---|---|---|
+| `yes` | Broad, layered, or contested enough that it spans several distinct angles, sub-questions, or bodies of sources (a landscape survey, a multi-factor comparison, a question with competing expert views, an investigation of a complex topic), where an answer from a few searches would be shallow. | Promotes the turn to Deep Research |
+| `no` | A single fact, a focused question, a quick recommendation, casual conversation, or anything a normal search-and-answer handles well, however interesting it is. | — |
+
+*fires at **85%+**.* This is its own question, separate from `focus` and `research`. A "yes" promotes
+just that message to Deep Research — the multi-agent mode that plans a set of sub-researchers and
+asks you to confirm before spawning them — and the reply's margin note says *promoted to Deep
+Research*. It's only asked in a live chat where that confirmation can be answered: not when Deep
+Research is already on, Research is switched off, on a voice call, over the API, or without a
+research worker model configured. Safari and Brief skip it, and a message that's ambiguous
+(`clarify`) or distressed (`emotional`) never gets it.
+
+**The plan-confirmation reply stays in Deep Research too.** A promoted turn usually ends by asking
+you to confirm its researcher plan, and your answer ("Run it", or a change to the plan) wouldn't
+earn Deep Research on its own — so the turn right after a pending plan automatically keeps it on, and
+keeps doing so for each re-plan until the researchers actually run. This doesn't depend on Oracle
+(it also covers a manual toggle you switched off after the plan was proposed) and, like the
+promotion, never changes the thread's own setting.
 
 ### High stakes — `high_stakes`
 
@@ -222,6 +247,28 @@ How careful to be, and where to look.
 
 *fires at **75%+**; skipped under Safari focus.*
 
+### Visual blocks (Prism) — `ui`
+
+ Would a structured visual block serve this message clearly better than ordinary prose? Pick "none" unless the answer is really one of these shapes and prose would be harder to scan.
+
+| Option | When it applies | Nudge |
+|---|---|---|
+| `none` | Prose, a short list, or code serves this best. | — |
+| `compare` | Choosing between specific options across shared attributes. | Yes |
+| `steps` | A procedure where order matters. | Yes |
+| `choose` | The person asks which to pick or what to do, and the best answer depends on their own situation (usage, budget, location, goals), so a few if-then rules serve them better than a table of attributes. | Yes |
+| `checklist` | Things to prepare, pack or tick off. | Yes |
+| `timeline` | A sequence of dated events, a history, or a schedule. Not a price, number or trend over time. | Yes |
+| `procon` | The person is weighing a personal decision or asking for the pros and cons of one thing; give arguments for and against. Not a public question where different camps disagree. | Yes |
+| `facts` | An at-a-glance summary of one named thing (a product, place, person or organization). | Yes |
+| `flow` | A process or decision chain where the next step depends on an answer, so it branches, rather than a straight list of steps. | Yes |
+| `tabs` | Parallel versions of one answer (per operating system, per language, per plan) where the reader needs only one of them. | Yes |
+| `claim` | Checking whether one specific claim holds up, with evidence on both sides. | Yes |
+| `views` | A genuinely contested question of fact or policy where credible experts, camps or institutions disagree - present who holds each position. Not a question of taste or a joke, not one true/false claim to check, not a personal decision to weigh up, and not two named products or plans to choose between. | Yes |
+| `readings` | The person wants to learn a topic; give pages to read, in order. Not a best-of list for choosing between things. | Yes |
+
+*fires at **70%+**, or **85%+** when the Prism setting is Low; never asked when Prism is Off or in a voice call; skipped under Brief and Safari focus; when it fires, holds back: `format`.*
+
 ### Depth — `depth`
 
  How much detail does this message call for? Pick "standard" unless it clearly wants something noticeably shorter or more thorough than a normal answer.
@@ -271,7 +318,7 @@ These change tone more than research, so they have high bars.
 | `no` | A plain informational or practical message. | — |
 | `yes` | Clearly distressed or dealing with something hard, beyond a factual question. | Yes |
 
-*fires at **85%+**; when it fires, holds back: `format`, `depth`, `source_type`, `task`, `clarify`.*
+*fires at **85%+**; when it fires, holds back: `format`, `depth`, `source_type`, `task`, `clarify`, `ui`.*
 
 ### Private individuals — `private_person`
 
@@ -301,7 +348,7 @@ suggesting.
 | `pulsar` (80%+) | The answer is something that changes and would be worth re-checking on a schedule. | Set up a Pulsar routine (opens `/pulsar` seeded with the question). |
 | `daily` (80%+) | The topic is worth a daily glance. | Add it to Pulsar Daily (opens `/daily` seeded with the topic). |
 | `safari` (85%+) | A broad subject to study in depth — a field, era, system or concept — not a decision, plan, debate or one-reply question. | Sends the next message itself, asking for an interactive Safari-style walk-through, with Safari picked as the focus. Hidden when the turn is already in Safari. |
-| `field` (75%+) | The message clearly belongs to one of your Fields, and this thread isn't in one yet. | Files the thread under that Field, with a confirmation toast. Jev is shown each Field's name and description (up to 25 of the most recently used). |
+| `field` (75%+) | The message clearly belongs to one of your Fields, and this thread isn't in one yet. | Files the thread under that Field, with a confirmation toast. The decision model is shown each Field's name and description (up to 25 of the most recently used). |
 
 In a ghost conversation (with **Also in ghost conversations** on), only `safari` is offered — `pulsar`, `daily`, and `field` all create or move something permanent, which contradicts a thread that vanishes when it ends.
 

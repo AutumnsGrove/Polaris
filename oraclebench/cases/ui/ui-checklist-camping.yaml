@@ -1,0 +1,14 @@
+id: ui-checklist-camping
+track: ui
+rationale: >-
+  Things to pack and tick off: checklist per its description. format=list is the matching
+  plain shape. Terse phone voice.
+state:
+  latest: "what do i need to pack for a 3 day car camping trip in october"
+expect:
+  ui: {answer: checklist}
+  format: {answer: list}
+  task: {answer: plan, accept: [plan, answer, brainstorm]}
+quiet:
+  - emotional
+  - private_person

@@ -20,7 +20,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   own monthly cap. Reddit threads come with their comments via the Arctic Shift community archive,
   since Reddit itself blocks page fetches; very recent posts and replies may be missing.
 - **YouTube transcripts** — reads a video's captions straight from its watch page via `yt-dlp`, so
-  a shared link is as researchable as any article.
+  a shared link is as researchable as any article. If YouTube blocks the free fetch, the assistant
+  can retry through Tavily (when configured), within the same monthly cap.
 - **Weather** — current conditions and a short forecast via Open-Meteo, no API key.
 - **Wikipedia / arXiv lookup** — an encyclopedia summary or paper abstract pulled directly from
   source, for a cleaner citation than a general web search.
@@ -31,11 +32,12 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **Dictionary** — definitions, part of speech, and an example sentence from Wiktionary, with a
   second source as fallback.
 - **Music recommendations** — "find me songs/albums like this" grounded in Last.fm's similarity
-  data, shown as a cover-art carousel. Requires a free Last.fm API key.
+  data. Requires a free Last.fm API key.
 - **Book recommendations** — grounded in Hardcover.app's curated reader lists, falling back to
-  Open Library's shared-subject data when Hardcover isn't configured. Same carousel as music.
+  Open Library's shared-subject data when Hardcover isn't configured.
 - **Movie & TV recommendations** — grounded in TMDB's audience-recommendation data. Requires a
-  free TMDB API key.
+  free TMDB API key. Music, book and movie results come with cover art/posters but only appear on
+  screen when the assistant picks the good ones (as cover cards or a gallery).
 - **Nearby places** — restaurant/pharmacy/etc. search via Foursquare, with distance/category/map
   links, falling back to a plain web search if Foursquare isn't configured. Uses browser
   geolocation for "near me" questions when available (see [SETUP.md](../SETUP.md#configuration)).
@@ -47,7 +49,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **Code execution** — runs model-written Python in a locked-down, network-less Docker sandbox
   (numpy/pandas/matplotlib/scipy/scikit-learn preinstalled) for real calculations, data analysis,
   file processing, and charts styled to match the app's own theme, and can pull in a URL you've
-  already been shown as a citation to work with real data. It's also how any generated document
+  already been shown as a citation to work with real data — including searching inside a long PDF
+  like a car manual for the relevant pages. It's also how any generated document
   (a report, a CSV export, anything file-shaped) gets created — there's no separate file-writing
   tool.
 - **Artifacts** — anything the model writes to its workspace can be surfaced inline: an image (a
@@ -66,23 +69,47 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **PDF paging** — search or page through an attached PDF beyond its initial preview, with an
   optional instruction to extract just what's needed from a page.
 - **Search your own chats** — finds and rereads a past conversation ("what did we decide about
-  X") instead of starting over from scratch.
+  X") instead of starting over from scratch. Keyword and meaning-based results are fused, so a
+  question phrased differently from how you asked it still finds the thread (see "Semantic index"
+  under Beyond chat).
 - **Memory** — remembers durable facts and preferences across threads, saved unprompted from an
   explicit correction or stated preference. The Settings Memory panel lists, edits, or forgets
   anything, including via a plain-English instruction ("forget the one about my old job").
 - **Clarifying questions** — asks a single focused question with tappable options when a
   genuinely necessary detail is missing, instead of guessing or interrogating you at once.
+- **Deep Research** — for a broad question, the assistant can split the work across parallel
+  researchers, each investigating one angle. Every researcher appears as its own collapsible card
+  holding its reasoning, searches, and page reads, with its findings report at the bottom — the
+  main thread stays readable. Their spend is included in the thread's cost.
 - **Oracle mode** (opt-in) — reads each message first and quietly adjusts how it's answered
   (extra care with sources on a health question, a table for a comparison, fresher sources for
-  breaking news), with every change shown and undoable right on the reply. It can also offer to
+  breaking news), with every change shown and undoable right on the reply. It can promote a
+  deep, many-angled question to Deep Research for that message, and offer to
   turn a broad topic into an interactive Safari. Off by default in ghost conversations, with a
   switch to opt those in too (still without the offer to set up a Pulsar, add to Daily, or file
   the chat into a Field). See [oracle.md](oracle.md) for every check and what it does.
+- **Prism** — answers can include a comparison (cards on a phone, a table when wide), a numbered
+  step rail, a timeline, a tick-off checklist, pros and cons, "if you…, pick…" decision rules, an
+  at-a-glance facts card, a branching flow chart (tap a step for detail), per-OS tabs, a
+  collapsible detail section, a fact-check card (verdict, evidence for and against), a pull-quote, a
+  contested-question card with one position per camp, plain-English definitions of the terms an
+  answer uses, an analogy with the line where it stops being true, an ordered "read these next" list
+  whose lengths Polaris measured from the pages themselves, a
+  callout, or a big number when that is clearly easier to scan than prose. A source cited inside a
+  block gets the same "found in source" tick as one in prose, and a quote is only ticked when the
+  passage really appears in the page. Blocks fill
+  in line by line as the answer streams. A Low / Normal / Off dial in Settings sets how readily
+  they appear (Low by default). Works in chat and in Pulsar pulses. Diagrams now build up as they
+  stream too, and Oracle can nudge a block when one clearly fits.
 - **Night-sky start screen** — twinkling stars, a slow comet, and constellations that draw
   themselves in at random clear spots and fade back out behind "Ask Polaris anything."
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;
   old versions stay reachable behind a `‹ 2/3 ›` switcher on the reply.
 - **Persistent threads** with per-thread and per-turn cost tracking.
+- **Thread export** — from the thread menu, download or copy one thread as Markdown or JSON, with
+  options for scope (full or a handoff built from the stored summary), sources, attachments, cost
+  metadata, the research trail, thinking traces, and two privacy toggles; shows a token estimate
+  before you export.
 - **Follow-ups that remember the research** — later turns see the sources behind earlier answers;
   an opt-in setting also replays every earlier search result and page read, so follow-ups don't
   re-search (costs more per turn, and raises the auto-compaction limit to 200K tokens).
@@ -96,34 +123,49 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   store, both (its own plus your regular ones, read-only), or off. Shared files are read-only to every conversation in the
   Field (an edit becomes a private copy); pin a Field to keep it in the sidebar, or file a conversation under one from the composer's More menu. Shared files
   need the `code_exec` sandbox's workspace configured.
-- **Illustrated sources** — citations carry a thumbnail when one's genuinely available, instead
-  of a bare text chip.
+- **Sources sheet** — a compact strip under each answer (site tiles, "7 sources · 4 read · 2
+  checked") opens a bottom sheet listing every source with its reading length and "found in
+  source" ticks. Citations carry a thumbnail when one's genuinely available, instead of a site
+  monogram.
 - **Help (?) button** — next to Settings in the sidebar; a plain-English glossary of the app's
   named features (Fields = projects, Pulsar = routine searches, and so on).
 - **Settings panel** — theme, default model, the Memory list above, and a one-click
   Update/Restart button — see [Self-update](../SETUP.md#self-update).
 - **Automatic backups** — a daily, pruned-automatically database snapshot, with a CLI to
   list/create/restore, optionally mirrored to Cloudflare R2 — see [Backups](../SETUP.md#backups).
-- **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed.
+- **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed;
+  `polaris export <thread-id>` downloads a thread with the same options as the Export modal.
 - **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's
   homescreen as a standalone app, since [mobile is the primary surface](../PRODUCT.md).
 
-## Beyond chat: Pulsar, Pulsar Daily, and Constellation
+## Beyond chat: Pulsar, Pulsar Daily, Constellation, and Comet
 
-Three background systems that go beyond "ask a question, get an answer" — each runs on its own
+Four background systems that go beyond "ask a question, get an answer" — each runs on its own
 schedule and turns into something you read rather than something you type into.
 
 **Pulsar** (`/pulsar`) — a saved prompt that fires on a schedule (daily/weekly/monthly) instead of
 on demand, running through the same turn pipeline as a normal message. Each firing reports only
 what's new since last time, not a repeat of settled facts. A "help me write this" wizard turns a
 vague idea into a tuned prompt through a short interview. Catches up on any fire it missed while
-Polaris was offline.
+Polaris was offline. Schedules run in the time zone chosen under Settings (EST/EDT and other
+zones, DST handled; defaults to the server's, UTC in Docker). A pulse can flag itself as important with an `alert_me` tool; flagged pulses
+get a "Big news" marker and reason in the list, and a gold bell on the routine and sidebar.
+Deleting a routine archives it; open it from the Archived list and use its edit form to restore it or delete it forever
+(which also removes its pulses).
 
 **Pulsar Daily** (`/daily`) — one daily "morning newspaper" edition: a week's weather range, word
 of the day, on-this-day, a quote, picture of the day, headlines, trending/local/sports news, plus
 any custom blocks you define. Each section generates independently, and a second pass drops
 anything unchanged since yesterday so a quiet news day makes a shorter page. A Top Story gets
 deeper elaboration. Generates on schedule or on demand via Settings.
+
+**Semantic index** — chat search and the star library both search by meaning as well as by
+keyword, which is what lets "what do I like to drink in the morning" find the green-tea note that
+never uses the word "drink". Built from a hosted embedding model by default (an optional local
+model is supported), it fills itself in as you use Polaris; `polaris embeddings backfill` loads an
+older history and `polaris embeddings status` shows coverage and cost, which is also a row in the
+Usage panel. Ghost threads are never indexed. Turning it off changes nothing else — keyword search
+works exactly as it always did.
 
 **Constellation** (`/constellation`) — an auto-generated personal library, not a chat feature: a
 background agent ("Weaver") reads your recent threads and extracts durable facts about *you* into
@@ -132,3 +174,8 @@ notes. Browsable by category, plus a star-map view of how stars connect to each 
 cheaply on an interval, never live-per-message. Its settings panel takes an optional name and
 pronouns so Weaver has real guidance instead of guessing when writing personal stars about you.
 
+**Comet** (`/comet`) — a monthly retrospective: one page, generated on the 1st for the month that
+just ended (or on demand). Shows a stat row, a one-sentence read of the month with its defining
+conversations, where your attention went by topic, what spiked or quietly faded, an activity
+heatmap and the tools you leaned on, topics you'd never explored before, and Constellation's
+growth (hidden when Constellation is off).

@@ -256,6 +256,18 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 	// summary would be circular) or a truncated display window.
 	if strings.TrimSpace(text) != "" {
 		ctx.AddEvidence(args.URL, text)
+		// Measure the page here, before the filter pass and windowText below
+		// (tools/page_stats.go explains why the measurement can't be derived
+		// from what the model was handed). A PDF only ever had one page's text
+		// extracted, so it shows its own page count instead of a word count.
+		stats := PageStats{Pages: totalPages}
+		if isPDF {
+			stats.Reliable = true
+		} else if !looksLikePaywall(text) && !looksEmpty(text) {
+			stats.Words = len(strings.Fields(text))
+			stats.Reliable = true
+		}
+		ctx.AddPageStats(args.URL, stats)
 	}
 
 	result := text
@@ -281,7 +293,7 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 				filterInput = filterInput[:maxFilterInputChars]
 			}
 		}
-		if filtered, filterCost, ferr := FilterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.WebReadFilterSystem, filterInput, args.Instructions); ferr == nil {
+		if filtered, filterCost, ferr := FilterExtractedText(ctx.Ctx, ctx.CompleteFunc(), prompts.Get().Tools.WebReadFilterSystem, filterInput, args.Instructions); ferr == nil {
 			result = filtered
 			ctx.AddCost(filterCost)
 		} else {
@@ -308,7 +320,7 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 		result += fmt.Sprintf("\n\n[Page image: %s]", imageURL)
 	}
 	log.Info("web_read", "url", args.URL, "title", title, "extracted_chars", len(result), "instructions", args.Instructions)
-	ctx.AddCitation(Citation{Title: title, URL: args.URL, SiteName: siteName, ImageURL: imageURL})
+	ctx.AddCitation(citationWithMeasurement(ctx, Citation{Title: title, URL: args.URL, SiteName: siteName, ImageURL: imageURL}))
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_read",
 		"result":    result,
@@ -607,6 +619,17 @@ func pdfPageRawText(p pdf.Page) (string, error) {
 // tool-specific continuation hint appended, so the caller can write its own
 // ("call web_read again..."). page is 1-indexed; 0 (unset) defaults to page 1.
 func pdfPageText(data []byte, page int) (title, text string, totalPages int, err error) {
+	// ledongthuc/pdf signals malformed input by panicking (lex.go's
+	// buffer.errorf) rather than returning an error — found by
+	// FuzzExtractPDFPage with a truncated xref table. PDFs come off the open
+	// web, and not every caller sits under the agent driver's per-tool
+	// recover, so turn it into an ordinary error here.
+	defer func() {
+		if rec := recover(); rec != nil {
+			title, text, totalPages = "", "", 0
+			err = fmt.Errorf("malformed pdf: %v", rec)
+		}
+	}()
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return "", "", 0, fmt.Errorf("opening pdf: %w", err)
@@ -798,7 +821,8 @@ func stripBoilerplateLines(raw string) string {
 
 // FilterExtractedText runs a small, cheap LLM pass over already-extracted
 // text to pull out only what the caller asked for — the "double RAG" step.
-// Reuses the thread's selected model/client rather than spinning up a
+// Reuses the thread's selected model (through complete — routed when the
+// context was wired for it, see Context.Complete) rather than spinning up a
 // separate one, since the provider pin (and its prompt-cache pricing) is
 // already configured on it. systemPrompt lets each caller supply its own
 // framing (web_read's "a page" vs. search_chats' "a past conversation") over
@@ -812,15 +836,11 @@ func stripBoilerplateLines(raw string) string {
 // matters (this used to be silently dropped here, which meant a thread's
 // displayed cost never reflected an instructions filter pass actually
 // ran).
-func FilterExtractedText(ctx context.Context, client llm.ChatClient, systemPrompt, pageText, instructions string) (text string, costUSD float64, err error) {
+func FilterExtractedText(ctx context.Context, complete CompleteFunc, systemPrompt, pageText, instructions string) (text string, costUSD float64, err error) {
 	messages := []llm.ChatMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: fmt.Sprintf("Instruction: %s\n\nPage content:\n%s", instructions, pageText)},
 	}
 
-	resp, err := client.ChatCompletionStreaming(ctx, messages, func(string) {}, nil)
-	if err != nil {
-		return "", 0, err
-	}
-	return resp.Content, resp.CostUSD, nil
+	return complete(ctx, messages)
 }

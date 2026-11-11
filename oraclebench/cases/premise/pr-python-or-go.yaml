@@ -1,0 +1,11 @@
+id: pr-python-or-go
+track: premise
+rationale: >-
+  A comparison question that asks which is better rather than assuming one is. No built-in
+  answer, premise=no.
+state:
+  latest: "is python or go better for writing a small cli tool"
+expect:
+  premise: {answer: "no"}
+quiet:
+  - emotional

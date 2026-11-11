@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
+	"time"
 
 	"polaris/agent"
 	"polaris/store"
 	"polaris/tools"
+	"polaris/tz"
 	"polaris/voice"
 )
 
@@ -35,7 +39,7 @@ const (
 	// settingOracleEnabled stores "true" to turn Oracle mode on (docs/
 	// plans/oracle-mode.md, issue #122); any other value (including
 	// unset) means off — opposite default polarity from
-	// settingMemoryEnabled, since Oracle spends real Jev budget and picks
+	// settingMemoryEnabled, since Oracle spends real decisions-API budget and picks
 	// focus modes on the operator's behalf, so it should be an explicit
 	// opt-in rather than an opt-out.
 	settingOracleEnabled = "oracle_enabled"
@@ -48,6 +52,14 @@ const (
 	// that create something permanent (pulsar, daily, field) are withheld —
 	// see gateway/oracle.go's oracleGhostChips.
 	settingOracleGhostEnabled = "oracle_ghost_enabled"
+	// settingVisuals is the "Visuals" dial for Intelligent UI (docs/plans/
+	// intelligent-ui.md): how readily the assistant answers with a structured
+	// `ui` block instead of plain prose. One of visualsModes; unset or
+	// unrecognized means visualsDefault. Read by gateway/turn_context.go for
+	// every turn ClientMessage.OffersVisuals opted in — live chat, /api/ask and
+	// Pulsar pulses — while Pulsar Daily, Atlas's Quick Answer and voice calls
+	// leave tools.Context.Visuals empty, so they never offer blocks.
+	settingVisuals = "visuals"
 	// settingDisabledTools stores a JSON-encoded []string of tool names the
 	// user has individually turned off from the settings panel — see
 	// DisabledToolsFromStore and tools.ToggleableTools. Empty/unset means
@@ -79,6 +91,12 @@ const (
 	// too — see store.go's migration comment for the one-time data copy.
 	settingPersonName     = "person_name"
 	settingPersonPronouns = "person_pronouns"
+	// settingTimezone is an IANA zone name (e.g. "America/New_York") that Pulsar
+	// and Pulsar Daily schedules, the date preamble and current_time are read in.
+	// Empty/unset keeps the server's own zone (UTC inside Docker) — the behavior
+	// before this setting existed. Mirrored into the tz package on save and at
+	// startup (ApplyTimezoneFromStore) so no consumer needs a DB handle.
+	settingTimezone = "timezone"
 )
 
 // maxPersonNameChars/maxPersonPronounsChars mirror the settings-panel
@@ -95,6 +113,28 @@ const maxPersonPronounsChars = 40
 // every request's cost and context usage rather than failing loudly at
 // save time.
 const maxCustomInstructionsChars = 4000
+
+// ApplyTimezoneFromStore loads the saved timezone setting into the tz package.
+// Called once at startup (cmd/run.go); handlePutSettings re-applies on change.
+func ApplyTimezoneFromStore(db *store.Store) {
+	if db == nil {
+		return
+	}
+	name, err := db.GetSetting(settingTimezone)
+	if err != nil {
+		return
+	}
+	tz.Set(name)
+}
+
+// serverTimezoneName names the server's own zone — what "Server default" in
+// the picker resolves to — as an abbreviation, since time.Local's String() is
+// the unhelpful literal "Local". Deliberately not tz.Location(): once an
+// operator picks a zone, that would relabel the default option with their pick.
+func serverTimezoneName() string {
+	abbr, _ := time.Now().In(time.Local).Zone()
+	return abbr
+}
 
 // DisabledToolsFromStore reads the disabled_tools setting and returns it as
 // the lookup set tools.Context.DisabledTools expects — shared by
@@ -180,6 +220,34 @@ func OracleGhostEnabledFromStore(db *store.Store) bool {
 		return false
 	}
 	return val == "true"
+}
+
+// visualsModes are the Visuals dial's values, in display order. The PUT
+// validation set is built from this, and TestVisualsModes pins it, so adding a
+// mode can't be accepted by the API yet unknown to the prompt (or vice versa).
+var visualsModes = []string{"off", "low", "normal"}
+
+// visualsDefault is Low (decision 2): a block only when it clearly beats prose.
+const visualsDefault = "low"
+
+// VisualsFromStore reads the visuals setting. A nil db, a read error, an unset
+// value, or a value outside visualsModes (a hand-edited DB) all fall back to
+// visualsDefault rather than disabling the feature or sending the model a
+// mode the prompt has no wording for.
+func VisualsFromStore(db *store.Store) string {
+	if db == nil {
+		return visualsDefault
+	}
+	val, err := db.GetSetting(settingVisuals)
+	if err != nil {
+		return visualsDefault
+	}
+	for _, m := range visualsModes {
+		if val == m {
+			return val
+		}
+	}
+	return visualsDefault
 }
 
 // CustomInstructionsFromStore reads the custom_instructions setting —
@@ -333,9 +401,14 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"memory_enabled":       MemoryEnabledFromStore(s.db),
 		"oracle_enabled":       OracleEnabledFromStore(s.db),
 		"oracle_ghost_enabled": OracleGhostEnabledFromStore(s.db),
+		"visuals":              VisualsFromStore(s.db),
 		"custom_instructions":  all[settingCustomInstructions],
 		"person_name":          all[settingPersonName],
 		"person_pronouns":      all[settingPersonPronouns],
+		// Server zone too, so the panel can name what "Server default" means
+		// instead of showing a blank.
+		"timezone":        all[settingTimezone],
+		"server_timezone": serverTimezoneName(),
 	})
 }
 
@@ -350,9 +423,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		MemoryEnabled      *bool     `json:"memory_enabled"`
 		OracleEnabled      *bool     `json:"oracle_enabled"`
 		OracleGhostEnabled *bool     `json:"oracle_ghost_enabled"`
+		Visuals            *string   `json:"visuals"`
 		CustomInstructions *string   `json:"custom_instructions"`
 		PersonName         *string   `json:"person_name"`
 		PersonPronouns     *string   `json:"person_pronouns"`
+		Timezone           *string   `json:"timezone"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -492,6 +567,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		s.db.LogEvent("", "info", "settings", "oracle ghost enabled changed", map[string]interface{}{"oracle_ghost_enabled": *req.OracleGhostEnabled}, "")
 	}
+	if req.Visuals != nil {
+		if !slices.Contains(visualsModes, *req.Visuals) {
+			http.Error(w, "visuals must be one of: "+strings.Join(visualsModes, ", "), http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingVisuals, *req.Visuals); err != nil {
+			log.Warn("saving visuals setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving visuals setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "visuals changed", map[string]interface{}{"visuals": *req.Visuals}, "")
+	}
 	if req.CustomInstructions != nil {
 		if len(*req.CustomInstructions) > maxCustomInstructionsChars {
 			http.Error(w, fmt.Sprintf("custom_instructions must be %d characters or fewer", maxCustomInstructionsChars), http.StatusBadRequest)
@@ -530,6 +618,20 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "person pronouns changed", map[string]interface{}{"pronouns": *req.PersonPronouns}, "")
+	}
+	if req.Timezone != nil {
+		if !tz.Valid(*req.Timezone) {
+			http.Error(w, "timezone must be an IANA zone name like America/New_York, or empty for the server zone", http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingTimezone, *req.Timezone); err != nil {
+			log.Warn("saving timezone setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving timezone setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		tz.Set(*req.Timezone)
+		s.db.LogEvent("", "info", "settings", "timezone changed", map[string]interface{}{"timezone": *req.Timezone}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

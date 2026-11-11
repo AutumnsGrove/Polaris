@@ -1,0 +1,12 @@
+id: fo-socratic-near-miss-homework
+track: focus
+rationale: >-
+  Near-miss: homework-flavored but the person asks for the answer, the opposite of socratic.
+  A trivial equation; `off` or `brief` both acceptable, socratic would be wrong.
+state:
+  latest: "whats the answer to this one: solve 2x + 5 = 17"
+expect:
+  focus: {answer: "off", accept: ["off", brief]}
+quiet:
+  - emotional
+  - private_person

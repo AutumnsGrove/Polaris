@@ -4,9 +4,14 @@
 // anything past a configured retention window, and restores one back
 // into place. Optionally mirrors each backup off-device to Cloudflare R2
 // (Mirror/PruneRemote/Fetch, via the r2 package) so a backup survives the
-// device itself failing, not just a bad database state. See cmd/backup.go
-// for the `polaris backup` CLI and gateway/backup.go for the Docker-mode
-// REST endpoints it talks to.
+// device itself failing, not just a bad database state. Mirrored objects
+// are gzip-compressed on the way up (r2.Upload) and decompressed on the
+// way back down (r2.Download) — a real backup is ~100MB of SQLite pages
+// that compress to roughly 40% of that, which is what keeps a 30-day
+// retention window from turning into a multi-gigabyte bucket. Object keys
+// are the backup filenames either way, so nothing here has to know about
+// it. See cmd/backup.go for the `polaris backup` CLI and gateway/backup.go
+// for the Docker-mode REST endpoints it talks to.
 package backup
 
 import (
@@ -18,6 +23,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -81,6 +87,13 @@ func parseTime(name string) (time.Time, bool) {
 	stamp := strings.TrimSuffix(strings.TrimPrefix(name, filePrefix), fileExt)
 	t, err := time.Parse(nameLayout, stamp)
 	if err != nil {
+		return time.Time{}, false
+	}
+	// time.Parse tolerates a fractional-seconds suffix ("…030405.5", "…030405,0")
+	// that nameLayout doesn't have, so a stray non-Polaris file would be taken
+	// for one of our backups — and then listed and pruned as one. Only a name
+	// fileName could have produced counts. Found by FuzzParseTime.
+	if fileName(t) != name {
 		return time.Time{}, false
 	}
 	return t.UTC(), true
@@ -204,6 +217,41 @@ func Prune(dir string, retain time.Duration) ([]string, error) {
 	return deleted, nil
 }
 
+// runInProgress is set for the whole of one backup run (create → mirror →
+// prune) and is part of gateway's /api/busy signal (handleServerBusy), which
+// the Docker update watcher polls before it --force-recreates the container.
+//
+// Both halves of a run need covering, and for different reasons. A kill during
+// the mirror strands a .r2-upload-*.gz temp in the data volume that List and
+// Prune both skip forever. A kill during Create is worse: VACUUM INTO writes
+// straight to the destination path, so the result is a partially-written file
+// whose name List *does* accept as a real backup — one that could later be
+// mirrored or restored as if it were complete. The watcher caps its wait at
+// 5 minutes (compose/watcher/update.sh's WAIT_MAX_SECONDS), comfortably longer
+// than the ~20-30s a real run takes on the potato.
+//
+// Package-level rather than a gateway.Server field because RunScheduler is
+// launched from cmd/run.go with no Server handle at all — same reason
+// gateway/embeddings_routes.go's embeddingBackfillRunning is package-level.
+var runInProgress atomic.Bool
+
+// TryStart marks a backup run as in progress. ok is false when one is already
+// running, which is what serializes the two callers that can create and mirror
+// a backup — RunScheduler and gateway's on-demand POST /api/backup — instead
+// of letting them race over the same VACUUM INTO destination (fileName has
+// one-second granularity, so two runs in the same second would target the same
+// path). Callers must call the returned release func when the run finishes.
+func TryStart() (release func(), ok bool) {
+	if !runInProgress.CompareAndSwap(false, true) {
+		return nil, false
+	}
+	return func() { runInProgress.Store(false) }, true
+}
+
+// Busy reports whether a backup run is in progress — see runInProgress for why
+// this has to be visible to /api/busy in the first place.
+func Busy() bool { return runInProgress.Load() }
+
 // RunScheduler backs up dbPath into dir roughly once a day, pruning
 // anything older than retain each time, until done is closed. Meant to
 // run as a background goroutine for the life of the server process —
@@ -227,6 +275,16 @@ func Prune(dir string, retain time.Duration) ([]string, error) {
 // unchanged whether or not R2 is reachable.
 func RunScheduler(done <-chan struct{}, dbPath, dir string, retain time.Duration, r2Client *r2.Client) {
 	runOnce := func() {
+		release, ok := TryStart()
+		if !ok {
+			// An on-demand `polaris backup create` is already running. Skip this
+			// tick rather than racing it — the next one is an hour away, and the
+			// run in flight is taking a backup of the same database anyway.
+			log.Info("skipping scheduled backup: another backup run is already in progress")
+			return
+		}
+		defer release()
+
 		infos, err := List(dir)
 		if err != nil {
 			log.Warn("listing existing backups failed, skipping scheduled backup", "err", err)
@@ -273,9 +331,12 @@ func RunScheduler(done <-chan struct{}, dbPath, dir string, retain time.Duration
 // Mirror uploads a backup to R2 under its own filename as the object key —
 // the same name List/Prune already use locally — so PruneRemote can parse
 // each object's timestamp straight from its key (parseTime) without R2
-// needing any separate metadata to track it. A nil r2Client (R2 not
-// configured) is a no-op, not an error, so every call site can call this
-// unconditionally rather than branching on whether R2 is set up.
+// needing any separate metadata to track it. The object's contents are
+// gzip-compressed by r2.Upload; the key deliberately isn't, so all of the
+// above keeps working unchanged and `polaris backup list --remote` stays
+// comparable to a local listing. A nil r2Client (R2 not configured) is a
+// no-op, not an error, so every call site can call this unconditionally
+// rather than branching on whether R2 is set up.
 func Mirror(info Info, r2Client *r2.Client) error {
 	if r2Client == nil {
 		return nil
@@ -323,7 +384,10 @@ func PruneRemote(r2Client *r2.Client, retain time.Duration) ([]string, error) {
 // needed), for disaster recovery when the local backups directory itself
 // is gone — the exact scenario R2 mirroring exists to protect against. See
 // cmd/backup.go's `restore-remote` command, which calls this and then
-// Restore with the result.
+// Restore with the result. Objects written before compression existed are
+// plain, and objects written since are gzip-compressed; r2.Download tells
+// them apart from the bytes themselves, so both restore through this one
+// path.
 func Fetch(r2Client *r2.Client, name, dir string) (Info, error) {
 	if r2Client == nil {
 		return Info{}, fmt.Errorf("r2 is not configured")

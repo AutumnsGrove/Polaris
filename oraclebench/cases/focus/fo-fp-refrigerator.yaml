@@ -1,0 +1,13 @@
+id: fo-fp-refrigerator
+track: focus
+rationale: >-
+  Plain "how does X actually work" from nothing: `first_principles`, not safari (a single
+  concept, no wish to explore over turns) and not brief.
+state:
+  latest: "how does a refrigerator actually work"
+expect:
+  focus: {answer: first_principles}
+  task: {answer: explain}
+quiet:
+  - emotional
+  - private_person

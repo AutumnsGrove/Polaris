@@ -53,7 +53,7 @@ func (t *turnRun) spawnCompaction() {
 			}
 			defer t.s.endCompaction(t.storageThreadID)
 
-			summary, compactCost, err := t.s.compactThread(t.client, t.storageThreadID, t.assistantMsgID)
+			summary, compactCost, err := t.s.compactThread(t.agentCtx.CompleteFunc(), t.storageThreadID, t.assistantMsgID)
 			if err != nil {
 				log.Warn("auto-compaction failed", "thread", t.threadID, "err", err)
 				t.logEvent(t.storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, t.turnID)
@@ -111,7 +111,7 @@ func (t *turnRun) spawnSuggestions() {
 					log.Error("panic generating follow-up suggestions", "thread", t.threadID, "panic", r)
 				}
 			}()
-			sug, sugCost, err := t.s.generateSuggestions(t.cfg, t.modelCfg, t.msg.Content, t.result.Answer)
+			sug, sugCost, err := t.s.generateSuggestions(t.cfg, t.modelCfg, t.msg.Content, t.result.Answer, t.threadID)
 			if err != nil {
 				log.Warn("follow-up suggestions failed", "thread", t.threadID, "err", err)
 				t.logEvent(t.storageThreadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, t.turnID)
@@ -167,9 +167,9 @@ func (t *turnRun) spawnVerification() {
 					log.Error("panic during verification", "thread", t.threadID, "panic", r)
 				}
 			}()
-			before := t.agentCtx.JevSpentThisTurn()
+			before := t.agentCtx.DecisionsSpentThisTurn()
 			results := runVerification(t.agentCtx, t.result.Answer, t.result.Citations)
-			if delta := t.agentCtx.JevSpentThisTurn() - before; delta > 0 {
+			if delta := t.agentCtx.DecisionsSpentThisTurn() - before; delta > 0 {
 				if err := t.s.db.AddTurnCost(t.storageThreadID, t.assistantMsgID, "verification", delta); err != nil {
 					log.Warn("failed to record verification cost", "err", err)
 				}

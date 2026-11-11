@@ -45,6 +45,32 @@ needs real numbers runs in a locked-down sandbox and comes back as a chart and a
 </tr>
 </table>
 
+## Prism: an answer shaped like the question
+
+Not every question wants paragraphs. When the real shape is a comparison, a decision with branches, a
+procedure, or a claim worth checking, the answer can come back as a block instead — a table you can
+scan, a flow with labelled branches, a verdict with evidence on both sides — and stays plain prose
+when that's the better answer. Four of the shapes, below.
+
+<table>
+<tr>
+<td width="68%"><img src="screenshots/prism-flow-desktop.webp" alt="A flow block: how a bill becomes a law, drawn as a branching decision chain with labelled edges"></td>
+<td width="32%"><img src="screenshots/prism-flow-phone.webp" alt="The same flow block on a phone"></td>
+</tr>
+<tr>
+<td width="68%"><img src="screenshots/prism-compare-desktop.webp" alt="A compare block: three coffee brewers across eight attributes, with the AeroPress column marked Pick"></td>
+<td width="32%"><img src="screenshots/prism-compare-phone.webp" alt="The same comparison as stacked option cards on a phone"></td>
+</tr>
+<tr>
+<td width="68%"><img src="screenshots/prism-claim-desktop.webp" alt="A claim block: a false verdict pill, the claim in serif, and supports and disputes lines with source chips"></td>
+<td width="32%"><img src="screenshots/prism-claim-phone.webp" alt="The same claim block on a phone"></td>
+</tr>
+<tr>
+<td width="68%"><img src="screenshots/prism-steps-desktop.webp" alt="A steps block: ten numbered troubleshooting steps for a laptop that won't turn on"></td>
+<td width="32%"><img src="screenshots/prism-steps-phone.webp" alt="The same steps block on a phone"></td>
+</tr>
+</table>
+
 ## Atlas: a search-results page, when you'd rather read the results yourself
 
 Ranked results from your own SearXNG instance, with per-domain Block / Lower / Raise / Pin controls. End

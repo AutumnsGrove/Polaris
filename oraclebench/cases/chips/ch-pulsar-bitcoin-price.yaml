@@ -1,0 +1,13 @@
+id: ch-pulsar-bitcoin-price
+track: chips
+rationale: >-
+  A live-changing number someone would plausibly want on a schedule: chip_pulsar=yes. Not a
+  Safari-worthy topic.
+state:
+  latest: "whats the price of bitcoin right now"
+expect:
+  chip_pulsar: {answer: "yes"}
+  recency: {answer: breaking, accept: [breaking, recent]}
+quiet:
+  - chip_safari
+  - emotional

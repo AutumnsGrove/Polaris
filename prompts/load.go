@@ -169,6 +169,12 @@ func fillDefaults(s Set) *Set {
 	if s.Vision.DescribeImage == "" {
 		s.Vision.DescribeImage = defaults.Vision.DescribeImage
 	}
+	if s.Comet.ApproachSystem == "" {
+		s.Comet.ApproachSystem = defaults.Comet.ApproachSystem
+	}
+	if s.Comet.TrendsSystem == "" {
+		s.Comet.TrendsSystem = defaults.Comet.TrendsSystem
+	}
 	if s.Weaver.System == "" {
 		s.Weaver.System = defaults.Weaver.System
 	}
@@ -220,6 +226,15 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.PulsarDaily.TopStoryElectorSystem == "" {
 		s.PulsarDaily.TopStoryElectorSystem = defaults.PulsarDaily.TopStoryElectorSystem
+	}
+	if s.UI.Base == "" {
+		s.UI.Base = defaults.UI.Base
+	}
+	if s.UI.LowBar == "" {
+		s.UI.LowBar = defaults.UI.LowBar
+	}
+	if s.UI.NormalBar == "" {
+		s.UI.NormalBar = defaults.UI.NormalBar
 	}
 	if s.Oracle.Section == "" {
 		s.Oracle.Section = defaults.Oracle.Section

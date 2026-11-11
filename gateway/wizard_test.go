@@ -45,7 +45,7 @@ func toolCallSSEBody(toolCallJSON string) string {
 		`data: {"choices":[{"delta":{"tool_calls":[` + toolCallJSON + `]}}]}`,
 		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"cost":0.0001}}`,
 		`data: [DONE]`,
-	}, "\n") + "\n"
+	}, "\n\n") + "\n\n"
 }
 
 // toolCallSSEBodyCost is toolCallSSEBody with an explicit usage cost. A test
@@ -57,7 +57,7 @@ func toolCallSSEBodyCost(toolCallJSON string, cost float64) string {
 		`data: {"choices":[{"delta":{"tool_calls":[` + toolCallJSON + `]}}]}`,
 		fmt.Sprintf(`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"cost":%v}}`, cost),
 		`data: [DONE]`,
-	}, "\n") + "\n"
+	}, "\n\n") + "\n\n"
 }
 
 // sseTextOnlyServer fakes a model that replies in plain prose without
@@ -75,7 +75,7 @@ func sseTextOnlyServer(t *testing.T, content string) *httptest.Server {
 			`data: [DONE]`,
 		}
 		for _, line := range lines {
-			fmt.Fprintf(w, "%s\n", line)
+			fmt.Fprintf(w, "%s\n\n", line)
 			flusher.Flush()
 		}
 	}))
@@ -405,9 +405,9 @@ func runWizardToolMenuCheck(t *testing.T, target string) {
 		capturedBody = buf.String()
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n")
-		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`+"\n")
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`+"\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
 		flusher.Flush()
 	}))
 	defer srv.Close()
@@ -441,9 +441,9 @@ func capturingModelServer(t *testing.T, captured *string) *httptest.Server {
 		*captured = buf.String()
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n")
-		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`+"\n")
-		fmt.Fprint(w, "data: [DONE]\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`+"\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
 		flusher.Flush()
 	}))
 }

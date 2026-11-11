@@ -43,6 +43,40 @@ func TestReadThread_CompactionSubstitutionMatchesEffectiveHistory(t *testing.T) 
 	}
 }
 
+// TestReadThread_FlattensAssistantUIBlocksOnly: a stored answer carries its
+// Intelligent UI fence as raw JSON lines, but ReadThread's transcript is read
+// by a model or a person, so the assistant's fence becomes readable text. A
+// USER message that happens to contain a ui fence (someone pasting an example)
+// is theirs and stays verbatim.
+func TestReadThread_FlattensAssistantUIBlocksOnly(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "a thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	userFence := "```ui\n{\"c\":\"stat\",\"value\":\"USER\"}\n```"
+	if _, err := s.AddMessage("t1", "user", "what does this do?\n"+userFence, "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage(user): %v", err)
+	}
+	answer := "Short answer:\n\n```ui\n{\"c\":\"stat\",\"label\":\"Brew time\",\"value\":\"2 min\"}\n```\n"
+	if _, err := s.AddMessage("t1", "assistant", answer, "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage(assistant): %v", err)
+	}
+
+	got, err := s.ReadThread("t1")
+	if err != nil {
+		t.Fatalf("ReadThread: %v", err)
+	}
+	if !strings.Contains(got.Content, "Brew time: 2 min") {
+		t.Errorf("Content = %q, want the assistant's block flattened to readable text", got.Content)
+	}
+	if strings.Contains(got.Content, `"label":"Brew time"`) {
+		t.Errorf("Content = %q, still contains the assistant's raw block JSON", got.Content)
+	}
+	if !strings.Contains(got.Content, userFence) {
+		t.Errorf("Content = %q, want the user's own fence left verbatim", got.Content)
+	}
+}
+
 // TestEffectiveHistory_IncludesPendingQuestionOptions guards against the bug
 // filed as polaris#70: an ask_user_question call's suggested options are
 // persisted in Message.PendingQuestion, a separate column from Content, but

@@ -1,0 +1,10 @@
+id: re-python-current-version
+track: recency
+rationale: >-
+  Software versions change over months, so recency=recent ("software versions" is named in the
+  option). Not breaking: nothing is happening in the last few days.
+state:
+  latest: "What is the current stable version of Python, and when does it stop getting security fixes?"
+expect:
+  recency: {answer: recent}
+  research: {answer: "yes"}

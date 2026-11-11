@@ -1,5 +1,6 @@
 name: search_stars
 requires: weaver_run
+export_privacy: personal
 description: >-
   keyword-search Constellation's existing stars, for dedup-checking and link-discovery.
 api_description: >-

@@ -7,6 +7,7 @@
 	import ChatComposer from '$lib/components/ChatComposer.svelte';
 	import ChatHeader from '$lib/components/ChatHeader.svelte';
 	import WelcomeScreen from '$lib/components/WelcomeScreen.svelte';
+	import ThreadLoading from '$lib/components/ThreadLoading.svelte';
 	import JumpToBottomButton from '$lib/components/JumpToBottomButton.svelte';
 	import {
 		Loader2,
@@ -82,6 +83,12 @@
 	let focusModeManual = $state(false);
 	let deepResearch = $state(false);
 	let research = $state(true);
+	// Relay the live toggles to AppState so send() callers that don't pass
+	// them (question-card answers, suggestion chips) inherit them — see
+	// AppState.composerConfig.
+	$effect(() => {
+		appState.composerConfig = { focusMode, deepResearch, noResearch: !research };
+	});
 	// Ghost mode (issue #67) — unlike focusMode/deepResearch/research, this
 	// has no persisted thread config to round-trip (a ghost thread writes
 	// nothing to store.Store at all — see gateway/protocol.go's Anonymous
@@ -507,7 +514,15 @@
 />
 
 {#if !showTransponder}
-{#if appState.turns.length === 0}
+{#if appState.turns.length === 0 && appState.threadLoading}
+	<!-- A thread the user just asked for is still on its way (see
+	     AppState.threadLoading). Its own state, not the WelcomeScreen —
+	     this is what keeps a slow open (a Pulsar pulse's events fetch can
+	     run to a couple of MB) from reading as "the tap bounced me back to
+	     the homescreen". No composer: sending doesn't make sense until the
+	     thread's own sticky config has loaded. -->
+	<ThreadLoading />
+{:else if appState.turns.length === 0}
 	<!-- Empty state: composer floats centered, like Claude/OpenWebUI's
 	     landing view, instead of sitting pinned at the bottom of a mostly
 	     empty screen. Switches to the normal scrolling-history layout the

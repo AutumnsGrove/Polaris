@@ -36,6 +36,21 @@ Runs as a Docker Compose stack, which bundles a SearXNG instance alongside it �
 latest image from GHCR and hand off to a host-side watcher (`gateway/docker_update.go`,
 `compose/watcher/`) — no in-process git pull/rebuild.
 
+### The agent loop and Nova
+
+`agent.Run` runs on [Nova](https://github.com/AutumnsGrove/nova) (`agent/nova_*.go`) and nothing else:
+Polaris's original loop was deleted in #188 after Nova served every production turn from 2026-10-27
+with no rollback. It is archived for reference in `docs/archive/bespoke-loop/`, and what it produced
+is frozen in fixtures in `agent/testdata/nova_parity/`, which
+`agent/nova_parity_test.go` holds Nova's request bytes, events, transcripts and cost accounting to.
+There is no `nova_loop` flag or `POLARIS_NOVA_LOOP` anymore (a leftover `nova_loop:` key in
+`config.yaml` is ignored). The design and the known differences are in `docs/plans/nova-loop.md`.
+
+`go.mod` pins Nova to a **tagged release** (`vX.Y.Z`), never a commit pseudo-version and never a
+committed `replace` — `CLAUDE.md`'s "Bumping Nova" section has the procedure. To work on both repos
+at once, use an uncommitted overlay instead of editing `go.mod`: `go work init . ../nova` (and
+delete `go.work` when done).
+
 ## Frontend development
 
 The Go binary embeds the frontend's built static output (`web/build/`) via `go:embed`. It's not
@@ -49,6 +64,41 @@ pnpm install
 pnpm run dev          # hot-reload dev server, proxies /api and /ws to the Go backend on :8899
 pnpm run build        # produces web/build/ for `go build`/`go run .` to embed
 ```
+
+### Answer rendering: segments, `ui` blocks, streaming mermaid
+
+An answer is not one `{@html}` string. `web/src/lib/uiBlocks/split.ts` cuts it around column-0
+` ```ui ` and ` ```mermaid ` fences; `renderAnswer.ts` runs the Markdown pieces through the usual
+marked → DOMPurify → citation-chip pipeline (threading one per-URL occurrence counter across pieces
+so verification ticks land on the right chip) and `ChatTurnView` renders each piece by kind, keyed by
+index so a growing block updates in place. A `ui` fence is one JSON object per line, parsed by
+`parse.ts` (total: bad lines become muted raw rows, a trailing partial line is held back) and drawn by
+`components/ui/`. `mermaid.ts`'s `mountMermaidStream` re-renders a diagram on each new complete line
+and keeps the last good render when a prefix doesn't parse.
+
+Diagrams are drawn by [Pele](https://pele.run) (`pele` on npm, Obsidian's Mermaid-syntax renderer),
+not mermaid.js — the model still writes ` ```mermaid ` fences. Pele picks its layout from the width
+it is given (`mermaid.ts` passes the container's width and re-lays out on resize, so a wide
+`flowchart LR` stacks vertically on a phone), and it themes through `--pele-*` CSS variables that
+`ChatTurnView.svelte` maps onto the app's `--color-*` tokens, so a theme switch needs no re-render.
+It has no `securityLevel`: links/images are turned off per render and it never emits HTML or
+scripts. Pele does no label-contrast correction, hence `ensureStyleContrast` in `mermaid.ts`.
+
+Anything that is not the chat renderer must not see the raw JSON: `flatten.ts` (TS) and
+`uiblocks` (Go) turn a block into readable text, and both are tested against
+`testdata/ui_flatten.json`. Blocks are taught to live WebSocket chat turns, Pulsar pulses (real threads
+in the chat view) and `/api/ask` (`ClientMessage.OffersVisuals`, so the API exercises the real
+behaviour; its raw `Answer` keeps the fence and `polaris search` flattens it on print), never to voice
+calls or Atlas's plain-text Quick Answer. Oracle's `ui` check follows the same gate. Design and phases:
+`docs/plans/intelligent-ui.md`. To watch a stream fill in, run `dev/fakeopenrouter` with `-chunk-delay`. A queued response may carry both `content` and `tool_calls` (text streams first, then the call) — the shape that makes streamed text become mid-turn commentary, which must render ui blocks the same way the final answer does.
+
+"Found in source" ticks inside a block use a different rule from prose: a block link is named by where it
+sits (`<fence>.<block>.<item>.<field>#<n>`), not by "the nth time this URL is cited". The server lists them
+(`uiblocks/sites.go`, `Sites`), verifies each against its own sentence (`gateway/verification.go`; a
+`quote` is exact-match first, the decision model only on a miss) and sends marks carrying a `locator`; the components
+pass the same address down as a `loc` prop and `renderInlineCitations` ticks the matching link. Adding a
+sourced field means touching both `collect()` and the component, and
+`TestSites_FieldNamesMatchTheComponents` fails if they disagree.
 
 ### Start-screen night sky
 
@@ -77,6 +127,11 @@ in `dev/.stack/*.pid`. `stop`/`restart` kill each process's whole group (not jus
 pid), so `pnpm run dev`'s real Node child doesn't survive as an orphan holding :45173. The
 existing `searxng-dev` container is reused (`docker start`) rather than recreated on every run —
 see below for how it's created the first time.
+
+`start`/`restart` refuse to run (before stopping anything) if a process outside the stack — say a
+stale `polaris run` from an earlier session — has `polaris.db` open, and `status` flags it too.
+Every Polaris process runs the Pulsar scheduler, so a leftover older binary on the same database
+silently fires routines with its old code. Pass `--force` to override.
 
 ### Local dev SearXNG (Docker)
 
@@ -108,13 +163,75 @@ request does show up.
 ```bash
 polaris search "what's the current stable version of Go?"
 polaris search --model deepseek "find a coffee shop near the Space Needle"
-polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals
+polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals, paid-API monthly cap usage (also `api_caps` in GET /api/stats)
+polaris export <thread-id> --trail --thinking -o thread.md   # one thread as Markdown/JSON, same options as the Export modal
 polaris backup list        # see SETUP.md's Backups
 polaris benchmark --dataset browse_comp_test_set.csv --n 20   # run a BrowseComp sample, graded by an LLM judge
+polaris oracle-bench --models jev-1.13,jev-1.14               # compare decision models on Oracle's task, see below
+polaris comet classify -n 5   # classify a handful of a period's threads into Comet trails, for testing
+polaris comet generate --period 2026-09   # assemble (or re-assemble) one month's Comet edition
+polaris comet backfill --from 2026-07      # classify + generate every month in a range
+polaris embeddings status                    # semantic-index coverage, model and spend (also in Settings > Usage)
+polaris embeddings backfill [--kind message|star|all]   # embed history that predates enabling embeddings
+polaris embeddings reindex --yes             # delete and rebuild every vector after changing embeddings.model
 ```
 
-`search`/`stats`/`update`/`restart`/`backup create`/`backup list`/`atlas search`/`constellation
-backfill` are all thin HTTP clients hitting the running container's own REST API
+`polaris embeddings` is the only admin surface for the semantic index; see
+[docs/plans/embeddings.md](docs/plans/embeddings.md) for the design and CLAUDE.md for the invariants
+that matter when touching it (ghost threads are never indexed, one shared eligibility predicate,
+and the in-memory cache is invalidated by a store-level epoch).
+
+### Oracle benchmark
+
+`polaris oracle-bench` is a dev tool (not a user feature) for choosing the decision model Oracle mode
+runs on. It runs the committed case bank (`oraclebench/cases`, ~295 hand-labeled messages) through the
+real `gateway.RunOracleRaw` once per model, so "fired" means exactly what it does in a live turn, then
+scores each model on raw-answer accuracy, whether the nudge actually reached the user, false nudges on
+sensitive checks, and latency. Output is a leaderboard plus a latency ranking; every run also lands in
+a tracking SQLite file (one table per run). Cost is about $0.0002 per decision call, so the default
+two-model run is well under a dollar; `--all-decisions` runs the live OpenRouter catalog. Use `--n` and
+`--repeats 1` for a quick sanity pass.
+
+Scoring weights and the latency budget are in `oraclebench/weights.yaml` (`--weights` overrides);
+adding cases is documented in `oraclebench/AUTHORING.md`, and `go test ./oraclebench/` validates every
+label against `prompts.yaml`'s real options. Design and decisions: `docs/plans/oracle-benchmark.md`.
+Results and how to read them: `docs/benchmarks/oracle-decision-models/README.md`; per-model detail,
+method and caveats: `docs/benchmarks/oracle-decision-models/notes.md`.
+
+Every finished run saves its leaderboard to `docs/benchmarks/oracle-decision-models/runs/` (commit
+it); `polaris oracle-bench report --run <a.json>,<b.json> --calls '<calls.jsonl glob>'` regenerates
+that folder's charts and `results.md` from one or more leaderboards (several runs merge into one, but only
+if cases, repeats, concurrency and weights all match). The raw per-call log (needed once, for the share of
+calls inside Oracle's real 2.5s timeout, for refusals by question family, and for the per-call token split)
+stays local in the gitignored `oraclebench/results/`; its tallies are saved as `call-stats.json`.
+
+`$/1k turns` is one **production turn** — the first send of a state — not an average over the run's
+repeats: a provider that prefix-caches bills repeats cheaper, so averaging would understate a cache-capable
+model (morph/reflex, the first one). The run records `input_tokens`/`cached_tokens` per call and a
+`fresh_cost_usd` on each model exactly so this is answerable from the artifacts: a row still marked `§` in
+`results.md` predates that capture and needs a re-run, or its figure can be recovered from its surviving
+raw log. Two models can also be cache-capable in the same *product* while costing 19x differently per call,
+so check the token split, not just the dollar figure.
+
+Lessons that cost time:
+- **Rebase before you run, and do not touch the tree during a run.** `prompts.yaml` hot-reloads, so
+  pulling or editing it mid-run changes the questions for the remaining calls. Build a binary
+  (`go build -o /tmp/oracle-bench-bin .`) and run that rather than `go run`.
+- **"Fired" is not "a nudge was delivered".** `gateway.CheckOutcome.Fired` is true for any winner that
+  clears its bar, including quiet options; the scorer uses "delivered", and tests fail if that is
+  simplified.
+- **Keep `--concurrency 2` for any run whose latency you will report**, and never run two invocations
+  at once: one model went from 1.4s to 4.1s at concurrency 5.
+- **A refusal is a result, not an error to retry.** Some hosted models decline sensitive questions
+  (Luna, on private-person ones); the call counts as Oracle-off and is tallied by question family.
+- **A model that fails every call is a finding, not a retry.** A provider-side 429 shows up as a 100%
+  error rate and disqualifies the model; re-run it later rather than hammering it.
+- **The judging pass is slow and silent.** It runs after every model has finished, 4 calls at a time
+  through one judge model, with no progress output; expect ~20 minutes for ~8,000 calls.
+
+`search`/`stats`/`export`/`update`/`restart`/`backup create`/`backup list`/`atlas search`/`constellation
+backfill`/`comet classify`/`comet generate`/`comet backfill` are all thin HTTP clients hitting the
+running container's own REST API
 (`cmd/docker_client.go`) — none of them assume a local `config.yaml`/git checkout. `backup
 restore`/`restore-remote` are the exception: there's no safe way to swap a live database file over
 HTTP, so those two always run directly against a local config/database path — under Docker that

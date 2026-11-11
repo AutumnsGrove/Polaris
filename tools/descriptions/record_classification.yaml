@@ -1,0 +1,16 @@
+name: record_classification
+requires: approach_run
+description: >-
+  record this conversation's topic, mood, intent, and whether it was resolved.
+api_description: >-
+  Record your finished classification of this one conversation. Four fields, all required:
+
+  - topic: what the conversation was actually about, as one short category label reusing the vocabulary in
+    your system prompt.
+  - mood: the emotional register the person brought to it, as one short plain-word label.
+  - intent: one line on what they were trying to do or find out.
+  - resolved: "yes", "no", or "partial" — did they get what they came for.
+
+  If the thread references an image that you genuinely need to look at to classify it correctly, call
+  view_image first. Calling this tool ENDS the turn — it is the last thing you do, and you should not write
+  any prose before or after it.

@@ -1,0 +1,13 @@
+id: rc-spell-necessary
+track: recall
+rationale: >-
+  False friend: "do you remember how to spell" asks about general knowledge, not an earlier chat.
+  recall=no.
+state:
+  latest: "do you remember how to spell necessary? one c or two"
+expect:
+  recall: {answer: "no"}
+  intent: {answer: definition, accept: [definition, general]}
+quiet:
+  - emotional
+  - private_person

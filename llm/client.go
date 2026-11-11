@@ -47,6 +47,23 @@ type Client struct {
 	maxTokens   int
 	httpClient  *http.Client
 
+	// promptCaching sends a top-level cache_control marker on every request.
+	// Anthropic models never cache implicitly (OpenRouter reports
+	// supports_implicit_caching: false for them) — unlike DeepSeek et al.,
+	// which cache any repeated prefix on their own — so without the marker
+	// every call of an agent loop re-bills its whole history at the full
+	// input rate: measured live 2026-10-08 on claude-haiku-5.5, a 19.8k-token
+	// prompt cost $0.00197 uncached on every repeat, vs. $0.00020 as a cache
+	// read once marked (writes cost 1.25x, $0.00246). The marker is
+	// positioned automatically at the end of the prompt, so it also advances
+	// as an agent loop appends tool results. Derived from the model slug in
+	// NewClient — not wired per call site — so every client (main turn,
+	// research workers, Pulsar, compaction, ...) and any future anthropic/*
+	// registry entry gets it with no extra step. Other providers are left
+	// untouched: they cache implicitly, and an unknown field isn't worth
+	// risking on them.
+	promptCaching bool
+
 	// Provider routing — OpenRouter-specific. Pins requests to a specific
 	// provider (e.g. "xiaomi/fp8") — or an ordered list of them — so prompt
 	// caching stays consistent — switching providers for the same model
@@ -226,6 +243,13 @@ type chatRequest struct {
 	SessionID         string           `json:"session_id,omitempty"`
 	Stream            bool             `json:"stream,omitempty"`
 	Reasoning         *ReasoningParams `json:"reasoning,omitempty"`
+	// CacheControl is OpenRouter's top-level automatic-caching marker. See
+	// Client.promptCaching for why it's set per model rather than always.
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+type cacheControl struct {
+	Type string `json:"type"`
 }
 
 type promptTokensDetails struct {
@@ -512,6 +536,8 @@ func NewClient(baseURL, apiKey, model string, temperature float64, maxTokens int
 		temperature: temperature,
 		maxTokens:   maxTokens,
 		httpClient:  &http.Client{},
+
+		promptCaching: strings.HasPrefix(model, "anthropic/"),
 	}
 }
 
@@ -544,7 +570,7 @@ func (c *Client) WithReasoning(r *ReasoningParams) *Client {
 // sseToolCallDelta.Index); doRequest accumulates every index it sees, not
 // just the first, and returns them all in ChatResponse.ToolCalls in index
 // order. agent.Run dispatches that whole batch concurrently — see its
-// dispatchToolCallsConcurrently.
+// Nova's parallel tool dispatch.
 //
 // onReasoning delivers a reasoning-capable model's internal "thinking"
 // tokens as they stream, separately from onChunk's visible answer tokens
@@ -556,6 +582,22 @@ func (c *Client) WithReasoning(r *ReasoningParams) *Client {
 // cancel is still returned rather than discarded.
 func (c *Client) ChatCompletionWithTools(reqCtx context.Context, messages []ChatMessage, tools []ToolDef, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
 	return c.doRequest(reqCtx, messages, tools, "auto", onChunk, onReasoning)
+}
+
+// ChatCompletionForcedTool is ChatCompletionWithTools with tool_choice
+// pinned to exactly one function, so the model must call it rather than
+// free-flowing between a tool call and a plain-prose answer. For one-shot
+// structured-output passes where prose is a failure, not a valid outcome —
+// Comet's spike/fade synthesis is the first caller. Deliberately a method on
+// the concrete *Client, not part of the ChatClient interface: only the one
+// call site needs it, and the interface's test doubles have no meaningful
+// way to model a forced choice anyway.
+func (c *Client) ChatCompletionForcedTool(reqCtx context.Context, messages []ChatMessage, tool ToolDef, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
+	choice := map[string]interface{}{
+		"type":     "function",
+		"function": map[string]interface{}{"name": tool.Function.Name},
+	}
+	return c.doRequest(reqCtx, messages, []ToolDef{tool}, choice, onChunk, onReasoning)
 }
 
 // ChatCompletionStreaming sends a plain (no-tools) conversation and
@@ -601,6 +643,9 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 	}
 	if c.sessionID != "" {
 		reqBody.SessionID = c.sessionID
+	}
+	if c.promptCaching {
+		reqBody.CacheControl = &cacheControl{Type: "ephemeral"}
 	}
 	if c.reasoning != nil {
 		reqBody.Reasoning = c.reasoning

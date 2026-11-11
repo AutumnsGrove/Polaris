@@ -1,0 +1,13 @@
+id: hs-sick-beat-song
+track: high_stakes
+rationale: >-
+  False-friend trap ("sick" as slang praise). A music recommendation request; no health
+  content. High_stakes none.
+state:
+  latest: "that song with the sick bassline from the fast and furious soundtrack, whats it called"
+expect:
+  high_stakes: {answer: "none"}
+  intent: {answer: music}
+quiet:
+  - emotional
+  - private_person

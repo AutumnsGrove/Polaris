@@ -1,0 +1,12 @@
+id: co-abortion-legal
+track: contested
+rationale: >-
+  A moral and political question where credible institutions and large camps disagree, not a
+  matter of fact: contested=yes.
+state:
+  latest: "should abortion be legal"
+expect:
+  contested: {answer: "yes"}
+quiet:
+  - claim_check
+  - private_person

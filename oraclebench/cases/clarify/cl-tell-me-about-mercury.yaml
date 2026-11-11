@@ -1,0 +1,14 @@
+id: cl-tell-me-about-mercury
+track: clarify
+rationale: >-
+  "Mercury" has several very different readings (the planet, the element, the band/artist, the
+  Roman god, the car brand), each leading to unrelated research. clarify=yes ("two or more very
+  different readings"). Some would say planet is the obvious default, so it is disputed.
+state:
+  latest: "tell me about mercury"
+expect:
+  clarify: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person
+disputed_label: true

@@ -1,0 +1,11 @@
+id: fo-safari-explicit-music-theory
+track: focus
+rationale: >-
+  Explicit multi-turn walk-through request on a broad subject ("a few turns, one piece at a
+  time"). `safari`.
+state:
+  latest: "walk me through music theory over a few turns, one piece at a time. start from the very beginning"
+expect:
+  focus: {answer: safari}
+quiet:
+  - emotional

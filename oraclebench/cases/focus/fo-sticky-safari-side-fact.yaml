@@ -1,0 +1,13 @@
+id: fo-sticky-safari-side-fact
+track: focus
+rationale: >-
+  Mid-safari, the latest message is a mini fact lookup ("what's a guild") that on its own
+  would read brief. The label is the raw answer to the focus question (single fact lookup:
+  `brief`); whether safari's stickiness holds against it is the scorer's separate sticky rule,
+  not this label.
+state:
+  previous: "walk me through how medieval trade worked, stop by stop"
+  prior_oracle_focus: safari
+  latest: "wait whats a guild"
+expect:
+  focus: {answer: brief}

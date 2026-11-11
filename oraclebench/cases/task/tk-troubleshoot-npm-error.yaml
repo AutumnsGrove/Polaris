@@ -1,0 +1,20 @@
+id: tk-troubleshoot-npm-error
+track: task
+rationale: >-
+  A pasted error message with a request to fix it: troubleshoot per its description ("often
+  with an error message"). Not a general explain even though it ends in a question.
+state:
+  latest: |-
+    npm install keeps failing with this, any idea
+
+    npm ERR! code ERESOLVE
+    npm ERR! ERESOLVE unable to resolve dependency tree
+    npm ERR! Found: react@18.3.1
+    npm ERR! Could not resolve dependency:
+    npm ERR! peer react@"^17.0.0" from react-beautiful-dnd@13.1.1
+expect:
+  task: {answer: troubleshoot}
+  intent: {answer: code, accept: [code, general]}
+quiet:
+  - emotional
+  - private_person

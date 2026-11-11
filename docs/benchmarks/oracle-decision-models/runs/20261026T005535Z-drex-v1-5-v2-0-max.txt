@@ -1,0 +1,21 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 1, latency budget 5.0s, weights a6cbc140bd53
+
+#   model              score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   nace-ai/drex-max   91.3   88.1-94.1  91.3       97%      95%    97%      95%    0%         0%   482ms  1.2s   $0.286  
+2   nace-ai/drex-v1.5  80.5   75.0-85.6  80.5       94%      91%    96%      82%    1%         0%   293ms  851ms  $0.137  
+x   nace-ai/drex-v2.0  64.7   58.1-70.6  64.7       80%      73%    92%      70%    1%         22%  769ms  1.6s   $0.161  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+x = disqualified:
+  nace-ai/drex-v2.0: error/refusal rate above 5%
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  nace-ai/drex-v1.5  █░░░░                           |         p50 293ms  p95 851ms 
+  nace-ai/drex-max   ███░░░░                         |         p50 482ms  p95 1.2s  
+  nace-ai/drex-v2.0  ████░░░░░                       |         p50 769ms  p95 1.6s  
+
+Tracks scoring 25+ points below the model's own headline:
+  nace-ai/drex-max: contested 66
+  nace-ai/drex-v1.5: premise 49, private_person 48
+  nace-ai/drex-v2.0: depth 26, task 15, ui 11

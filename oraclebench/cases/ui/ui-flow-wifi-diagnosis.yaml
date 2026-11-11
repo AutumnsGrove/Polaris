@@ -1,0 +1,15 @@
+id: ui-flow-wifi-diagnosis
+track: ui
+disputed_label: true
+rationale: >-
+  A diagnostic where the next step depends on what each check shows (does a wired connection
+  also lag? is it all devices?) - a branching chain, so flow rather than a straight steps
+  list. Disputed because many would accept steps or none for a troubleshooting answer.
+state:
+  latest: "My Wi-Fi has been slow lately. Please walk me through figuring out whether the problem is the router, my ISP, or my laptop, including what to check next depending on what I find at each stage."
+expect:
+  ui: {answer: flow, accept: [flow, steps]}
+  task: {answer: troubleshoot}
+quiet:
+  - emotional
+  - private_person

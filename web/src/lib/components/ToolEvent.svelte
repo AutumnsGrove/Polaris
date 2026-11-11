@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { marked } from '$lib/markdown';
-	import DOMPurify from 'dompurify';
+	import { renderAnswer } from '$lib/uiBlocks/renderAnswer';
+	import UiBlocks from './ui/UiBlocks.svelte';
+	import MermaidBlock from './MermaidBlock.svelte';
 	import hljs from '$lib/highlightjs';
+	import { reasoningStatsLabel } from '$lib/reasoningStats';
 	import type { TimelineItem, Card } from '$lib/types';
 	import ImageLightbox from './ImageLightbox.svelte';
 	import ImageGallery from './ImageGallery.svelte';
@@ -48,7 +50,10 @@
 	} from '@lucide/svelte';
 	import ShootingStar from './icons/ShootingStar.svelte';
 
-	let { item }: { item: TimelineItem } = $props();
+	// A 'subagent' item never reaches here: ChatTurnView renders those as
+	// SubAgentCard, which in turn renders each of its own nested items through
+	// this component.
+	let { item }: { item: Exclude<TimelineItem, { kind: 'subagent' }> } = $props();
 
 	// show renders as a large inline embed rather than the generic
 	// collapsible chip every other tool gets — see docs/plans/show.md:
@@ -95,6 +100,18 @@
 	// object for the lifetime of this component instance (keyed by index
 	// in the {#each} above), so there's no later prop change to react to.
 	let open = $state(untrack(() => item.kind === 'reasoning'));
+
+	// Drives the live "Thinking for Ns" counter. Only ticks while a live
+	// burst is still open — a finished or reloaded one reads its frozen
+	// durationMs instead, so there's no idle timer per old reasoning block.
+	let now = $state(Date.now());
+	$effect(() => {
+		if (item.kind !== 'reasoning' || item.done || item.startedAt === undefined) return;
+		now = Date.now();
+		const timer = setInterval(() => (now = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const reasoningStats = $derived(item.kind === 'reasoning' ? reasoningStatsLabel(item, now) : '');
 
 	// web_search's provider key ("searxng"/"brave"/"parallel"/"tavily") is
 	// a stable machine value (see types.ts's doc comment) — this maps it
@@ -170,14 +187,17 @@
 		return item.tool;
 	}
 
-	// Commentary is genuine assistant reply text (not private reasoning),
-	// so it's rendered as real markdown — same sanitize-then-parse
-	// treatment as the final answer in ChatTurnView.svelte, duplicated
-	// here rather than shared since Svelte's per-component style scoping
-	// means that component's .prose rules can't reach markup rendered by
-	// this one regardless of class name.
-	let commentaryHtml = $derived(
-		item.kind === 'commentary' ? DOMPurify.sanitize(marked.parse(item.content) as string) : ''
+	// Commentary is genuine assistant reply text (not private reasoning), so
+	// it goes through the same segment renderer as the final answer: a ```ui
+	// or ```mermaid fence in it becomes its component, not a code block. This
+	// matters because 'commentary' is a re-classification of text that already
+	// streamed in live as the answer (see turnEvents.ts) — a ui block the user
+	// watched build up must look the same once a tool call turns it into
+	// commentary, instead of collapsing into its raw JSON. No citations or
+	// verification: those belong to the final answer, not to mid-turn text.
+	// Not streaming: commentary only exists once the model moved on to a tool.
+	let commentarySegments = $derived(
+		item.kind === 'commentary' ? renderAnswer(item.content, false, []) : []
 	);
 
 	// The exact Python source a code_exec call ran — tools/code_exec.go's
@@ -198,12 +218,24 @@
 {#if item.kind === 'thinking'}
 	<div class="thinking">{item.content}</div>
 {:else if item.kind === 'commentary'}
-	<div class="commentary">{@html commentaryHtml}</div>
+	<div class="commentary">
+		{#each commentarySegments as seg, i (i)}
+			{#if seg.kind === 'md'}
+				{@html seg.html}
+			{:else if seg.kind === 'ui'}
+				<UiBlocks src={seg.src} citations={[]} fence={seg.fence ?? 0} />
+			{:else}
+				<MermaidBlock src={seg.src} closed={seg.closed} />
+			{/if}
+		{/each}
+	</div>
 {:else if item.kind === 'reasoning'}
 	<div class="tool-event">
 		<button class="tool-header" onclick={() => (open = !open)}>
 			<Brain size={13} color="var(--color-accent-2)" />
-			<span class="tool-label">{item.done ? 'Reasoned' : 'Reasoning…'}</span>
+			<span class="tool-label"
+				>{item.done ? 'Reasoned' : 'Reasoning…'}{#if reasoningStats}<span class="reasoning-stats">{reasoningStats}</span>{/if}</span
+			>
 			{#if !item.done}
 				<Loader2 size={13} color="var(--color-text-dim)" class="spin" />
 			{:else}
@@ -213,6 +245,15 @@
 		{#if open && item.content}
 			<pre class="tool-result">{item.content}</pre>
 		{/if}
+	</div>
+{:else if item.kind === 'provider_fallback'}
+	<!-- A Go attempt spilled mid-turn: the paid retry the transcript must
+	     never stay silent about (same convention as web_search's "[via X]"
+	     line). A chip, not a card — it annotates the turn, it isn't content.
+	     Title carries the classified error for the curious. -->
+	<div class="provider-fallback-chip" title={item.error ?? `${item.from} limit reached`}>
+		<span class="fallback-dot" aria-hidden="true"></span>
+		<span>Continued on {item.to === 'openrouter' ? 'OpenRouter' : item.to} — {item.from === 'opencode-go' ? 'Go' : item.from} limit reached</span>
 	</div>
 {:else if item.kind === 'compacted'}
 	<div class="tool-event compacted">
@@ -395,6 +436,25 @@
 {/if}
 
 <style>
+	/* The failover chip: a small inline marker that a Go attempt spilled
+	   to a paid retry mid-turn. Deliberately quiet (dim text, no card) —
+	   it's an annotation on the turn, not content worth expanding. */
+	.provider-fallback-chip {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		margin: var(--space-xs) 0;
+		font-size: 11.5px;
+		color: var(--color-text-dim);
+	}
+	.fallback-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--color-accent-2);
+		flex-shrink: 0;
+	}
+
 	.thinking {
 		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
 		border-radius: var(--radius-sm);
@@ -438,7 +498,7 @@
 
 	/* Same treatment as ChatTurnView.svelte's .prose :global(pre) — kept in
 	   sync by eye since scoped styles can't be shared directly, see the
-	   doc comment on commentaryHtml above for why this duplicates. */
+	   doc comment on commentarySegments above for why this duplicates. */
 	.commentary :global(pre) {
 		background: var(--color-surface-2);
 		border: none;
@@ -499,6 +559,16 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* Inside .tool-label (not a sibling) so the stats ellipsize with the
+	   title on a narrow phone header instead of pushing the chevron off. */
+	.reasoning-stats {
+		margin-left: var(--space-sm);
+		font-size: 11.5px;
+		font-weight: 400;
+		color: var(--color-text-dim);
+		font-variant-numeric: tabular-nums;
 	}
 
 	/* Sits directly above .tool-result, inside the same expanded panel —

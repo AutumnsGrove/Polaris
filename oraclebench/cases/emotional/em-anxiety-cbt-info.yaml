@@ -1,0 +1,11 @@
+id: em-anxiety-cbt-info
+track: emotional
+rationale: >-
+  Impersonal evidence question about CBT for generalized anxiety (could be a student or writer).
+  No distress expressed, so emotional=no.
+state:
+  latest: "How effective is cognitive behavioral therapy for generalized anxiety disorder compared to medication? Looking for what the meta-analyses say."
+expect:
+  emotional: {answer: "no"}
+quiet:
+  - private_person

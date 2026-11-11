@@ -1,0 +1,10 @@
+id: rs-casual-chat
+track: research
+rationale: >-
+  Pure casual conversation, no information request. research=no ("casual conversation").
+state:
+  latest: "ugh long day, how r u doing"
+expect:
+  research: {answer: "no"}
+quiet:
+  - private_person

@@ -4,7 +4,7 @@
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { X } from '@lucide/svelte';
 	import Asterism from './Asterism.svelte';
-	import { CHECK_DISPLAY, CHIP_NAMES, checkStateLabel, optionLabel } from '$lib/oracleLabels';
+	import { CHECK_DISPLAY, CHIP_NAMES, checkStateLabel, hasUiBlock, optionLabel } from '$lib/oracleLabels';
 
 	// The "why" sheet (docs/plans/oracle-mode.md's C1/4b) — answer stats
 	// first (shown regardless of whether Oracle ran this turn), then one
@@ -36,7 +36,10 @@
 	// "general", clarify "no") clears its threshold too but injects nothing,
 	// and used to get a card labeled "Nudged" with no nudge under it. Focus
 	// counts when it fired, since a pick or a clear is itself the change.
+	// Deep Research counts too: its change is the promotion itself, which has
+	// no injected nudge text (the result's own flag says it took effect).
 	function changedSomething(key: string, check: { fired: boolean; nudge?: string }): boolean {
+		if (key === 'deep_research') return check.fired && !!turn.oracleResult?.deep_research;
 		return check.fired && (key === 'focus' || !!check.nudge);
 	}
 	let firedChecks = $derived(
@@ -123,6 +126,16 @@
 		onClose();
 	}
 
+	// Shown whenever the answer holds a Prism block, not only when Oracle's ui
+	// check nudged: with Oracle off the base prompt alone can produce one, and
+	// a wrong block should always be one tap from plain prose.
+	let showPlainTextRerun = $derived(hasUiBlock(turn.content));
+
+	function rerunAsPlainText() {
+		appState.retry(index, undefined, false, true);
+		onClose();
+	}
+
 	let costTotal = $derived((turn.costAnswer ?? 0) + (turn.costVerification ?? 0) + (turn.costOracle ?? 0));
 	// The headline is the tiers' sum when there is one: turn.costUsd on a
 	// live turn is only what the 'done' event carried, while a reloaded turn
@@ -141,6 +154,12 @@
 
 		<div class="stats">
 			<div class="stat-cell wide"><span class="k">Model</span><span class="v">{modelName ?? '—'}</span></div>
+			{#if turn.provider === 'opencode-go'}
+				<!-- Turn cost is always list price, so a Go-served turn's full
+				     amount is what the subscription covered — the "$X real ·
+				     $Y covered" headline's per-turn proof. -->
+				<div class="stat-cell wide"><span class="k">Billed</span><span class="v go-covered">Covered by Go</span></div>
+			{/if}
 			<div class="stat-cell">
 				<span class="k">First token</span>
 				<span class="v">{turn.ttftMs !== undefined ? `${(turn.ttftMs / 1000).toFixed(1)}s` : '—'}</span>
@@ -199,13 +218,13 @@
 					{#if turn.costVerification}
 						<div class="cost-row">
 							<span class="dot t-verify"></span>Verification<span class="sub"
-								>Jev · {turn.verification?.length ?? 0} verified</span
+								>Decisions · {turn.verification?.length ?? 0} verified</span
 							><span class="amt">${turn.costVerification.toFixed(5)}</span>
 						</div>
 					{/if}
 					{#if turn.costOracle}
 						<div class="cost-row">
-							<span class="dot t-oracle"></span>Oracle<span class="sub">Jev · {checks.length} checks</span
+							<span class="dot t-oracle"></span>Oracle<span class="sub">Decisions · {checks.length} checks</span
 							><span class="amt">${turn.costOracle.toFixed(5)}</span>
 						</div>
 					{/if}
@@ -233,6 +252,12 @@
 						{/each}
 						{#if check.nudge}
 							<div class="nudge-text">{check.nudge}</div>
+						{/if}
+						{#if display.key === 'deep_research'}
+							<div class="nudge-text">
+								A deep, many-angled question — this message ran as Deep Research, with sub-researchers
+								planned for your go-ahead. Your thread's own Deep Research setting is unchanged.
+							</div>
 						{/if}
 						{#if display.key === 'focus'}
 							{@const alt = runnerUp(check.probabilities, check.winner)}
@@ -274,6 +299,10 @@
 
 			<button class="rerun" type="button" onclick={rerunWithoutOracle}>Rerun without Oracle</button>
 		{/if}
+
+		{#if showPlainTextRerun}
+			<button class="rerun" type="button" onclick={rerunAsPlainText}>Rerun as plain text</button>
+		{/if}
 	</div>
 </div>
 
@@ -296,6 +325,10 @@
 		padding: var(--space-sm) var(--space-md);
 		display: flex;
 		flex-direction: column;
+	}
+	.v.go-covered {
+		color: var(--color-accent-2);
+		font-weight: 600;
 	}
 
 	.stat-cell .k {

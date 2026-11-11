@@ -35,6 +35,14 @@ func TestPulseClientMessage_NoOracleFollowsUseOracle(t *testing.T) {
 	}
 }
 
+// A pulse opens a real thread in the normal chat view, which renders Prism
+// blocks, so its turn must opt in (the Pulsar pages only link to the thread).
+func TestPulseClientMessage_OffersVisuals(t *testing.T) {
+	if msg := pulseClientMessage(store.PulsarRoutine{ID: 7, Name: "r", Prompt: "p"}); !msg.OffersVisuals {
+		t.Error("a pulse should offer Prism blocks")
+	}
+}
+
 func TestIsRoutineDue_Daily(t *testing.T) {
 	now := mustParseTime(t, "2006-01-02 15:04", "2026-09-03 07:05")
 	longAgo := mustParseTime(t, "2006-01-02 15:04", "2026-08-01 00:00")

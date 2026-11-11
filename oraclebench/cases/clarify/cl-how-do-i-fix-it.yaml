@@ -1,0 +1,13 @@
+id: cl-how-do-i-fix-it
+track: clarify
+rationale: >-
+  First message with no referent for "it": nothing says what is broken, so research would be
+  wasted. clarify=yes ("a missing detail that changes everything"). Twin of cl-best-pizza, which
+  is also short but has an obvious default.
+state:
+  latest: "how do i fix it"
+expect:
+  clarify: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

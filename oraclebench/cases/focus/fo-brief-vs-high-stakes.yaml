@@ -1,0 +1,13 @@
+id: fo-brief-vs-high-stakes
+track: focus
+rationale: >-
+  Trap: an explicit brevity request ("quick one") on a medication-interaction question.
+  `brief` is never picked on a high-stakes turn (never_with_high_stakes), so the right
+  focus is not brief; researcher ("real consequences if wrong") or academic (medical, from
+  labels/guidelines) are both defensible, hence disputed. high_stakes is medical.
+state:
+  latest: "quick one can i take ibuprofen and tylenol together or no"
+expect:
+  focus: {answer: researcher, accept: [researcher, academic, "off"]}
+  high_stakes: {answer: medical}
+disputed_label: true

@@ -25,6 +25,7 @@ import (
 	"polaris/agent"
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/routing"
 	"polaris/tools"
 )
 
@@ -117,7 +118,7 @@ func (s *Server) handleWizardStart(w http.ResponseWriter, r *http.Request) {
 		turnMessage = p.WizardOpenerTask(target.Kind)
 	}
 
-	result, err := s.runWizardTurn(r.Context(), nil, turnMessage, target)
+	result, err := s.runWizardTurn(r.Context(), nil, turnMessage, target, sessionID)
 	if err != nil {
 		log.Warn("wizard start failed", "target", target.Kind, "err", err)
 		http.Error(w, "the wizard hit an error starting up — try again", http.StatusInternalServerError)
@@ -165,7 +166,7 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.runWizardTurn(r.Context(), session.history, message, session.target)
+	result, err := s.runWizardTurn(r.Context(), session.history, message, session.target, req.SessionID)
 
 	s.wizardMu.Lock()
 	session.busy = false
@@ -241,7 +242,7 @@ func (s *Server) recordWizardCost(sessionID, kind string, costUSD float64) {
 // generateTitle/generateSuggestions shape), just with no thread, no DB
 // writes, and no streaming: the answer comes back directly in the HTTP
 // response, not over the WebSocket.
-func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage string, target tools.WizardTarget) (*wizardTurnResult, error) {
+func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage string, target tools.WizardTarget, sessionID string) (*wizardTurnResult, error) {
 	cfg := s.liveConfig()
 	modelCfg := cfg.ModelByID(s.effectiveDefaultModel(cfg))
 	// AllowFallbacks(true) — escape valve for every pinned provider being
@@ -272,13 +273,22 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 	disabled["calculator"] = true
 	disabled["memory"] = true
 
+	// The interview runs on the thread model (deepseek by default), so it
+	// routes exactly like a turn: registry id for the chain, wizard
+	// session id for the Go header. Nil router keeps the direct path
+	// for contexts that never opt in — the wizard always does.
 	agentCtx := &tools.Context{
 		NoResearch:    true,
 		Wizard:        &target,
 		DisabledTools: disabled,
 		LLM:           client,
-		Emit:          func(string, map[string]interface{}) {}, // no live client to stream to
-		MaxTurns:      cfg.MaxAgentTurns,
+		ModelID:       modelCfg.ID,
+		Router: routing.Build(cfg, routing.Options{
+			SessionID: func() string { return sessionID },
+			UserAgent: "Polaris/" + s.version,
+		}),
+		Emit:     func(string, map[string]interface{}) {}, // no live client to stream to
+		MaxTurns: cfg.MaxAgentTurns,
 		// RequestLocation is never actually called here — no location-
 		// needing tool (weather/nearby_search) is ever offered under
 		// NoResearch above — but catalog.go's "interactive_chat" gate on

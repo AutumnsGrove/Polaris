@@ -1,0 +1,18 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                       score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   liquid/d1-ultra             87.9   84.2-91.1  87.9       96%      92%    96%      90%    0%         0%   236ms  340ms  $0.200  
+2   scaledown/classify-1        75.4   70.6-80.0  73.6       93%      82%    92%      82%    0%         0%   579ms  1.4s   $0.449  
+3   upstage/solar-decide-flash  57.3   49.5-64.8  57.3       84%      78%    89%      85%    4%         0%   1.3s   1.6s   $0.534  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  liquid/d1-ultra             █░                              |         p50 236ms  p95 340ms 
+  scaledown/classify-1        ███░░░░░░                       |         p50 579ms  p95 1.4s  
+  upstage/solar-decide-flash  ████████░░                      |         p50 1.3s   p95 1.6s  
+
+Tracks scoring 25+ points below the model's own headline:
+  scaledown/classify-1: premise 42
+  upstage/solar-decide-flash: contested 24, emotional 22, locale 22, premise 30

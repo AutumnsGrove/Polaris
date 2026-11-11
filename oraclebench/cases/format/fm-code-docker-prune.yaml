@@ -1,0 +1,14 @@
+id: fm-code-docker-prune
+track: format
+rationale: >-
+  The answer is a command. format=code is the clean read. ui should stay quiet: the ui none
+  option explicitly covers "code serves this best".
+state:
+  latest: "docker command to delete all stopped containers and unused images"
+expect:
+  format: {answer: code}
+  ui: {answer: "none"}
+  task: {answer: answer}
+quiet:
+  - emotional
+  - private_person

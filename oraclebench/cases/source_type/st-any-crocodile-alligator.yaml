@@ -1,0 +1,11 @@
+id: st-any-crocodile-alligator
+track: source_type
+rationale: >-
+  Settled general-knowledge comparison; no kind of source is clearly better than the general web,
+  so any (quiet). "Species" and "difference" are false friends for academic.
+state:
+  latest: "What is the difference between a crocodile and an alligator?"
+expect:
+  source_type: {answer: any}
+quiet:
+  - emotional

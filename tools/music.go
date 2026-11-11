@@ -171,7 +171,6 @@ func handleMusic(argsJSON string, ctx *Context, callID string) string {
 		"tool":      "music",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
-		"cards":     ctx.CardsSnapshot(),
 		"call_id":   callID,
 	})
 	return result
@@ -221,27 +220,31 @@ func lookupSimilarTrack(ctx *Context, artist, track string) (string, error) {
 	// regardless of how many results there are, same shape as
 	// aggregateSimilarTracks' fan-out.
 	descriptions := make([]string, len(similar))
+	cards := make([]Card, len(similar))
 	for i, rec := range concurrentMap(trackFanoutConcurrency, similar, func(t lastfmSimilarTrack) (trackRecommendation, error) {
 		cardURL := t.URL
 		if cardURL == "" {
 			cardURL = lastfmTrackURL(t.Artist.Name, t.Name)
 		}
 		wiki, _ := fetchTrackWiki(ctx, t.Artist.Name, t.Name)
+		medium, big := fetchDeezerCovers(ctx, "track", t.Artist.Name, t.Name)
 		return trackRecommendation{
 			Card: Card{
-				Title:    t.Name,
-				Subtitle: t.Artist.Name,
-				ImageURL: fetchDeezerCoverArt(ctx, "track", t.Artist.Name, t.Name),
-				URL:      cardURL,
+				Title:        t.Name,
+				Subtitle:     t.Artist.Name,
+				ImageURL:     medium,
+				FullImageURL: big,
+				URL:          cardURL,
 			},
 			Description: wiki,
 		}, nil
 	}) {
-		ctx.AddCard(rec.Card)
+		cards[i] = rec.Card
 		descriptions[i] = rec.Description
 	}
+	numbers := poolRecommendations(ctx, cards)
 
-	return formatSimilarTrackResult(resolvedArtist, resolvedTrack, tags, description, similar, descriptions), nil
+	return formatSimilarTrackResult(resolvedArtist, resolvedTrack, tags, description, similar, descriptions, numbers), nil
 }
 
 // trackRecommendation pairs a candidate track's Card with its best-effort
@@ -254,7 +257,7 @@ type trackRecommendation struct {
 	Description string
 }
 
-func formatSimilarTrackResult(artist, track string, tags []string, description string, similar []lastfmSimilarTrack, descriptions []string) string {
+func formatSimilarTrackResult(artist, track string, tags []string, description string, similar []lastfmSimilarTrack, descriptions []string, numbers []int) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s - %s\n", artist, track)
 	if len(tags) > 0 {
@@ -268,13 +271,13 @@ func formatSimilarTrackResult(artist, track string, tags []string, description s
 		sb.WriteString("(no similar tracks found)\n")
 	}
 	for i, t := range similar {
-		fmt.Fprintf(&sb, "%d. %s - %s", i+1, t.Artist.Name, t.Name)
+		fmt.Fprintf(&sb, "%d. %s - %s", recNumber(numbers, i), t.Artist.Name, t.Name)
 		if i < len(descriptions) && descriptions[i] != "" {
 			fmt.Fprintf(&sb, " — %s", descriptions[i])
 		}
 		sb.WriteString("\n")
 	}
-	return strings.TrimSpace(sb.String())
+	return withRecommendationsFooter(sb.String(), numbers)
 }
 
 // --- mode "album_tracks" ---
@@ -304,26 +307,30 @@ func lookupAlbumTracks(ctx *Context, artist, album string) (string, error) {
 	// the same set. Concurrent Deezer/Last.fm lookups, same shape as
 	// lookupSimilarTrack's.
 	descriptions := make([]string, len(ranked))
+	cards := make([]Card, len(ranked))
 	for i, rec := range concurrentMap(trackFanoutConcurrency, ranked, func(c *similarTrackCandidate) (trackRecommendation, error) {
 		wiki, _ := fetchTrackWiki(ctx, c.Artist, c.Track)
+		medium, big := fetchDeezerCovers(ctx, "track", c.Artist, c.Track)
 		return trackRecommendation{
 			Card: Card{
-				Title:    c.Track,
-				Subtitle: c.Artist,
-				ImageURL: fetchDeezerCoverArt(ctx, "track", c.Artist, c.Track),
-				URL:      lastfmTrackURL(c.Artist, c.Track),
+				Title:        c.Track,
+				Subtitle:     c.Artist,
+				ImageURL:     medium,
+				FullImageURL: big,
+				URL:          lastfmTrackURL(c.Artist, c.Track),
 			},
 			Description: wiki,
 		}, nil
 	}) {
-		ctx.AddCard(rec.Card)
+		cards[i] = rec.Card
 		descriptions[i] = rec.Description
 	}
+	numbers := poolRecommendations(ctx, cards)
 
-	return formatAlbumTracksResult(canonicalArtist, album, description, ranked, descriptions), nil
+	return formatAlbumTracksResult(canonicalArtist, album, description, ranked, descriptions, numbers), nil
 }
 
-func formatAlbumTracksResult(artist, album, description string, ranked []*similarTrackCandidate, descriptions []string) string {
+func formatAlbumTracksResult(artist, album, description string, ranked []*similarTrackCandidate, descriptions []string, numbers []int) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Similar tracks to %s by %s:\n", album, artist)
 	if description != "" {
@@ -334,7 +341,7 @@ func formatAlbumTracksResult(artist, album, description string, ranked []*simila
 		sb.WriteString("(no similar tracks found)\n")
 	}
 	for i, c := range ranked {
-		fmt.Fprintf(&sb, "%d. %s - %s", i+1, c.Artist, c.Track)
+		fmt.Fprintf(&sb, "%d. %s - %s", recNumber(numbers, i), c.Artist, c.Track)
 		if c.Count > 1 {
 			fmt.Fprintf(&sb, " (recommended by %d songs on the album)", c.Count)
 		}
@@ -343,7 +350,7 @@ func formatAlbumTracksResult(artist, album, description string, ranked []*simila
 		}
 		sb.WriteString("\n")
 	}
-	return strings.TrimSpace(sb.String())
+	return withRecommendationsFooter(sb.String(), numbers)
 }
 
 // --- mode "similar_albums" ---
@@ -413,27 +420,31 @@ func lookupSimilarAlbums(ctx *Context, artist, album string) (string, error) {
 	// call fetchTrackAlbum already made to resolve its album name in the
 	// first place — this mode is already documented as the expensive one.
 	descriptions := make([]string, len(ranked))
+	cards := make([]Card, len(ranked))
 	for i, rec := range concurrentMap(albumResolveConcurrency, ranked, func(c *similarAlbumCandidate) (trackRecommendation, error) {
 		cardURL := c.URL
 		if cardURL == "" {
 			cardURL = lastfmAlbumURL(c.Artist, c.Album)
 		}
 		wiki, _ := fetchAlbumWiki(ctx, c.Artist, c.Album)
+		medium, big := fetchDeezerCovers(ctx, "album", c.Artist, c.Album)
 		return trackRecommendation{
 			Card: Card{
-				Title:    c.Album,
-				Subtitle: c.Artist,
-				ImageURL: fetchDeezerCoverArt(ctx, "album", c.Artist, c.Album),
-				URL:      cardURL,
+				Title:        c.Album,
+				Subtitle:     c.Artist,
+				ImageURL:     medium,
+				FullImageURL: big,
+				URL:          cardURL,
 			},
 			Description: wiki,
 		}, nil
 	}) {
-		ctx.AddCard(rec.Card)
+		cards[i] = rec.Card
 		descriptions[i] = rec.Description
 	}
+	numbers := poolRecommendations(ctx, cards)
 
-	return formatSimilarAlbumsResult(canonicalArtist, album, description, ranked, descriptions), nil
+	return formatSimilarAlbumsResult(canonicalArtist, album, description, ranked, descriptions, numbers), nil
 }
 
 type similarAlbumCandidate struct {
@@ -444,7 +455,7 @@ type similarAlbumCandidate struct {
 	Tracks map[string]bool // distinct contributing candidate tracks — len() is the cross-track agreement count
 }
 
-func formatSimilarAlbumsResult(artist, album, description string, ranked []*similarAlbumCandidate, descriptions []string) string {
+func formatSimilarAlbumsResult(artist, album, description string, ranked []*similarAlbumCandidate, descriptions []string, numbers []int) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Similar albums to %s by %s:\n", album, artist)
 	if description != "" {
@@ -455,7 +466,7 @@ func formatSimilarAlbumsResult(artist, album, description string, ranked []*simi
 		sb.WriteString("(no similar albums found)\n")
 	}
 	for i, c := range ranked {
-		fmt.Fprintf(&sb, "%d. %s - %s", i+1, c.Artist, c.Album)
+		fmt.Fprintf(&sb, "%d. %s - %s", recNumber(numbers, i), c.Artist, c.Album)
 		if len(c.Tracks) > 1 {
 			fmt.Fprintf(&sb, " (%d tracks pointed here independently)", len(c.Tracks))
 		}
@@ -464,7 +475,7 @@ func formatSimilarAlbumsResult(artist, album, description string, ranked []*simi
 		}
 		sb.WriteString("\n")
 	}
-	return strings.TrimSpace(sb.String())
+	return withRecommendationsFooter(sb.String(), numbers)
 }
 
 // --- shared aggregation ---
@@ -894,6 +905,14 @@ var deezerBaseURL = "https://api.deezer.com"
 // citation this feeds just gets no thumbnail, never a broken/placeholder
 // image, and never blocks the tool's actual result.
 func fetchDeezerCoverArt(ctx *Context, kind, artist, title string) string {
+	medium, _ := fetchDeezerCovers(ctx, kind, artist, title)
+	return medium
+}
+
+// fetchDeezerCovers is fetchDeezerCoverArt returning both the medium cover
+// (cards/citations) and the big one (Card.FullImageURL, what show's gallery
+// loads). big is empty if Deezer omitted it — callers fall back to medium.
+func fetchDeezerCovers(ctx *Context, kind, artist, title string) (medium, big string) {
 	field := "track"
 	if kind == "album" {
 		field = "album"
@@ -903,40 +922,42 @@ func fetchDeezerCoverArt(ctx *Context, kind, artist, title string) string {
 	req, err := http.NewRequestWithContext(ctx.Ctx, "GET",
 		fmt.Sprintf("%s/search/%s?q=%s&limit=1", deezerBaseURL, field, url.QueryEscape(q)), nil)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil || len(body) > maxAPIResponseBytes || resp.StatusCode != http.StatusOK {
-		return ""
+		return "", ""
 	}
 
 	if kind == "album" {
 		var out struct {
 			Data []struct {
 				CoverMedium string `json:"cover_medium"`
+				CoverBig    string `json:"cover_big"`
 			} `json:"data"`
 		}
 		if json.Unmarshal(body, &out) != nil || len(out.Data) == 0 {
-			return ""
+			return "", ""
 		}
-		return out.Data[0].CoverMedium
+		return out.Data[0].CoverMedium, out.Data[0].CoverBig
 	}
 
 	var out struct {
 		Data []struct {
 			Album struct {
 				CoverMedium string `json:"cover_medium"`
+				CoverBig    string `json:"cover_big"`
 			} `json:"album"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(body, &out) != nil || len(out.Data) == 0 {
-		return ""
+		return "", ""
 	}
-	return out.Data[0].Album.CoverMedium
+	return out.Data[0].Album.CoverMedium, out.Data[0].Album.CoverBig
 }

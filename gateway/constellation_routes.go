@@ -12,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"polaris/backup"
 	"polaris/llm"
 	"polaris/prompts"
 	"polaris/store"
+	"polaris/tools"
 )
 
 func (s *Server) handleGetConstellationConfig(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +150,11 @@ func (s *Server) handleListConstellationStars(w http.ResponseWriter, r *http.Req
 // never finished). A Daily generation run gets the same treatment for the
 // same reason — Stage A-D can take several minutes of real research calls
 // (see startDailyGenerationIfIdle's doc comment), all of it lost the
-// instant the container recreates out from under it.
+// instant the container recreates out from under it. Comet's pipeline, and the
+// blocking classify/backfill admin endpoints (via claimCometRun), hold
+// cometGenerationRunning for the same reason, and an in-progress backup run
+// (create → mirror → prune) holds backup.runInProgress — killing that strands
+// a partial snapshot or a half-uploaded mirror, see that flag's own comment.
 func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 	constellationBusy, err := s.db.HasInFlightShootingStarRun()
 	if err != nil {
@@ -156,20 +162,25 @@ func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load()})
+	// embeddingBackfillRunning counts too — see its own doc comment: an
+	// update recreating the container mid-backfill cuts the run off rather
+	// than draining it. Same for backup.Busy, which covers both the create
+	// and the R2 mirror.
+	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load() || s.cometGenerationRunning.Load() || embeddingBackfillRunning.Load() || backup.Busy()})
 }
 
-// handleSearchConstellationStars backs the Library's search box —
-// SearchLibraryStars, not SearchStars (Weaver's own internal lead, which
-// deliberately includes rejected stars — see its doc comment for why
-// that'd be wrong to surface here).
+// handleSearchConstellationStars backs the Library's search box — the
+// library-eligible star set, not SearchStars (Weaver's own internal lead,
+// which deliberately includes rejected stars — see its doc comment for why
+// that'd be wrong to surface here). Hybrid: keyword and semantic results
+// fused, falling back to keyword-only when no embedding service exists.
 func (s *Server) handleSearchConstellationStars(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
 		writeJSON(w, []store.Star{})
 		return
 	}
-	results, err := s.db.SearchLibraryStars(query, 30)
+	results, err := searchLibraryStarsHybrid(s.embeds, s.db, r.Context(), query, 30)
 	if err != nil {
 		log.Warn("searching constellation stars failed", "err", err, "query", query)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -552,6 +563,14 @@ func (s *Server) handleGetConstellationStarVersions(w http.ResponseWriter, r *ht
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// A star that has never been content-merged has zero versions, and a nil
+	// slice marshals to JSON `null`, not `[]`. The star detail page does
+	// `(await getStarVersions(id)).length`, which threw on that null and
+	// aborted load() before it fetched neighbor stars — so any never-updated
+	// star silently lost its "Nearby in the constellation" mini-map.
+	if versions == nil {
+		versions = []store.StarVersion{}
+	}
 	writeJSON(w, versions)
 }
 
@@ -625,8 +644,14 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 	if err != nil {
 		return false, err
 	}
-	client := WeaverClient(s.liveConfig(), cfgRow.Model)
-	title, summary, body, invalidated, costUSD, err := reconcileStarContent(reqCtx, client, *star, correction)
+	cfg := s.liveConfig()
+	client := WeaverClient(cfg, cfgRow.Model)
+	// A star reconcile belongs to no thread; a per-star session id keeps the Go
+	// session-header requirement satisfied (see agent.OneShotOptions.SessionID).
+	// ModelByID(...).ID, not cfgRow.Model: an unset Weaver model means "the
+	// default", and routing needs the concrete registry id.
+	complete := s.routedComplete(cfg, client, cfg.ModelByID(cfgRow.Model).ID, fmt.Sprintf("star-reconcile-%d", id), nil)
+	title, summary, body, invalidated, costUSD, err := reconcileStarContent(reqCtx, complete, *star, correction)
 	if err != nil {
 		return false, err
 	}
@@ -650,18 +675,18 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 // title is "" unless the correction actually changed what the star is
 // about — see parseReconcileResponse's TITLE: handling — so a correction
 // that only adds nuance to an already-accurate title never touches it.
-func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star store.Star, correction string) (title, summary, body string, invalidated bool, costUSD float64, err error) {
+func reconcileStarContent(reqCtx context.Context, complete tools.CompleteFunc, star store.Star, correction string) (title, summary, body string, invalidated bool, costUSD float64, err error) {
 	task := fmt.Sprintf("Current title: %s\n\nCurrent summary: %s\n\nCurrent body:\n%s\n\nWhat they just said: %s", star.Title, star.Summary, star.Body, correction)
-	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
+	text, cost, err := complete(reqCtx, []llm.ChatMessage{
 		{Role: "system", Content: prompts.Get().Weaver.ReconcileSystem},
 		{Role: "user", Content: task},
-	}, func(string) {}, nil)
+	})
 	if err != nil {
 		return "", "", "", false, 0, err
 	}
-	title, summary, body, invalidated = parseReconcileResponse(resp.Content)
+	title, summary, body, invalidated = parseReconcileResponse(text)
 	if invalidated {
-		return "", "", "", true, resp.CostUSD, nil
+		return "", "", "", true, cost, nil
 	}
 	if summary == "" {
 		summary = star.Summary
@@ -669,7 +694,7 @@ func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star st
 	if body == "" {
 		body = star.Body
 	}
-	return title, summary, body, false, resp.CostUSD, nil
+	return title, summary, body, false, cost, nil
 }
 
 // parseReconcileResponse pulls INVALIDATES:/TITLE:/SUMMARY:/BODY: out of the
@@ -799,7 +824,7 @@ func (s *Server) handleConstellationBackfill(w http.ResponseWriter, r *http.Requ
 	cfg := s.liveConfig()
 	client := WeaverClient(cfg, cfgRow.Model)
 	modelID := cfg.ModelByID(cfgRow.Model).ID
-	processed, err := BackfillConstellation(r.Context(), s.db, client, modelID, limit, s.shootingStarTurnGate())
+	processed, err := BackfillConstellation(r.Context(), s.db, client, modelID, limit, s.shootingStarTurnGate(), s.embeds, cfg, "Polaris/"+s.version)
 	if err == store.ErrBackfillAlreadyRunning {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return

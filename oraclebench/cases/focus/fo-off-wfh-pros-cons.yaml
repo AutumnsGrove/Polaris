@@ -1,0 +1,12 @@
+id: fo-off-wfh-pros-cons
+track: focus
+rationale: >-
+  A balanced opinion/tradeoff question about team work arrangements. Normal balanced answer
+  is the best fit; nothing here is high-stakes or shopping. `off`.
+state:
+  latest: "I manage a small team of eight people. What are the main pros and cons of working remotely versus in the office?"
+expect:
+  focus: {answer: "off"}
+quiet:
+  - emotional
+  - high_stakes

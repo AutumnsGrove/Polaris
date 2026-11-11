@@ -1,0 +1,9 @@
+id: em-panic-attack
+track: emotional
+rationale: >-
+  Someone in the middle of what they believe is a panic attack. Informational on its face (how
+  long does it last) but clearly distressed in the moment, so emotional=yes.
+state:
+  latest: "pretty sure im having a panic attack, chest is tight and i cant breathe right. how long does this last"
+expect:
+  emotional: {answer: "yes"}

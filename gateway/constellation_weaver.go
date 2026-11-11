@@ -10,18 +10,24 @@ package gateway
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
+	"github.com/AutumnsGrove/nova/provider/route"
 	"github.com/google/uuid"
 
 	"polaris/agent"
+	"polaris/config"
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/routing"
 	"polaris/store"
 	"polaris/tools"
+	"polaris/uiblocks"
 )
 
 // weaverMaxTurns is Weaver's own turn cap — a real conversation thread is
@@ -42,7 +48,7 @@ const weaverMaxTurns = 25
 // convention gateway/turn.go's own CreateThread call uses) — needed only
 // to label the run's own hidden thread (see below), not to build client,
 // which the caller already constructed from the same id.
-func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string) error {
+func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string, embeds *embedService, cfg *config.Config, userAgent string) error {
 	// LastSuccessfulShootingStarRun, not LastShootingStarRun — see its own
 	// doc comment for the live-verified bug this avoids: basing the delta
 	// on a failed run's own last_message_id_seen made a retry with no new
@@ -84,17 +90,23 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return fmt.Errorf("shooting star: %w", err)
 	}
 
-	task, err := weaverTaskText(reqCtx, db, client, threadID, effectiveID, lastRun, msgs, runID)
+	// The filter pass takes the routed one-shot path like every other tool-side
+	// call, so a Weaver model routed to OpenCode Go does not spend OpenRouter
+	// money on it (pi-review caught this one left on the raw client).
+	complete := routedCompleteFor(db, userAgent, cfg, client, modelID, threadID, nil)
+	task, err := weaverTaskText(reqCtx, db, complete, threadID, effectiveID, lastRun, msgs, runID)
 	if err != nil {
 		warnOnErr("finishing failed shooting star run", db.FinishShootingStarRun(runID, "", err.Error(), true))
 		return fmt.Errorf("shooting star: %w", err)
 	}
 	if task == "" {
-		// Nothing new since the last run — the caller's eligibility gate
-		// (see gateway/constellation_scheduler.go) should already exclude
-		// this, but stay a harmless no-op rather than starting an empty
-		// run against Weaver.
-		warnOnErr("finishing no-op shooting star run", db.FinishShootingStarRun(runID, "nothing new since the last pass", "", false))
+		// Nothing to weave: no new messages since the last successful pass (the
+		// caller's eligibility gate should already exclude that), or the thread
+		// is one ReadThread refuses — a ghost/incognito thread or one deleted
+		// since the pass was scheduled. Finishing it as a clean run (needs_retry
+		// = 0) is what keeps either case from becoming a retry loop; the summary
+		// names both possibilities because this layer can't tell them apart.
+		warnOnErr("finishing no-op shooting star run", db.FinishShootingStarRun(runID, "nothing new since the last pass, or the thread is no longer readable", "", false))
 		return nil
 	}
 
@@ -121,7 +133,18 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return err
 	}())
 
-	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID)
+	// One router per shooting star: the session header must be this
+	// run's own thread, and a shared process-wide router could not carry
+	// per-thread ids (see routing.Build). Nil cfg (tests) keeps the
+	// direct path.
+	var router *route.Router
+	if cfg != nil {
+		router = routing.Build(cfg, routing.Options{
+			SessionID: func() string { return threadID },
+			UserAgent: userAgent,
+		})
+	}
+	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID, embeds, router, modelID)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		warnOnErr("finishing failed shooting star run", db.FinishShootingStarRun(runID, "", err.Error(), true))
@@ -170,14 +193,14 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 // unrecovered panic anywhere in Weaver's loop (agent.Run, any of the five
 // tool handlers) would otherwise take down the whole Polaris process
 // instead of just failing that one shooting star.
-func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string) (err error) {
+func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string, embeds *embedService, cfg *config.Config, userAgent string) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Error("panic running shooting star", "thread_id", threadID, "panic", rec)
 			err = fmt.Errorf("shooting star: panic: %v", rec)
 		}
 	}()
-	return RunShootingStar(reqCtx, db, client, threadID, modelID)
+	return RunShootingStar(reqCtx, db, client, threadID, modelID, embeds, cfg, userAgent)
 }
 
 // turnGate lets a shooting star register with the server's shutdown-drain
@@ -227,12 +250,23 @@ func (s *Server) shootingStarTurnGate() turnGate {
 // for reading actual message content — see RunShootingStar's own doc
 // comment on why these two can differ) are deliberately separate params,
 // not one id used for both.
-func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, effectiveID string, lastRun *store.ShootingStarRun, msgs []store.Message, runID int64) (string, error) {
+func weaverTaskText(reqCtx context.Context, db *store.Store, complete tools.CompleteFunc, threadID, effectiveID string, lastRun *store.ShootingStarRun, msgs []store.Message, runID int64) (string, error) {
 	if lastRun == nil {
 		// First-ever pass on this thread: no prior notes exist, so
 		// there's nothing to filter for — Weaver gets the thread's raw
 		// content directly, no filter pass.
 		read, err := db.ReadThread(effectiveID)
+		if errors.Is(err, sql.ErrNoRows) {
+			// The thread is deliberately unreadable — a ghost (incognito)
+			// thread, which ReadThread refuses by design, or one deleted out
+			// from under the pass. "Nothing to weave" is a finished run, not a
+			// failed one: returning the error here marked needs_retry = 1, and
+			// EligibleConstellationThreads re-selects any thread whose last run
+			// needs a retry, so one unreadable thread retried forever — found
+			// live on 2026-10-27 as 12,789 runs at one per minute (see that
+			// function's comment for the eligibility half of the fix).
+			return "", nil
+		}
 		if err != nil {
 			return "", err
 		}
@@ -247,13 +281,17 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 		}
 		deltaMsgs = append(deltaMsgs, m)
 		label := "User"
+		content := m.Content
 		if m.Role == "assistant" {
 			label = "Assistant"
+			// Same reasoning as store.ReadThread: Weaver reads text, not
+			// rendered blocks, so a `ui` fence becomes readable lines.
+			content = uiblocks.Flatten(content)
 		}
 		if delta.Len() > 0 {
 			delta.WriteString("\n\n")
 		}
-		delta.WriteString(label + ": " + m.Content)
+		delta.WriteString(label + ": " + content)
 	}
 	deltaText := delta.String()
 	if deltaText == "" {
@@ -274,7 +312,7 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 	}
 	instruction := fmt.Sprintf(prompts.Get().Weaver.RevisitInstruction, notes.String())
 
-	filtered, filterCost, ferr := tools.FilterExtractedText(reqCtx, client, prompts.Get().Tools.ThreadReadFilterSystem, deltaText, instruction)
+	filtered, filterCost, ferr := tools.FilterExtractedText(reqCtx, complete, prompts.Get().Tools.ThreadReadFilterSystem, deltaText, instruction)
 	if ferr != nil {
 		// Degrade to the raw delta rather than failing the whole run —
 		// the same choice web_read/search_chats' own FilterExtractedText
@@ -360,7 +398,7 @@ func warnOnErr(op string, err error) {
 // star_id this exact run has already surfaced via search_stars/read_star
 // (or just created itself), never one that appears in a tool call with no
 // prior lookup in this run at all.
-func weaverToolClosures(db *store.Store, threadID string) (
+func weaverToolClosures(db *store.Store, threadID string, embeds *embedService, ctx context.Context) (
 	search func(query string) ([]store.StarSearchResult, error),
 	read func(starID int64) (*store.Star, error),
 	create func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool, reasoning string) (int64, error),
@@ -368,14 +406,14 @@ func weaverToolClosures(db *store.Store, threadID string) (
 	link func(starIDA, starIDB int64, reasoning string) error,
 ) {
 	// seenStarsMu guards seenStars against concurrent tool dispatch:
-	// agent.Run's dispatchToolCallsConcurrently fans out every non-
+	// agent.Run's parallel tool dispatch fans out every non-
 	// code_exec tool call from one model turn across goroutines (OpenRouter
 	// is asked for parallel_tool_calls: true — see llm/client.go), so two
 	// Weaver tool calls batched in the same turn (e.g. two search_stars, or
 	// search_stars + read_star) hit this map concurrently. An unsynchronized
 	// Go map write under concurrent access is a runtime "fatal error:
 	// concurrent map writes" — unlike a normal panic, that bypasses
-	// dispatchToolCallsConcurrently's own per-call recover() entirely and
+	// dispatchGuarded's own per-call recover() entirely and
 	// crashes the whole process, not just this one shooting star.
 	var seenStarsMu sync.Mutex
 	seenStars := map[int64]bool{}
@@ -395,7 +433,11 @@ func weaverToolClosures(db *store.Store, threadID string) (
 	}
 
 	search = func(query string) ([]store.StarSearchResult, error) {
-		results, err := db.SearchStars(query, 10)
+		// Hybrid: this is Weaver's dedup guard, and a false "nothing found"
+		// is exactly how duplicate stars get created (see
+		// store.SearchStars' doc comment). Keyword results stay first-class
+		// — fusion only reorders — so an exact-title hit still wins.
+		results, err := searchStarsHybrid(embeds, db, ctx, query, 10)
 		for _, r := range results {
 			markSeen(r.ID)
 		}
@@ -442,7 +484,7 @@ func weaverToolClosures(db *store.Store, threadID string) (
 	return
 }
 
-func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID, weaverThreadID, turnID string) *tools.Context {
+func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID, weaverThreadID, turnID string, embeds *embedService, router *route.Router, modelID string) *tools.Context {
 	categories, err := db.DistinctCategories()
 	if err != nil {
 		// Not fatal — the escape hatch just falls back to guessing blind,
@@ -458,11 +500,16 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 	personName := PersonNameFromStore(db)
 	personPronouns := PersonPronounsFromStore(db)
 
-	search, read, create, update, link := weaverToolClosures(db, threadID)
+	search, read, create, update, link := weaverToolClosures(db, threadID, embeds, reqCtx)
 
+	// A shooting star runs on the constellation model, so it routes like
+	// a turn: registry id for the chain, the root thread for the Go
+	// header. Nil router keeps the direct path (tests, unconfigured).
 	return &tools.Context{
 		Ctx:       reqCtx,
 		LLM:       client,
+		ModelID:   modelID,
+		Router:    router,
 		WeaverRun: true,
 		MaxTurns:  weaverMaxTurns,
 		// Two independent jobs live here now. (1) The original one: a
@@ -505,7 +552,9 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 		// together-or-not-at-all way gateway/turn.go does for the main
 		// assistant (offered()'s "chat_search" case is gated on
 		// SearchThreads != nil alone, same reasoning as memory_store).
-		SearchThreads:     db.SearchMessages,
+		SearchThreads: func(query string, limit int) ([]store.MessageSearchResult, error) {
+			return searchChatsHybrid(embeds, db, reqCtx, query, limit)
+		},
 		ListRecentThreads: db.ListThreadsPage,
 		ReadThread:        db.ReadThread,
 

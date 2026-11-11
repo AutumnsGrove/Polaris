@@ -47,21 +47,47 @@ type Stats struct {
 
 	// VerificationCostUSD is how much of the above (already counted once,
 	// inside CostBySource.Polaris/.Pulsar via ctx.AddCost -> messages.
-	// cost_usd) was specifically Jev verification spend — a transparency
+	// cost_usd) was specifically decisions-API verification spend — a transparency
 	// breakout, not a fourth additive bucket. Deliberately NOT summed into
 	// TotalCostUSD/PeriodCostUSD or CostBySource a second time; see
-	// jev_usage's schema comment (store.go) and
+	// decisions_usage's schema comment (store.go) and
 	// docs/plans/source-verification-compare-tool.md's cost-tracking
-	// section. Sourced from jev_usage, a per-call ledger, so period
+	// section. Sourced from decisions_usage, a per-call ledger, so period
 	// filtering is exact (trailing N days), unlike a calendar-month-only
 	// aggregate would allow.
 	VerificationCostUSD SourceCost `json:"verification_cost_usd"`
-	// OracleCostUSD is the same kind of breakout for Oracle mode's own Jev
-	// pre-read spend (jev_usage rows with source = 'oracle') — already
+	// OracleCostUSD is the same kind of breakout for Oracle mode's own decisions
+	// pre-read spend (decisions_usage rows with source = 'oracle') — already
 	// inside CostBySource.Polaris via messages.cost_usd, never added a
 	// second time. Split from VerificationCostUSD so neither reads as the
 	// other's spend (issue #125).
 	OracleCostUSD SourceCost `json:"oracle_cost_usd"`
+	// CoveredBySubscription is how much of the above (already counted once,
+	// inside TotalCostUSD/PeriodCostUSD via messages.cost_usd, which is
+	// denominated in list price) the Go subscription covered — a
+	// transparency breakout, never added a second time. Sourced from
+	// provider_usage, so unlike VerificationCostUSD above it sums
+	// list_cost_usd (retail, the same currency as the totals), not the
+	// allowance dollars the plan consumed. "Covered" is billing_source
+	// go/go-plus — free/byok rows are covered at $0 allowance but keep
+	// their own billing_source, so they stay out of this slice; balance
+	// rows are real money and live in BilledToBalance below. The
+	// headline reads "$X real · $Y covered by Go" with real as the
+	// total minus covered. See docs/plans/multi-provider.md §6.
+	CoveredBySubscription SourceCost `json:"covered_by_subscription"`
+	// BilledToBalance is the same breakout shape for provider_usage rows
+	// with billing_source balance — real console money, and always a
+	// misconfiguration (plan §6.6), never a routing outcome. Zero in
+	// normal operation; nonzero is the loud warning, not a line item.
+	BilledToBalance SourceCost `json:"billed_to_balance"`
+	// DecisionCalls counts real decisions API calls (rows in decisions_usage), not questions
+	// asked or turns — one Oracle turn is one call. Verification is
+	// source = '' (per-claim badges, plus every pre-split compare_sources
+	// row, which can't be told apart retroactively); Compare is source =
+	// 'compare', only rows written since LogCompareDecisionsCost existed (issue
+	// #151). A call that errored before billing writes no row, so these
+	// undercount failures.
+	DecisionCalls DecisionCallCounts `json:"decision_calls"`
 
 	ThreadCount int `json:"thread_count"`
 	TurnCount   int `json:"turn_count"`
@@ -78,6 +104,13 @@ type Stats struct {
 	// in the period, not "unknown".
 	ToolCallCounts  map[string]int `json:"tool_call_counts"`
 	ToolErrorCounts map[string]int `json:"tool_error_counts"`
+	// MadeUpToolCounts is the same shape for calls to tools that don't
+	// exist — the model hallucinating a name (tools.Dispatch answers
+	// "error: unknown tool X"). Kept out of ToolCallCounts/ToolErrorCounts
+	// so a bogus name never shows up as a real tool with a 100% error
+	// rate, but counted here because a spike is a real signal (a tool
+	// description or prompt change that confuses the model).
+	MadeUpToolCounts map[string]int `json:"made_up_tool_counts"`
 
 	// CheckInCount/StaleStreakCount/MaxTurnsWrapupCount are how often
 	// each research-steering signal fired (see agent/driver.go's
@@ -127,6 +160,19 @@ type CacheUsage struct {
 	TotalCacheReadTokens  int `json:"total_cache_read_tokens"`
 }
 
+// CallCount is one bucket's period/all-time number of calls.
+type CallCount struct {
+	Period int `json:"period"`
+	Total  int `json:"total"`
+}
+
+// DecisionCallCounts is Stats.DecisionCalls — see its doc comment.
+type DecisionCallCounts struct {
+	Oracle       CallCount `json:"oracle"`
+	Verification CallCount `json:"verification"`
+	Compare      CallCount `json:"compare"`
+}
+
 // SourceCost is one bucket's period/all-time cost — see
 // Stats.CostBySource.
 type SourceCost struct {
@@ -135,16 +181,32 @@ type SourceCost struct {
 }
 
 // CostBySource is Stats.TotalCostUSD/PeriodCostUSD broken down by where
-// the cost actually came from. Polaris + Pulsar + Daily + Constellation
-// always sums back to the plain total/period figures exactly — see
-// GetStats. There's no separate "ghost" bucket: ghost-mode spend is
-// folded straight into Polaris, the same source a ghost thread would
-// have been tagged if it were persisted — see GetStats.
+// the cost actually came from. Polaris + Pulsar + Daily + Constellation +
+// Comet + Embeddings always sums back to the plain total/period figures
+// exactly — see GetStats. There's no separate "ghost" bucket: ghost-mode
+// spend is folded straight into Polaris, the same source a ghost thread
+// would have been tagged if it were persisted — see GetStats.
+//
+// Embeddings is the one bucket that isn't a content source: it's index
+// maintenance spend (aux_usage kind 'embedding'), with no conversation or
+// edition behind it. It gets its own row rather than being folded into
+// Polaris the way ghost spend is, because folding would attribute
+// infrastructure cost to conversation cost and make "what did my chats
+// cost" quietly wrong after every backfill.
+//
+// Comet's bucket is two payers: its Approaches are real turns, so their
+// spend rides ordinary messages.cost_usd on a source = 'comet_approach'
+// hidden thread (routed here instead of into Polaris), and the once-a-month
+// trend synthesis has no thread at all, so it's billed through aux_usage
+// under a comet_* kind (split out of the aux fold below). trails.cost_usd
+// stays an audit mirror and is deliberately never summed anywhere.
 type CostBySource struct {
 	Polaris       SourceCost `json:"polaris"`
 	Pulsar        SourceCost `json:"pulsar"`
 	Daily         SourceCost `json:"daily"`
 	Constellation SourceCost `json:"constellation"`
+	Comet         SourceCost `json:"comet"`
+	Embeddings    SourceCost `json:"embeddings"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -156,6 +218,7 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		PeriodDays:           periodDays,
 		ToolCallCounts:       map[string]int{},
 		ToolErrorCounts:      map[string]int{},
+		MadeUpToolCounts:     map[string]int{},
 		SearchProviderCounts: map[string]int{},
 	}
 
@@ -207,18 +270,24 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// a late cost (suggestions, verification) only ever lands on the
 	// original row. Deleted threads count too: that money was really spent.
 	if err := s.costBySource("", func(source string, cost float64) {
-		if source == "pulsar" {
+		switch source {
+		case "pulsar":
 			stats.CostBySource.Pulsar.TotalCostUSD += cost
-		} else {
+		case "comet_approach":
+			stats.CostBySource.Comet.TotalCostUSD += cost
+		default:
 			stats.CostBySource.Polaris.TotalCostUSD += cost
 		}
 	}); err != nil {
 		return nil, err
 	}
 	if err := s.costBySource(since, func(source string, cost float64) {
-		if source == "pulsar" {
+		switch source {
+		case "pulsar":
 			stats.CostBySource.Pulsar.PeriodCostUSD += cost
-		} else {
+		case "comet_approach":
+			stats.CostBySource.Comet.PeriodCostUSD += cost
+		default:
 			stats.CostBySource.Polaris.PeriodCostUSD += cost
 		}
 	}); err != nil {
@@ -332,8 +401,49 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 			return nil, err
 		}
 	}
-	stats.CostBySource.Polaris.TotalCostUSD += auxTotal
-	stats.CostBySource.Polaris.PeriodCostUSD += auxPeriod
+	// Comet's trend-synthesis call is aux spend too, but it belongs in the
+	// Comet bucket rather than Polaris — split out by its comet_* kind
+	// prefix. Everything else stays chat-adjacent and folds into Polaris as
+	// before.
+	var cometAuxTotal, cometAuxPeriod float64
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind LIKE 'comet_%'`,
+	).Scan(&cometAuxTotal); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		cometAuxPeriod = cometAuxTotal
+	} else if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind LIKE 'comet_%' AND created_at >= ?`, since,
+	).Scan(&cometAuxPeriod); err != nil {
+		return nil, err
+	}
+	// Embedding spend is aux spend too, but it belongs in its own bucket:
+	// it's index maintenance, not something a conversation caused. Split out
+	// by its exact kind rather than a prefix, since there is deliberately
+	// only ever one (see store.AuxKindEmbedding).
+	var embedAuxTotal, embedAuxPeriod float64
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind = ?`, AuxKindEmbedding,
+	).Scan(&embedAuxTotal); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		embedAuxPeriod = embedAuxTotal
+	} else if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE kind = ? AND created_at >= ?`, AuxKindEmbedding, since,
+	).Scan(&embedAuxPeriod); err != nil {
+		return nil, err
+	}
+	stats.CostBySource.Embeddings.TotalCostUSD += embedAuxTotal
+	stats.CostBySource.Embeddings.PeriodCostUSD += embedAuxPeriod
+
+	stats.CostBySource.Comet.TotalCostUSD += cometAuxTotal
+	stats.CostBySource.Comet.PeriodCostUSD += cometAuxPeriod
+	// Everything else stays chat-adjacent and folds into Polaris — minus both
+	// of the splits above, or those dollars would be counted twice.
+	stats.CostBySource.Polaris.TotalCostUSD += auxTotal - cometAuxTotal - embedAuxTotal
+	stats.CostBySource.Polaris.PeriodCostUSD += auxPeriod - cometAuxPeriod - embedAuxPeriod
 
 	// TotalCostUSD/PeriodCostUSD: the true, complete grand total across
 	// every real spend path — computed last, once every bucket above
@@ -343,9 +453,11 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// excluded — see CostBySource's own doc comment for why that looked
 	// like the breakdown didn't add up.
 	stats.TotalCostUSD = stats.CostBySource.Polaris.TotalCostUSD + stats.CostBySource.Pulsar.TotalCostUSD +
-		stats.CostBySource.Daily.TotalCostUSD + stats.CostBySource.Constellation.TotalCostUSD
+		stats.CostBySource.Daily.TotalCostUSD + stats.CostBySource.Constellation.TotalCostUSD +
+		stats.CostBySource.Comet.TotalCostUSD + stats.CostBySource.Embeddings.TotalCostUSD
 	stats.PeriodCostUSD = stats.CostBySource.Polaris.PeriodCostUSD + stats.CostBySource.Pulsar.PeriodCostUSD +
-		stats.CostBySource.Daily.PeriodCostUSD + stats.CostBySource.Constellation.PeriodCostUSD
+		stats.CostBySource.Daily.PeriodCostUSD + stats.CostBySource.Constellation.PeriodCostUSD +
+		stats.CostBySource.Comet.PeriodCostUSD + stats.CostBySource.Embeddings.PeriodCostUSD
 
 	// VerificationCostUSD: a breakout, not an addition — this money is
 	// already inside TotalCostUSD/CostBySource above (it arrived via
@@ -360,15 +472,72 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		{&stats.OracleCostUSD, "source = 'oracle'"},
 	} {
 		if err := s.db.QueryRow(
-			`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE ` + b.where,
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM decisions_usage WHERE ` + b.where,
 		).Scan(&b.dst.TotalCostUSD); err != nil {
 			return nil, err
 		}
 		if since == "" {
 			b.dst.PeriodCostUSD = b.dst.TotalCostUSD
 		} else if err := s.db.QueryRow(
-			`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE created_at >= ? AND `+b.where, since,
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM decisions_usage WHERE created_at >= ? AND `+b.where, since,
 		).Scan(&b.dst.PeriodCostUSD); err != nil {
+			return nil, err
+		}
+	}
+
+	// CoveredBySubscription/BilledToBalance: breakouts, not additions —
+	// this money is already inside TotalCostUSD/CostBySource above (it
+	// arrived via routing.ListCost into messages.cost_usd during the
+	// turn), so neither figure here is added a second time. Unlike the
+	// decisions_usage block just above, the sums read list_cost_usd
+	// (retail, the totals' currency), never allowance_usd (plan dollars).
+	if total, err := s.CoveredBySubscription(""); err != nil {
+		return nil, err
+	} else {
+		stats.CoveredBySubscription.TotalCostUSD = total
+	}
+	if total, err := s.BilledToBalance(""); err != nil {
+		return nil, err
+	} else {
+		stats.BilledToBalance.TotalCostUSD = total
+	}
+	if since == "" {
+		stats.CoveredBySubscription.PeriodCostUSD = stats.CoveredBySubscription.TotalCostUSD
+		stats.BilledToBalance.PeriodCostUSD = stats.BilledToBalance.TotalCostUSD
+	} else {
+		if period, err := s.CoveredBySubscription(since); err != nil {
+			return nil, err
+		} else {
+			stats.CoveredBySubscription.PeriodCostUSD = period
+		}
+		if period, err := s.BilledToBalance(since); err != nil {
+			return nil, err
+		} else {
+			stats.BilledToBalance.PeriodCostUSD = period
+		}
+	}
+
+	// Call counts use the same period filter as the cost breakouts above.
+	// Verification is an exact match on '' rather than "not oracle" so the
+	// new 'compare' rows don't leak into the badge count.
+	for _, b := range []struct {
+		dst    *CallCount
+		source string
+	}{
+		{&stats.DecisionCalls.Oracle, "oracle"},
+		{&stats.DecisionCalls.Verification, ""},
+		{&stats.DecisionCalls.Compare, "compare"},
+	} {
+		if err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM decisions_usage WHERE source = ?`, b.source,
+		).Scan(&b.dst.Total); err != nil {
+			return nil, err
+		}
+		if since == "" {
+			b.dst.Period = b.dst.Total
+		} else if err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM decisions_usage WHERE source = ? AND created_at >= ?`, b.source, since,
+		).Scan(&b.dst.Period); err != nil {
 			return nil, err
 		}
 	}
@@ -420,14 +589,20 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// message = 'tool call finished' excludes the paired 'tool call
 	// started' row logTurnEvent also writes per call (see gateway/turn.go)
 	// — counting both would double every tool call.
-	toolQuery := `SELECT source, level, COUNT(*) FROM events
+	// made_up splits out calls to nonexistent tools by the exact result
+	// string tools.Dispatch writes for them. json_valid guards the
+	// json_extract (a malformed blob would otherwise fail the whole query);
+	// CASE evaluates lazily, so it never reaches json_extract on one.
+	toolQuery := `SELECT source, level,
+			CASE WHEN json_valid(data) AND json_extract(data, '$.result') LIKE 'error: unknown tool %' THEN 1 ELSE 0 END AS made_up,
+			COUNT(*) FROM events
 		WHERE source LIKE 'tool.%' AND message = 'tool call finished'`
 	toolArgs := []interface{}{}
 	if since != "" {
 		toolQuery += ` AND created_at >= ?`
 		toolArgs = append(toolArgs, since)
 	}
-	toolQuery += ` GROUP BY source, level`
+	toolQuery += ` GROUP BY source, level, made_up`
 	toolRows, err := s.db.Query(toolQuery, toolArgs...)
 	if err != nil {
 		return nil, err
@@ -435,11 +610,15 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	defer toolRows.Close()
 	for toolRows.Next() {
 		var source, level string
-		var count int
-		if err := toolRows.Scan(&source, &level, &count); err != nil {
+		var madeUp, count int
+		if err := toolRows.Scan(&source, &level, &madeUp, &count); err != nil {
 			return nil, err
 		}
 		tool := strings.TrimPrefix(source, "tool.")
+		if madeUp == 1 {
+			stats.MadeUpToolCounts[tool] += count
+			continue
+		}
 		stats.ToolCallCounts[tool] += count
 		if level == "warn" {
 			stats.ToolErrorCounts[tool] += count

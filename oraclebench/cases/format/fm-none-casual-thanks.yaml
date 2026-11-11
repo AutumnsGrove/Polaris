@@ -1,0 +1,15 @@
+id: fm-none-casual-thanks
+track: format
+rationale: >-
+  Casual acknowledgement mid-thread. No shape beats ordinary prose, so every shape check
+  should be quiet. A false positive here (a table for "thanks") is the failure that matters.
+state:
+  previous: "whats the best way to reheat pizza so the crust stays crispy"
+  latest: "ok nice that worked thanks"
+expect:
+  format: {answer: "none"}
+  ui: {answer: "none"}
+  depth: {answer: quick}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,13 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model           score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   baseten/joey-1  55.6   48.4-62.0  55.6       85%      75%    89%      68%    0%         0%   360ms  572ms  $0.078  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  baseten/joey-1  ██░                             |         p50 360ms  p95 572ms 
+
+Tracks scoring 25+ points below the model's own headline:
+  baseten/joey-1: clarify 20, contested 11, locale -40, premise -11

@@ -72,6 +72,15 @@ export class AppState {
 	threadFocusMode = $state<FocusMode>('off');
 	threadDeepResearch = $state(false);
 	threadNoResearch = $state(false);
+	// The composer's live focusMode/deepResearch/noResearch, mirrored from
+	// ChatView.svelte (which still owns the real state) by an effect there.
+	// send() falls back to these for any caller that doesn't pass its own
+	// (answering an ask_user_question card, suggestion chips, voice), so a
+	// reply can't silently drop a toggle the user has on: the server gates
+	// tools per turn and writes each turn's flags back as the thread's
+	// sticky config, so a dropped deep_research meant the Deep Research
+	// plan's "Run it" ran a turn with no spawn_researchers tool.
+	composerConfig = $state<{ focusMode: FocusMode; deepResearch: boolean; noResearch: boolean } | null>(null);
 	// Bumped by openThread()/newThread() — the two places that are a real,
 	// user-initiated thread switch — so ChatView's config-restoring effect
 	// reacts to an actual switch instead of to currentThreadId changing for
@@ -119,7 +128,35 @@ export class AppState {
 	// ThreadMenu's "Move to field" all read.
 	activeFieldId = $derived(this.currentThread ? (this.currentThread.field_id ?? null) : this.pendingFieldId);
 	currentThreadId = $state<string | null>(null);
+	// True while openThread() is fetching a thread to show — the one signal
+	// that distinguishes "no thread selected" (newThread(), the homepage)
+	// from "a thread is on its way". Without it both rendered as the same
+	// WelcomeScreen, so opening a slow thread (a Pulsar pulse's events fetch
+	// runs to a couple of MB) looked like the tap had bounced back to the
+	// homescreen: the URL changed to /t/<id> but the view sat on the landing
+	// screen for the whole load. ChatView shows a dedicated loading state
+	// instead whenever this is true and turns is still empty — turns is only
+	// replaced at the end of a successful load, so once there's content on
+	// screen this flag can never hide it (which is also why a poll-triggered
+	// openThread() for the already-open thread is safe to mark loading:
+	// turns is non-empty there, so nothing visibly changes).
+	//
+	// Cleared only by the openThread() call that still owns openThreadSeq — a
+	// superseded call leaves it set for its successor, and a stale response
+	// can't flip it (or currentThreadId) off after the user has navigated
+	// away. newThread() clears it too, since it supersedes any in-flight load.
+	threadLoading = $state(false);
 	connected = $state(false);
+	// One entry per answered heartbeat ping, newest last — the sidebar's
+	// connection trace draws one travelling beat per entry (Sidebar.svelte's
+	// .trace). Capped at 3 because a beat takes 6s to cross the box while a
+	// ping goes out every 2s (ws.ts's HEARTBEAT_MS): by the time a fourth
+	// lands, the first is already past the box's right edge, so keeping it
+	// would only pile up invisible elements. Cleared the moment the socket
+	// closes, so a reconnecting trace shows a broken line instead of beats
+	// still arriving from nowhere.
+	heartbeats = $state<number[]>([]);
+	private beatSeq = 0;
 	busy = $state(false);
 	totalCost = $state(0);
 	// Version polling lives in VersionState; these delegates keep the
@@ -307,9 +344,22 @@ export class AppState {
 	constructor() {
 		this.socket = new AgentSocket(
 			(e) => this.handleEvent(e),
-			(connected) => (this.connected = connected),
-			() => this.resyncAfterReconnect()
+			(connected) => {
+				this.connected = connected;
+				if (!connected) this.heartbeats = [];
+			},
+			() => this.resyncAfterReconnect(),
+			() => this.noteHeartbeat()
 		);
+	}
+
+	// A pong came back (see ws.ts's startHeartbeat). Appending rather than
+	// replacing is what makes the trace travel: each entry mounts a fresh
+	// element, whose CSS animation starts running at that moment.
+	private noteHeartbeat() {
+		this.beatSeq += 1;
+		const next = [...this.heartbeats, this.beatSeq];
+		this.heartbeats = next.length > 3 ? next.slice(next.length - 3) : next;
 	}
 
 	// Fires after the socket drops and reconnects. If a turn was in flight
@@ -429,6 +479,7 @@ export class AppState {
 
 	async openThread(id: string) {
 		const seq = ++this.openThreadSeq;
+		this.threadLoading = true;
 
 		// A turn is in flight for a thread other than the one we're about
 		// to show — mark it abandoned so its eventual 'done' can't silently
@@ -449,11 +500,18 @@ export class AppState {
 			// old process goes away and the new one isn't answering yet) —
 			// same "don't leave this silent" reasoning as the !res.ok
 			// branch below.
-			if (seq === this.openThreadSeq) this.showToast("Couldn't load that thread — please try again");
+			if (seq === this.openThreadSeq) {
+				this.threadLoading = false;
+				this.showToast("Couldn't load that thread — please try again");
+			}
 			return;
 		}
 		if (seq !== this.openThreadSeq) return; // superseded by a newer openThread() call
 		if (!res.ok) {
+			// Reached only by the call that still owns openThreadSeq (the
+			// superseded one returned just above), so this is the loading
+			// state's owner clearing it — a 404/503 has nothing left to load.
+			this.threadLoading = false;
 			// 404 means the id genuinely doesn't exist (deleted, a stale
 			// bookmark, a hidden variant id) — nothing to show, staying
 			// silent here is correct. Anything else (503 above all — see
@@ -564,6 +622,11 @@ export class AppState {
 			}
 		}
 		this.turns = turns;
+		// Same synchronous block as the turns swap above, so Svelte renders
+		// the populated timeline and the loading state drops in one pass —
+		// never a frame of empty-turns-with-nothing-loading that would flash
+		// the WelcomeScreen between the two.
+		this.threadLoading = false;
 
 		// Suggestions are a "what's next" prompt for the last answer, so
 		// only the most recent assistant message's set is relevant here.
@@ -699,6 +762,15 @@ export class AppState {
 		// null — restarting the new-thread flow explicitly abandons that
 		// one too, not just an existing thread's turn).
 		if (this.busy) this.pendingAbandoned = true;
+
+		// Supersede any in-flight openThread() so a slow load can't finish
+		// and yank the view back to the thread the user just navigated away
+		// from — the same "the newest action wins" guarantee the seq guard
+		// gives two competing openThread() calls. This is also what cancels
+		// the loading state if the user gives up on a slow open and starts a
+		// new thread instead of waiting it out.
+		++this.openThreadSeq;
+		this.threadLoading = false;
 
 		debugBeacon('currentThreadId set (newThread)', { from: this.currentThreadId, busy: this.busy });
 		this.pendingFieldId = null;
@@ -923,15 +995,20 @@ export class AppState {
 	) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
+		// Only when continuing an existing thread: callers that start a fresh
+		// thread (Daily expand-to-chat, Constellation, Fields) deliberately
+		// pass nothing, and must not inherit a stale composer toggle. Explicit
+		// arguments, including an explicit false, always win.
+		const live = this.currentThreadId !== null ? this.composerConfig : null;
 		this.dispatch(
 			trimmed,
 			undefined,
 			undefined,
 			sttCostUsd,
-			focusMode,
-			deepResearch,
+			focusMode ?? live?.focusMode,
+			deepResearch ?? live?.deepResearch,
 			attachments,
-			noResearch,
+			noResearch ?? live?.noResearch,
 			source,
 			titleSeed,
 			ghostMode,
@@ -982,7 +1059,9 @@ export class AppState {
 	// live ComposerMenu tap — see send()'s focusModeManual doc comment),
 	// not a "default", so Oracle's own focus check won't immediately
 	// re-override the very mode being tested.
-	retry(assistantTurnIndex: number, focusOverride?: FocusMode, noOracle?: boolean) {
+	// noVisuals: TurnInfoSheet's "Rerun as plain text" — Prism off for this one
+	// turn (see gateway/protocol.go's ClientMessage.NoVisuals).
+	retry(assistantTurnIndex: number, focusOverride?: FocusMode, noOracle?: boolean, noVisuals?: boolean) {
 		const userTurn = this.turns[assistantTurnIndex - 1];
 		if (!userTurn || userTurn.role !== 'user' || userTurn.id === undefined || this.busy) return;
 		this.dispatch(
@@ -1000,7 +1079,8 @@ export class AppState {
 			undefined,
 			undefined,
 			!!focusOverride,
-			noOracle
+			noOracle,
+			noVisuals
 		);
 		this.carryForwardAttachmentChips(userTurn.attachments);
 	}
@@ -1069,7 +1149,10 @@ export class AppState {
 		// Not exposed through send() itself since no composer control sets
 		// it; TurnInfoSheet.svelte's rerun buttons go through retry(),
 		// which calls this directly.
-		noOracle?: boolean
+		noOracle?: boolean,
+		// noVisuals: only ever set by retry()'s "Rerun as plain text" — see
+		// gateway/protocol.go's ClientMessage.NoVisuals doc comment.
+		noVisuals?: boolean
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
@@ -1144,6 +1227,7 @@ export class AppState {
 			deep_research: deepResearch || undefined,
 			no_research: noResearch || undefined,
 			no_oracle: noOracle || undefined,
+			no_visuals: noVisuals || undefined,
 			attachments: attachments?.map((a) => ({
 				id: a.id,
 				filename: a.filename,
@@ -1296,6 +1380,7 @@ export class AppState {
 				turn.tokensPerSecond = e.tokens_per_second;
 				turn.appliedFocusMode = e.applied_focus_mode;
 				turn.appliedModel = e.applied_model;
+				turn.provider = e.provider;
 				// See ServerEvent's assistant_message_id doc comment — without
 				// this, read-aloud on a turn from the current session (not yet
 				// reloaded from history) has no message id to attach a

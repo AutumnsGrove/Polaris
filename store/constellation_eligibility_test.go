@@ -108,6 +108,25 @@ func TestEligibleConstellationThreads_Gates(t *testing.T) {
 		t.Fatalf("backdating message: %v", err)
 	}
 
+	// A ghost (incognito) thread, idle and never processed — eligible by every
+	// other gate. Excluded outright: Weaver synthesizes durable stars *about the
+	// person*, so mining a session they kept off the record would persist exactly
+	// what ghost mode exists to prevent. Found live 2026-10-27: this filter was
+	// the only one missing among the store's "is this a real conversation"
+	// queries, and the resulting refusal (ReadThread returns sql.ErrNoRows for
+	// ghosts) was marked retryable, so one ghost thread retried every minute for
+	// nine days.
+	ghost := uuid.NewString()
+	if err := s.CreateGhostThread(ghost, "Test incognito", "deepseek", "web"); err != nil {
+		t.Fatalf("CreateGhostThread: %v", err)
+	}
+	if _, err := s.AddMessage(ghost, "user", "something private", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage (ghost): %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET created_at = datetime('now', '-2 hours') WHERE thread_id = ?`, ghost); err != nil {
+		t.Fatalf("backdating message: %v", err)
+	}
+
 	got, err := s.EligibleConstellationThreads(60)
 	if err != nil {
 		t.Fatalf("EligibleConstellationThreads: %v", err)
@@ -123,10 +142,53 @@ func TestEligibleConstellationThreads_Gates(t *testing.T) {
 			t.Errorf("EligibleConstellationThreads missing expected thread %q; got %v", id, got)
 		}
 	}
-	for _, excluded := range []string{midThought, upToDate, failedThenSucceeded, disabled, pulsar} {
+	for _, excluded := range []string{midThought, upToDate, failedThenSucceeded, disabled, pulsar, ghost} {
 		if gotSet[excluded] {
 			t.Errorf("EligibleConstellationThreads wrongly included %q; got %v", excluded, got)
 		}
+	}
+}
+
+// TestEligibleConstellationThreads_GhostThreadBecomesEligibleWhenPromoted is the
+// other half of the ghost exclusion: refusing a ghost thread must not be a
+// permanent ban on the conversation. Promoting is how a person says "keep this
+// one", and from then on it is an ordinary thread Weaver may read and mine.
+func TestEligibleConstellationThreads_GhostThreadBecomesEligibleWhenPromoted(t *testing.T) {
+	s := openTestStore(t)
+
+	ghost := uuid.NewString()
+	if err := s.CreateGhostThread(ghost, "Test incognito", "deepseek", "web"); err != nil {
+		t.Fatalf("CreateGhostThread: %v", err)
+	}
+	if _, err := s.AddMessage(ghost, "user", "something private", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET created_at = datetime('now', '-2 hours') WHERE thread_id = ?`, ghost); err != nil {
+		t.Fatalf("backdating message: %v", err)
+	}
+
+	eligible := func() bool {
+		t.Helper()
+		ids, err := s.EligibleConstellationThreads(60)
+		if err != nil {
+			t.Fatalf("EligibleConstellationThreads: %v", err)
+		}
+		for _, id := range ids {
+			if id == ghost {
+				return true
+			}
+		}
+		return false
+	}
+
+	if eligible() {
+		t.Fatal("a ghost thread was eligible for a shooting star")
+	}
+	if err := s.PromoteGhostThread(ghost); err != nil {
+		t.Fatalf("PromoteGhostThread: %v", err)
+	}
+	if !eligible() {
+		t.Fatal("a promoted (saved) thread should be eligible like any other")
 	}
 }
 

@@ -3,6 +3,11 @@ import type { FocusMode, ToggleableTool, TTSVoice } from './types';
 
 export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 
+// The Visuals dial's values, in display order — must match the server's
+// visualsModes (gateway/settings.go), which rejects anything else.
+export const VISUALS_MODES = ['off', 'low', 'normal'] as const;
+export type VisualsMode = (typeof VISUALS_MODES)[number];
+
 // Which operation updateState/updateLog currently describe — 'update' is
 // the full git-pull-and-rebuild flow (pushUpdate), 'restart' is just the
 // service restart with no pull or rebuild (pushRestart), for when there's
@@ -20,32 +25,55 @@ export interface UsageStats {
 	period_days: number;
 	total_cost_usd: number;
 	period_cost_usd: number;
-	// cost_by_source splits both totals above four ways — see
+	// cost_by_source splits both totals above six ways — see
 	// store.Stats.CostBySource's doc comment. Daily (Pulsar Daily
-	// editions) and constellation (Weaver runs + Refine/Edit calls) are
-	// both wholly separate cost paths that never touch a thread at all,
-	// but total_cost_usd/period_cost_usd above are still the real,
-	// complete sum across all four — every row here always adds back up
-	// to the headline figure exactly. polaris includes ghost-mode
-	// (incognito thread) turns' spend, folded in directly — a ghost
-	// thread is just an incognito regular chat, not a separate subsystem
-	// the way pulsar/daily/constellation are, so there's no separate
-	// bucket for it.
+	// editions), constellation (Weaver runs + Refine/Edit calls), comet
+	// (Approach classifications + the monthly trend synthesis) and
+	// embeddings (semantic index builds/backfills, aux_usage kind
+	// 'embedding') are all wholly separate cost paths that never touch an
+	// ordinary thread, but total_cost_usd/period_cost_usd above are still
+	// the real, complete sum across all six — every row here always adds
+	// back up to the headline figure exactly. polaris includes ghost-mode
+	// (incognito thread) turns' spend, folded in directly — a ghost thread
+	// is just an incognito regular chat, not a separate subsystem the way
+	// pulsar/daily/constellation/comet are, so there's no separate bucket
+	// for it.
 	cost_by_source: {
 		polaris: { period_cost_usd: number; total_cost_usd: number };
 		pulsar: { period_cost_usd: number; total_cost_usd: number };
 		daily: { period_cost_usd: number; total_cost_usd: number };
 		constellation: { period_cost_usd: number; total_cost_usd: number };
+		comet: { period_cost_usd: number; total_cost_usd: number };
+		// embeddings: index maintenance, not a content source. Optional so an
+		// older backend without the bucket just hides the row instead of
+		// making the panel sum a missing field into NaN.
+		embeddings?: { period_cost_usd: number; total_cost_usd: number };
 	};
 	// verification_cost_usd is a breakout, not a fourth bucket — how much
 	// of cost_by_source.polaris/.pulsar above (already counted once) was
-	// specifically Jev verification spend (compare_sources and friends).
+	// specifically decisions-API verification spend (compare_sources and friends).
 	// Never add this into total_cost_usd/period_cost_usd or cost_by_source
 	// a second time — see store.Stats.VerificationCostUSD's doc comment.
 	verification_cost_usd: { period_cost_usd: number; total_cost_usd: number };
-	// Same kind of breakout for Oracle mode's own Jev pre-read spend — see
+	// Same kind of breakout for Oracle mode's own decisions pre-read spend — see
 	// store.Stats.OracleCostUSD. Never add into the totals above either.
 	oracle_cost_usd: { period_cost_usd: number; total_cost_usd: number };
+	// List-price value the Go subscription covered (billing go/go-plus) —
+	// see store.Stats.CoveredBySubscription. Breakout, never additive.
+	// Optional so an older backend hides the row instead of NaN-ing the panel.
+	covered_by_subscription?: { period_cost_usd: number; total_cost_usd: number };
+	// List-price value billed to console balance (always a misconfiguration) —
+	// see store.Stats.BilledToBalance. Same optional convention.
+	billed_to_balance?: { period_cost_usd: number; total_cost_usd: number };
+	// Decisions API call counts (not questions asked) — see store.Stats.DecisionCalls.
+	// Optional so an older backend without it just hides the rows.
+	// `verification` also holds every compare_sources call from before the
+	// ledger split, which can't be told apart retroactively.
+	decision_calls?: {
+		oracle: { period: number; total: number };
+		verification: { period: number; total: number };
+		compare: { period: number; total: number };
+	};
 	thread_count: number;
 	turn_count: number;
 	// Distinct threads that have ever had a voice_mode (Transponder call)
@@ -54,6 +82,10 @@ export interface UsageStats {
 	avg_turn_duration_ms: number;
 	tool_call_counts: Record<string, number>;
 	tool_error_counts: Record<string, number>;
+	// Calls to tools that don't exist (the model hallucinating a name),
+	// kept out of the two maps above — see store.Stats.MadeUpToolCounts.
+	// Optional so an older backend without it just hides the row.
+	made_up_tool_counts?: Record<string, number>;
 	// How many web_search calls each provider key actually answered —
 	// see store.Stats.SearchProviderCounts' doc comment for why this
 	// isn't the same thing as a billing/usage-cap count.
@@ -65,6 +97,16 @@ export interface UsageStats {
 	// Total wall-clock time code_exec has spent running sandboxed scripts —
 	// see store.Stats.CodeExecWallTimeMS' doc comment.
 	code_exec_wall_time_ms: number;
+	// embedding_index backs the settings panel's semantic-index row: how much
+	// of each kind is indexed, against the *eligible* count (see
+	// gateway.EmbeddingIndexStatus on why raw counts would read as a stuck
+	// 79%). Optional so an older backend hides the row entirely.
+	embedding_index?: {
+		configured: boolean;
+		model?: string;
+		messages: { indexed: number; eligible: number; stale_model: number };
+		stars: { indexed: number; eligible: number; stale_model: number };
+	};
 	// Summed prompt tokens and prompt-cache reads, one count per turn —
 	// see store.Stats.CacheUsage. Optional so an older backend without it
 	// just hides the row instead of breaking the panel.
@@ -81,6 +123,42 @@ export interface UsageStats {
 // description index the model gets every turn (see tools.MemoryIndexEntry)
 // since a settings-panel page load isn't cost-sensitive the way every
 // single agent turn is.
+export interface ProvidersMeter {
+	kind: string;
+	label: string;
+	short: string;
+	percent: number;
+	used_usd: number;
+	limit_usd: number;
+	resets_at?: string;
+}
+
+export interface ProvidersModelStatus {
+	id: string;
+	primary: string;
+	wire_model: string;
+	go_monthly_limit_usd: number;
+	polaris_share_allowance_usd: number;
+}
+
+// GET /api/providers/status — which backends are configured, the live Go
+// meters, the effective policy, and the per-model route table. Optional
+// fields stay absent (not zero) when unconfigured so the panel degrades
+// to "unavailable" instead of rendering $0 bars.
+export interface ProvidersStatus {
+	openrouter: { configured: boolean };
+	opencode_go: {
+		configured: boolean;
+		plan?: string;
+		meters?: ProvidersMeter[];
+		period_end?: string;
+		polaris_share_allowance_usd: number;
+		error?: string;
+	};
+	policy: { default_backend: string; failover: string; pinned: boolean };
+	models: ProvidersModelStatus[];
+}
+
 export interface Memory {
 	name: string;
 	type: 'user' | 'feedback' | 'project' | 'reference';
@@ -138,7 +216,7 @@ export class SettingsState {
 	memoryEnabled = $state(true);
 
 	// Master on/off for Oracle mode (docs/plans/oracle-mode.md) — off by
-	// default, unlike memoryEnabled above: Oracle spends real Jev budget
+	// default, unlike memoryEnabled above: Oracle spends real decisions-API budget
 	// and picks focus modes/injects guidance on every turn, so it's opt-in
 	// rather than opt-out (see gateway/settings.go's OracleEnabledFromStore
 	// doc comment on why the default polarity is deliberately opposite
@@ -153,6 +231,13 @@ export class SettingsState {
 	// steer the answer, but the offer chips that create something permanent
 	// (Pulsar, Daily, Field) are withheld server-side (see gateway/oracle.go).
 	oracleGhostEnabled = $state(false);
+
+	// How readily the assistant answers with a structured `ui` block (a
+	// comparison, a step rail, a callout) instead of plain prose — the
+	// "Visuals" dial (docs/plans/intelligent-ui.md, gateway/settings.go's
+	// settingVisuals). Defaults to Low, matching the server's own default, so
+	// the control shows the truth before /api/settings has answered.
+	visuals = $state<VisualsMode>('low');
 
 	// Free-text operator steering substituted into prompt.md's
 	// {custom_instructions} placeholder on every turn (see
@@ -175,6 +260,12 @@ export class SettingsState {
 	// guidance).
 	personName = $state('');
 	personPronouns = $state('');
+
+	// IANA zone name Pulsar/Pulsar Daily schedules run in ('' = the server's own
+	// zone, UTC in Docker). serverTimezone is the server's own zone, so the
+	// picker can name what 'Server default' means.
+	timezone = $state('');
+	serverTimezone = $state('');
 
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
@@ -214,6 +305,13 @@ export class SettingsState {
 	usage = $state<UsageStats | null>(null);
 	usageLoaded = $state(false);
 	usageError = $state(false);
+
+	// GET /api/providers/status snapshot for the OpenCode Go panel — null
+	// until loadProviders() resolves. Same loaded/error split as usage
+	// above; re-fetched on every settings open, since meters move fast.
+	providers = $state<ProvidersStatus | null>(null);
+	providersLoaded = $state(false);
+	providersError = $state(false);
 
 	// Memory settings section — see MemorySettings.svelte. memoriesLoaded
 	// mirrors `loaded` above: null/empty is a real, valid state ("nothing
@@ -269,9 +367,12 @@ export class SettingsState {
 		this.memoryEnabled = data.memory_enabled ?? true;
 		this.oracleEnabled = data.oracle_enabled ?? false;
 		this.oracleGhostEnabled = data.oracle_ghost_enabled ?? false;
+		this.visuals = VISUALS_MODES.includes(data.visuals) ? data.visuals : 'low';
 		this.customInstructions = data.custom_instructions ?? '';
 		this.personName = data.person_name ?? '';
 		this.personPronouns = data.person_pronouns ?? '';
+		this.timezone = data.timezone ?? '';
+		this.serverTimezone = data.server_timezone ?? '';
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
 		this.loaded = true;
@@ -339,6 +440,11 @@ export class SettingsState {
 		await this.put({ oracle_ghost_enabled: enabled });
 	}
 
+	async setVisuals(mode: VisualsMode) {
+		this.visuals = mode;
+		await this.put({ visuals: mode });
+	}
+
 	// Saved on blur (see SettingsPanel.svelte), not on every keystroke —
 	// unlike the toggle/select settings above, this is free-text the user
 	// is actively typing, so a round trip per character would be both
@@ -358,6 +464,12 @@ export class SettingsState {
 	async setPersonPronouns(value: string) {
 		this.personPronouns = value;
 		await this.put({ person_pronouns: value });
+	}
+
+	async setTimezone(value: string) {
+		this.timezone = value;
+		await this.put({ timezone: value });
+		if (value) this.serverTimezone = value;
 	}
 
 	// Client-side only — no server round trip, unlike the settings above.
@@ -662,6 +774,23 @@ export class SettingsState {
 		} catch {
 			// Best-effort — a normal idle server with nothing to report
 			// shouldn't surface a network hiccup here as an error state.
+		}
+	}
+
+	// Provider routing snapshot for the OpenCode Go panel — same re-fetch
+	// discipline as loadUsage below (meters move fast; a cached snapshot
+	// would misstate remaining allowance).
+	async loadProviders() {
+		this.providersLoaded = false;
+		this.providersError = false;
+		try {
+			const res = await fetch('/api/providers/status');
+			if (!res.ok) throw new Error('providers fetch failed');
+			this.providers = await res.json();
+		} catch {
+			this.providersError = true;
+		} finally {
+			this.providersLoaded = true;
 		}
 	}
 

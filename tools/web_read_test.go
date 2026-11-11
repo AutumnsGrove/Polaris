@@ -457,7 +457,7 @@ func TestFilterExtractedText(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "extracted answer", CostUSD: 0.0042}}},
 	}
-	result, cost, err := FilterExtractedText(context.Background(), mock, "system prompt", "page text", "an instruction")
+	result, cost, err := FilterExtractedText(context.Background(), CompleteFromClient(mock), "system prompt", "page text", "an instruction")
 	if err != nil {
 		t.Fatalf("FilterExtractedText returned error: %v", err)
 	}
@@ -963,4 +963,111 @@ func canceledCtx() context.Context {
 	c, cancel := context.WithCancel(context.Background())
 	cancel()
 	return c
+}
+
+// A successful read measures the page for the `readings` block: words counted
+// off the raw extracted text (before the filter pass and the display window),
+// recorded on the context and carried on the citation so the frontend can
+// render "≈ N min".
+func TestHandleWebRead_RecordsPageStats(t *testing.T) {
+	words := strings.Repeat("word ", 60) // 300 chars, over looksEmpty's 200-char floor
+	html := "<html><body><article>" + words + "</article></body></html>"
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	handleWebRead(`{"url":"`+srv.URL+`"}`, ctx, "test-call")
+
+	stats, ok := ctx.PageStatsForURL(srv.URL)
+	if !ok {
+		t.Fatal("web_read recorded no page stats for a normal page")
+	}
+	if !stats.Reliable || stats.Words != 60 {
+		t.Errorf("stats = %+v, want a reliable 60-word measurement", stats)
+	}
+	cit := ctx.CitationsSnapshot()[0]
+	if !cit.Opened || cit.Words != 60 {
+		t.Errorf("citation = %+v, want Opened with 60 words", cit)
+	}
+}
+
+// A page that looks like an empty JS shell is still "opened" (there is real
+// evidence to verify against) but carries no word count: "1 min" off a stub
+// would be a lie for a long article.
+func TestHandleWebRead_EmptyShellHasNoMeasurement(t *testing.T) {
+	html := "<html><body><article>tiny</article></body></html>"
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	handleWebRead(`{"url":"`+srv.URL+`"}`, ctx, "test-call")
+
+	stats, ok := ctx.PageStatsForURL(srv.URL)
+	if !ok {
+		t.Fatal("an opened page should still be recorded")
+	}
+	if stats.Reliable || stats.Words != 0 {
+		t.Errorf("stats = %+v, want unreliable with no word count", stats)
+	}
+	cit := ctx.CitationsSnapshot()[0]
+	if !cit.Opened || cit.Words != 0 {
+		t.Errorf("citation = %+v, want Opened with no words", cit)
+	}
+}
+
+// web_search cites a URL from its snippet; a later web_read of the same page
+// must fold the measurement into that existing citation rather than being
+// dropped by the URL dedupe (the reading list needs "opened + how long").
+func TestAddCitation_MergesReadMeasurementIntoExistingCitation(t *testing.T) {
+	ctx := &Context{}
+	ctx.AddCitation(Citation{Title: "Snippet", URL: "https://a.example/p"})
+	ctx.AddCitation(Citation{Title: "Read", URL: "https://a.example/p", Opened: true, Words: 460})
+
+	cits := ctx.CitationsSnapshot()
+	if len(cits) != 1 {
+		t.Fatalf("got %d citations, want the dedupe to keep one", len(cits))
+	}
+	if !cits[0].Opened || cits[0].Words != 460 {
+		t.Errorf("citation = %+v, want the read's measurement merged in", cits[0])
+	}
+}
+
+// ledongthuc/pdf panics on some malformed files instead of returning an
+// error; found by FuzzExtractPDFPage (its crasher is kept under
+// testdata/fuzz). Input here: a bogus startxref pointing past a truncated
+// xref stream.
+func TestExtractPDFPage_MalformedPDF_ReturnsErrorInsteadOfPanicking(t *testing.T) {
+	data := []byte("%PDF-1.0\n000000000000000000000000000000000000000000000000000000000000000000000000\nstartxref\n091%%EOF")
+
+	_, text, _, err := ExtractPDFPage(data, 48)
+	if err == nil {
+		t.Fatal("expected an error for a malformed pdf, got nil")
+	}
+	if text != "" {
+		t.Errorf("text = %q, want empty alongside an error", text)
+	}
+}
+
+// A context wired with a routed Complete must use it for the filter pass, and
+// must hand back its cost untouched for AddCost; an unwired context must fall
+// back to its raw LLM client. The seam exists so a model routed to a non-
+// OpenRouter backend does not spend OpenRouter money on its side calls.
+func TestContextCompleteFunc_PrefersRoutedThenFallsBackToClient(t *testing.T) {
+	routedCalled := false
+	routed := &Context{Complete: func(context.Context, []llm.ChatMessage) (string, float64, error) {
+		routedCalled = true
+		return "routed text", 0.5, nil
+	}, LLM: &llmtest.MockClient{}}
+	text, cost, err := FilterExtractedText(context.Background(), routed.CompleteFunc(), "sys", "page", "instr")
+	if err != nil || text != "routed text" || cost != 0.5 || !routedCalled {
+		t.Fatalf("routed path: text=%q cost=%v err=%v called=%v", text, cost, err, routedCalled)
+	}
+
+	direct := &Context{LLM: &llmtest.MockClient{Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "direct text", CostUSD: 0.25}}}}}
+	text, cost, err = FilterExtractedText(context.Background(), direct.CompleteFunc(), "sys", "page", "instr")
+	if err != nil || text != "direct text" || cost != 0.25 {
+		t.Fatalf("fallback path: text=%q cost=%v err=%v", text, cost, err)
+	}
+
+	if _, _, err := (&Context{}).CompleteFunc()(context.Background(), nil); err == nil {
+		t.Error("a context with no model at all must error, not panic")
+	}
 }

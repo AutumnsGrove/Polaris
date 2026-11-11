@@ -1,5 +1,7 @@
 # Polaris
 
+<p align="center"><img src="web/static/icon-512.png" alt="The Polaris app icon: a field of stars" width="160"></p>
+
 A private, self-hosted, search-augmented AI assistant — the "Kagi Assistant" / Perplexity idea,
 but pointed at your own [SearXNG](https://github.com/searxng/searxng) instance instead of a paid
 search API, running as a single Go binary with the web UI embedded inside it.
@@ -49,7 +51,8 @@ next to Settings at the bottom of the sidebar — it explains each one in plain 
 - **Memory you can see and edit**, plus **Fields** (folders of conversations that share instructions
   and files).
 - **[Oracle mode](docs/oracle.md)** (opt-in) reads each question first and quietly adjusts how it's
-  answered, showing — and letting you undo — every change.
+  answered, showing — and letting you undo — every change. Its decision model was picked with a
+  [benchmark of twenty-eight candidates](docs/benchmarks/oracle-decision-models/README.md).
 - **Pulsar** runs a saved question on a schedule and reports only what's new. **The Daily** assembles a
   morning newspaper. **Constellation** keeps a library of durable facts learned from your chats.
 - **Ghost threads** (incognito), retry and edit with branching, per-turn cost tracking, automatic
@@ -67,6 +70,31 @@ platforms with real resource footprints and are built to plug into a paid search
 This is built specifically to sit on top of a self-hosted SearXNG instance, run on genuinely
 low-power hardware (a single-board computer, not a server), and stay small enough that "the whole
 app" is one file you can scp around if you ever needed to.
+
+## Built with
+
+<table align="center">
+<tr>
+<td align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/ascii/go.dark.svg">
+  <img alt="Go" src="docs/ascii/go.svg" width="400">
+</picture>
+<br><sub>The backend: one Go binary</sub>
+</td>
+<td align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/ascii/svelte.dark.svg">
+  <img alt="Svelte" src="docs/ascii/svelte.svg" width="260">
+</picture>
+<br><sub>The frontend: SvelteKit, embedded in that binary</sub>
+</td>
+</tr>
+</table>
+
+<sub>Animated ASCII logos from [ascii.rest](https://ascii.rest) by [@bas3line](https://github.com/bas3line)
+(MIT), stored locally in `docs/ascii/`. The Go and Svelte logos are trademarks of their owners, shown
+here to name the languages.</sub>
 
 ## License
 

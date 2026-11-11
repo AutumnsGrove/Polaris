@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"polaris/backup"
+	"polaris/embed"
 	"polaris/logger"
 	"polaris/r2"
 )
@@ -31,6 +32,43 @@ type Config struct {
 		APIKey  string `yaml:"api_key"`
 		BaseURL string `yaml:"base_url"`
 	} `yaml:"openrouter"`
+
+	// Providers names every chat backend Polaris can route to, keyed by a
+	// stable name the routing policy refers to. "openrouter" is the paid
+	// safety net; "opencode_go" is the OpenCode Go subscription (see
+	// docs/plans/multi-provider.md). A legacy config with only the
+	// top-level openrouter: block above keeps working: Load seeds
+	// providers["openrouter"] from it, so existing installs,
+	// compose/polaris/config.yaml.example, and install.sh don't break.
+	// Conversely, a new-style config's providers["openrouter"] is copied
+	// back onto OpenRouter above, so every existing reader (the turn
+	// loop, titles, decisions, voice) keeps working unchanged.
+	Providers map[string]ProviderConfig `yaml:"providers"`
+
+	// Routing is the global per-model backend policy — no per-thread
+	// picker. See RoutingConfig's doc comment.
+	Routing RoutingConfig `yaml:"routing"`
+
+	// ModelBackends is the per-model override, mirroring model_overrides:
+	// a model id mapped to a providers key. Absent means the routing
+	// default applies.
+	ModelBackends map[string]string `yaml:"model_backends"`
+
+	// Decisions tunes the decision-model client behind Oracle mode, the
+	// source-verification badge, and compare_sources. Reached through
+	// OpenRouter with the same api_key above, so there is nothing else to
+	// configure but which model answers.
+	Decisions struct {
+		// Model is an OpenRouter decision-model catalog id (vendor-prefixed,
+		// e.g. "typesafe/jev-1.14"; `polaris oracle-bench` lists the roster).
+		// Empty keeps decisions.DefaultModel. Hot-reloaded: it is re-read at
+		// the start of every turn, no restart needed. An id the Decisions API
+		// rejects makes every call fail, which the callers treat as "Oracle
+		// off / no badge" rather than an error, so check the logs after
+		// changing it. The bench only validated models on Oracle's task, not
+		// on verification claims — re-run it before moving off the default.
+		Model string `yaml:"model"`
+	} `yaml:"decisions"`
 
 	SearXNG struct {
 		BaseURL string `yaml:"base_url"`
@@ -81,10 +119,11 @@ type Config struct {
 		// (SearXNG -> Brave -> Parallel -> Tavily, see tools/web_search.go
 		// and gateway/search.go), since it's the only one returning real,
 		// multi-result listings rather than an AI-pre-summarized answer —
-		// what Atlas's browsing UI actually needs. No ongoing free tier
-		// (just a one-time $5/mo signup credit), so every query bills the
-		// account's card on file — see store.Store's api_usage table,
-		// which enforces the monthly cap this key alone doesn't.
+		// what Atlas's browsing UI actually needs. Its free allowance is a
+		// recurring $5/mo credit (~1,000 queries), not an unmetered tier,
+		// so past that credit every query bills the account's card on file
+		// — see store.Store's api_usage table, which enforces the monthly
+		// cap this key alone doesn't.
 		// https://brave.com/search/api/
 		APIKey string `yaml:"api_key"`
 	} `yaml:"brave"`
@@ -147,17 +186,19 @@ type Config struct {
 	} `yaml:"tmdb"`
 
 	Ollama struct {
-		// BaseURL points at a local Ollama instance serving EmbedModel —
-		// used only for agent.Run's query-similarity stale-search signal
-		// (a third check alongside researchCheckInInterval/staleStreakThreshold,
-		// see agent/query_similarity.go), never for chat completions.
-		// Empty disables the signal entirely rather than failing turns —
-		// same "optional dependency, degrade don't break" shape as
-		// Foursquare/Tavily above. Each deployment talks to its OWN local
-		// Ollama (bare-metal: http://localhost:11434; Docker: the host's
-		// Ollama via host.docker.internal — docker-compose.yml's
-		// extra_hosts entry) — never a shared/remote instance, so there's
-		// no cross-host reachability to configure.
+		// BaseURL points at a local Ollama instance. Historically this was
+		// the only way to get embeddings at all (agent.Run's
+		// query-similarity stale-search signal); it still is, when
+		// `embeddings.provider` is empty or "ollama", and it remains the
+		// back-compat path for a config written before the `embeddings`
+		// block existed. Never used for chat completions.
+		//
+		// Empty (with no `embeddings` provider) disables embeddings
+		// entirely rather than failing turns — same "optional dependency,
+		// degrade don't break" shape as Foursquare/Tavily above. Each
+		// deployment talks to its OWN local Ollama (bare-metal:
+		// http://localhost:11434; Docker: the host's Ollama via
+		// host.docker.internal — docker-compose.yml's extra_hosts entry).
 		//
 		// Docker specifically needs Ollama itself rebound to 0.0.0.0 (its
 		// default is 127.0.0.1-only, which REFUSES a container's
@@ -169,9 +210,36 @@ type Config struct {
 		// fuller warning before doing this on a host with untrusted local
 		// network users.
 		BaseURL string `yaml:"base_url"`
-		// EmbedModel defaults to "nomic-embed-text" (see NewClient) if empty.
+		// EmbedModel defaults to "nomic-embed-text" (see NewOllama) if empty.
 		EmbedModel string `yaml:"embed_model"`
 	} `yaml:"ollama"`
+
+	// Embeddings selects which backend computes every embedding in Polaris —
+	// the persisted semantic index over chats and stars
+	// (docs/plans/embeddings.md) and agent's query-similarity signal. See
+	// NewEmbedClient for the resolution order.
+	Embeddings struct {
+		// Provider is "openrouter" (a hosted model, which is the default
+		// recommendation because the production target is a low-power SBC),
+		// "ollama" (local), or "" to disable the semantic index and fall
+		// back to pre-subsystem behavior (local Ollama if ollama.base_url is
+		// set, otherwise no embeddings at all).
+		Provider string `yaml:"provider"`
+		// Model is the provider's own model id. Empty picks the provider's
+		// default: perplexity/pplx-embed-v1-0.6b for openrouter (1024 dims,
+		// 32k context, $0.004/M tokens) or nomic-embed-text for ollama.
+		//
+		// Changing this invalidates every stored vector: they are tagged
+		// with the model that produced them, so semantic retrieval fails
+		// closed (FTS keeps working) until `polaris embeddings reindex`
+		// runs. That's deliberate — auto-reindexing on boot would mean a
+		// surprise API spend and a load spike at startup.
+		Model string `yaml:"model"`
+		// BaseURL overrides the provider's endpoint. Empty uses
+		// openrouter.base_url for the openrouter provider, and
+		// ollama.base_url for the ollama provider.
+		BaseURL string `yaml:"base_url"`
+	} `yaml:"embeddings"`
 
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
@@ -180,7 +248,9 @@ type Config struct {
 
 	Voice struct {
 		// STTModel/STTFallbackModel are OpenRouter model slugs for push-to-talk
-		// transcription.
+		// transcription. The fallback is deliberately the previous generation of
+		// the same model family rather than a different vendor's — a Voxtral
+		// serving hiccup shouldn't also change the transcript's shape/wording.
 		STTModel         string `yaml:"stt_model"`
 		STTFallbackModel string `yaml:"stt_fallback_model"`
 
@@ -323,8 +393,8 @@ type Config struct {
 	// Defaults to 200K: history replays every earlier turn verbatim, tool
 	// results included (see gateway's loadHistory), so a researched thread
 	// grows much faster than an answers-only one would. 200K sits under
-	// every registry model's real window (the smallest, Mercury 2.5, is
-	// 260K per OpenRouter's /models as of 2026-09) — re-check that if a
+	// every registry model's real window (the smallest is 1M per
+	// OpenRouter's /models as of 2026-10) — re-check that if a
 	// smaller-window model is ever added to models/models.go.
 	ContextWindowTokens int `yaml:"context_window_tokens"`
 
@@ -340,6 +410,43 @@ type Config struct {
 	Oracle OracleConfig `yaml:"oracle"`
 }
 
+// ProviderConfig describes one chat backend: where it lives and which
+// credential opens it. APIKey is empty when the backend isn't configured —
+// a Go-only config boots, but decisions (jev), embeddings and voice need
+// OpenRouter, so at startup they log one loud warning each and report
+// themselves disabled in /api/providers/status rather than silently
+// no-op'ing or crashing.
+type ProviderConfig struct {
+	APIKey string `yaml:"api_key"`
+	// BaseURL overrides the backend's API root — the seam
+	// dev/fakeopenai's --limit mode uses to prove failover without
+	// spending a real subscription window.
+	BaseURL string `yaml:"base_url"`
+	// Plan is display-only ("go" | "go_plus"); the actual monthly
+	// limit comes from Nova's catalog (provider.Model.MonthlyLimitUSD),
+	// not from here.
+	Plan string `yaml:"plan"`
+}
+
+// RoutingConfig is the global per-model backend policy (see
+// docs/plans/multi-provider.md §5). Resolution is global per model only:
+// model_backends[model] (explicit choice) → default_backend ("openrouter"
+// always means OpenRouter; "auto" means Go if the model has a go_model
+// and Go is enabled, else OpenRouter; "opencode_go" means Go if the
+// model has a go_model, else OpenRouter). "auto" does not probe live
+// meters per turn — failover on a spent window is the backstop until
+// meter-aware headroom lands (plan §11 risk 9, Phase 4).
+type RoutingConfig struct {
+	// DefaultBackend is "auto" | "openrouter" | "opencode_go".
+	// Empty (legacy config) means "openrouter": no behavior change
+	// unless the operator opts in.
+	DefaultBackend string `yaml:"default_backend"`
+	// Failover is "openrouter" | "none": where a Go call that hits a
+	// limit/refusal is retried. Never OpenCode console balance — there
+	// are no credits there (plan §12).
+	Failover string `yaml:"failover"`
+}
+
 // ModelConfig describes one entry in the model selector. Provider pins
 // the OpenRouter provider order (e.g. ["xiaomi/fp8"]) so prompt caching
 // stays consistent — different providers for the same model often have
@@ -351,6 +458,16 @@ type ModelConfig struct {
 	Provider    []string `yaml:"provider"`
 	Temperature float64  `yaml:"temperature"`
 	MaxTokens   int      `yaml:"max_tokens"`
+
+	// GoModel is the model's OpenCode Go wire slug (e.g.
+	// "deepseek-v4.1-flash") — bare slug, never OpenRouter's
+	// vendor-prefixed form. Empty means the model has no Go route at
+	// all: it is OpenRouter by construction, not by policy. Only models
+	// with this set are eligible for Go, and naming a model without one
+	// under opencode_go in model_backends is a config-load error, never
+	// a silent fallback (docs/plans/multi-provider.md §5). Set in the
+	// registry (models/models.go), not config.yaml.
+	GoModel string `yaml:"-"`
 
 	// Reasoning turns on OpenRouter's unified reasoning-token support for
 	// models that do internal "thinking" before answering (DeepSeek's
@@ -387,6 +504,28 @@ type ModelConfig struct {
 	// pay" and "some other provider/hour's price" with no way for the UI
 	// to tell the difference. Nil means unset/unknown, not free.
 	Pricing *PricingConfig `yaml:"pricing"`
+
+	// CompactionTokens overrides Config.ContextWindowTokens as the
+	// auto-compaction threshold for threads on this model. Zero means
+	// "use the global value". Set it for models whose price jumps at a
+	// prompt size below the global threshold (see PricingConfig.LongPrompt*):
+	// OpenRouter reprices the *whole* request once its prompt crosses the
+	// tier, so letting a thread idle between the tier and the global
+	// threshold pays the surcharge on every turn, and the compaction call
+	// itself (which sends the full history) too. Must leave headroom under
+	// the tier — ContextTokens is measured after a turn, and the next turn
+	// adds the user message plus every tool result in its agent loop.
+	CompactionTokens int `yaml:"compaction_tokens"`
+}
+
+// CompactionThreshold is the context size (tokens) at which a thread on m
+// auto-compacts: the model's own CompactionTokens if set, else the global
+// ContextWindowTokens.
+func (c *Config) CompactionThreshold(m ModelConfig) int {
+	if m.CompactionTokens > 0 {
+		return m.CompactionTokens
+	}
+	return c.ContextWindowTokens
 }
 
 // PricingConfig is a static, hand-maintained snapshot of a model's cost —
@@ -395,6 +534,15 @@ type ModelConfig struct {
 type PricingConfig struct {
 	PromptPerM     float64 `yaml:"prompt_per_m"`     // USD per 1M input tokens
 	CompletionPerM float64 `yaml:"completion_per_m"` // USD per 1M output tokens
+
+	// LongPromptTokens, when nonzero, is the prompt size at or above which
+	// the provider reprices the whole request at LongPromptPerM /
+	// LongCompletionPerM (OpenRouter's pricing.overrides[].min_prompt_tokens
+	// — a cliff, not a marginal rate). Display-only like the rest of this
+	// struct; actual spend comes from the response's usage.cost.
+	LongPromptTokens   int     `yaml:"long_prompt_tokens"`
+	LongPromptPerM     float64 `yaml:"long_prompt_per_m"`
+	LongCompletionPerM float64 `yaml:"long_completion_per_m"`
 }
 
 // ReasoningConfig mirrors OpenRouter's `reasoning` request field
@@ -433,16 +581,60 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8899
 	}
-	if cfg.OpenRouter.APIKey == "" {
-		// Virtually every feature (chat, search, voice, titles) depends on
-		// this — without it, the first real symptom would be an opaque 401
-		// from OpenRouter deep inside a request, far from the actual
-		// misconfiguration. Failing fast here means the operator sees the
-		// real problem before the server even starts.
-		return nil, fmt.Errorf("config: openrouter.api_key is required")
+	// The routing policy lives in providers/routing/model_backends (see
+	// docs/plans/multi-provider.md §5), but a legacy config with only the
+	// top-level openrouter: block keeps working: it seeds
+	// providers["openrouter"], so existing installs don't break. A
+	// new-style config's providers["openrouter"] is copied back onto
+	// OpenRouter, so every existing reader keeps working unchanged —
+	// whichever side the operator writes, both agree.
+	if len(cfg.Providers) == 0 {
+		if cfg.OpenRouter.APIKey != "" {
+			cfg.Providers = map[string]ProviderConfig{
+				"openrouter": {APIKey: cfg.OpenRouter.APIKey, BaseURL: cfg.OpenRouter.BaseURL},
+			}
+		}
+	} else if or, ok := cfg.Providers["openrouter"]; ok {
+		cfg.OpenRouter.APIKey = or.APIKey
+		cfg.OpenRouter.BaseURL = or.BaseURL
+	}
+	// Fail-fast is "at least one provider configured", not "OpenRouter
+	// required": a Go-only config boots, but decisions (jev),
+	// embeddings and voice need OpenRouter (see ProviderConfig) — those
+	// callers keep their own nil/unconfigured handling and log one loud
+	// warning each at startup rather than failing here.
+	//
+	// Virtually every feature (chat, search, voice, titles) depends on
+	// having a backend — without one, the first real symptom would be an
+	// opaque 401 deep inside a request, far from the actual
+	// misconfiguration. Failing fast here means the operator sees the
+	// real problem before the server even starts.
+	if len(cfg.Providers) == 0 {
+		return nil, fmt.Errorf("config: at least one provider is required (openrouter.api_key, or a providers block)")
+	}
+	keyed := false
+	for name, p := range cfg.Providers {
+		if p.APIKey != "" {
+			keyed = true
+		}
+		if p.BaseURL == "" {
+			switch name {
+			case "openrouter":
+				p.BaseURL = "https://openrouter.ai/api/v1"
+			case "opencode_go":
+				p.BaseURL = "https://opencode.ai/zen/go/v1"
+			}
+			cfg.Providers[name] = p
+		}
+	}
+	if !keyed {
+		return nil, fmt.Errorf("config: at least one provider needs an api_key")
 	}
 	if cfg.OpenRouter.BaseURL == "" {
 		cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+	}
+	if err := cfg.validateRouting(registry); err != nil {
+		return nil, err
 	}
 	if cfg.SearXNG.BaseURL == "" {
 		// Not fatal — web_search/nearby_search degrade gracefully without
@@ -519,10 +711,10 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 		cfg.Service.Label = "polaris"
 	}
 	if cfg.Voice.STTModel == "" {
-		cfg.Voice.STTModel = "mistralai/voxtral-mini-transcribe"
+		cfg.Voice.STTModel = "mistralai/voxtral-small-transcribe-3-0"
 	}
 	if cfg.Voice.STTFallbackModel == "" {
-		cfg.Voice.STTFallbackModel = "openai/whisper-large-v3"
+		cfg.Voice.STTFallbackModel = "mistralai/voxtral-mini-transcribe"
 	}
 	if cfg.Voice.TTSModel == "" {
 		cfg.Voice.TTSModel = "hexgrad/kokoro-82m"
@@ -579,6 +771,122 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// validateRouting fails fast on a misconfigured providers/routing/
+// model_backends policy, because the alternative is Nova's route.New
+// panicking on it at request time (docs/plans/multi-provider.md §5) — a
+// typo in config.yaml must break startup with a clear message, never a
+// running server. registry is the same catalog Load applies overrides to,
+// so an override naming a model that doesn't exist is caught here too.
+func (c *Config) validateRouting(registry []ModelConfig) error {
+	byID := make(map[string]ModelConfig, len(registry))
+	for _, m := range registry {
+		byID[m.ID] = m
+	}
+	// The router only knows two backend kinds; a third name has no kind
+	// to build from, so it is a load error here rather than a route.New
+	// panic later. A proxy still works: keep the canonical name and
+	// override its base_url (the fakeopenai --limit seam).
+	for name := range c.Providers {
+		switch name {
+		case "openrouter", "opencode_go":
+		default:
+			return fmt.Errorf("config: unknown provider %q (only openrouter and opencode_go are supported)", name)
+		}
+	}
+	backend := c.Routing.DefaultBackend
+	if backend == "" {
+		backend = "openrouter"
+	}
+	switch backend {
+	case "auto", "openrouter", "opencode_go":
+	default:
+		return fmt.Errorf("config: routing.default_backend must be auto, openrouter, or opencode_go (got %q)", c.Routing.DefaultBackend)
+	}
+	failover := c.Routing.Failover
+	if failover == "" {
+		failover = "openrouter"
+	}
+	switch failover {
+	case "openrouter", "none":
+	default:
+		return fmt.Errorf("config: routing.failover must be openrouter or none (got %q)", c.Routing.Failover)
+	}
+	for id, name := range c.ModelBackends {
+		m, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("config: model_backends[%q] names an unknown model", id)
+		}
+		if _, ok := c.Providers[name]; !ok {
+			return fmt.Errorf("config: model_backends[%q] names an unknown provider %q", id, name)
+		}
+		// A route carrying an OpenRouter slug to Go (or vice versa)
+		// would misbill every call it serves, so a Go assignment
+		// without a go_model is a load error, never a silent fallback.
+		if name == "opencode_go" && m.GoModel == "" {
+			return fmt.Errorf("config: model_backends[%q] selects opencode_go but the model has no go_model", id)
+		}
+	}
+	return nil
+}
+
+// GoEnabled reports whether the OpenCode Go backend is configured with a
+// credential — the gate for building any Go route at all. A providers
+// block naming opencode_go without an api_key (or no such entry) means
+// every model resolves to OpenRouter, whatever the routing policy says.
+func (c *Config) GoEnabled() bool {
+	p, ok := c.Providers["opencode_go"]
+	return ok && p.APIKey != ""
+}
+
+// BackendFor resolves the serving backend for one model id under the
+// global per-model policy: an explicit model_backends entry wins,
+// otherwise default_backend applies ("openrouter" always means
+// OpenRouter; "auto" means Go when the model is Go-eligible and Go is
+// enabled, else OpenRouter; "opencode_go" means Go when the model is
+// Go-eligible, else OpenRouter). "go-eligible" is a go_model plus an
+// enabled Go backend — never a bare policy wish. The second return is
+// false when the backend names a provider with no credential (a config
+// the validator can't see: keys arrive via env vars that may be empty at
+// runtime), so callers fall back to OpenRouter instead of failing.
+func (c *Config) BackendFor(modelID string) (backend string, ok bool) {
+	var m *ModelConfig
+	for i := range c.Models {
+		if c.Models[i].ID == modelID {
+			m = &c.Models[i]
+			break
+		}
+	}
+	eligible := m != nil && m.GoModel != "" && c.GoEnabled()
+	want := c.Routing.DefaultBackend
+	if want == "" {
+		want = "openrouter"
+	}
+	// A Go-only deployment has nowhere else to send an eligible model, so
+	// the policy default can't mean OpenRouter there. (An explicit
+	// model_backends entry still wins below, and Load rejects one naming
+	// a provider that isn't configured.)
+	if _, hasOR := c.Providers["openrouter"]; !hasOR && eligible {
+		want = "opencode_go"
+	}
+	if override, ok := c.ModelBackends[modelID]; ok {
+		want = override
+	}
+	switch want {
+	case "opencode_go":
+		if !eligible {
+			return "openrouter", true
+		}
+		return "opencode_go", true
+	case "auto":
+		if eligible {
+			return "opencode_go", true
+		}
+		return "openrouter", true
+	default:
+		return "openrouter", true
+	}
 }
 
 func applyOverrides(registry []ModelConfig, overrides map[string]ModelOverride) []ModelConfig {
@@ -674,4 +982,44 @@ func (c *Config) DefaultModelOrFirst() string {
 		return c.Models[0].ID
 	}
 	return ""
+}
+
+// NewEmbedClient builds the embedding client the config selects, or nil
+// when no backend is configured — every caller treats nil as "embeddings
+// unavailable, degrade to keyword search", so this never fails the way
+// NewEmbedClient's chat-side counterparts in config do.
+//
+// Resolution order:
+//   - embeddings.provider "openrouter": hosted model via OpenRouter, reusing
+//     openrouter.api_key (no extra secret). embeddings.base_url overrides
+//     openrouter.base_url.
+//   - embeddings.provider "ollama": local instance at
+//     embeddings.base_url, else ollama.base_url.
+//   - embeddings.provider "" (unset): the pre-subsystem behavior — Ollama if
+//     ollama.base_url is set, otherwise nil. A config written before the
+//     `embeddings` block existed therefore keeps working exactly as it did.
+//
+// An explicit embeddings.model always wins; otherwise each provider applies
+// its own default (see config.Config's Embeddings field doc comment).
+func (c *Config) NewEmbedClient() *embed.Client {
+	switch c.Embeddings.Provider {
+	case "openrouter":
+		baseURL := c.Embeddings.BaseURL
+		if baseURL == "" {
+			baseURL = c.OpenRouter.BaseURL
+		}
+		return embed.NewOpenRouter(c.OpenRouter.APIKey, baseURL, c.Embeddings.Model)
+	case "ollama":
+		baseURL := c.Embeddings.BaseURL
+		if baseURL == "" {
+			baseURL = c.Ollama.BaseURL
+		}
+		if c.Embeddings.Model != "" {
+			return embed.NewOllama(baseURL, c.Embeddings.Model)
+		}
+		return embed.NewOllama(baseURL, c.Ollama.EmbedModel)
+	default:
+		// Unset provider: legacy behavior, including nomic's own default.
+		return embed.NewOllama(c.Ollama.BaseURL, c.Ollama.EmbedModel)
+	}
 }

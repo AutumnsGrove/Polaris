@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
+	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
 	"polaris/prompts"
@@ -16,6 +18,12 @@ import (
 // separately from strings.Trim below since that would also eat a quote
 // that's genuinely part of the title (e.g. a title ending in "quotes").
 var titleQuotePrefix = regexp.MustCompile(`^["'“‘]+|["'”’]+$`)
+
+// titleLabelPrefix strips a leading "Title:" / "Thread title:" label. Found
+// live 2026-10-08 on claude-haiku-5.5, which answers the title prompt as a
+// chat reply — "Thread title: Go Release, Security...\n\nI" — where the
+// DeepSeek models the prompt was tuned on return the bare title.
+var titleLabelPrefix = regexp.MustCompile(`(?i)^(?:\*\*)?(?:thread\s+)?title(?:\*\*)?\s*:\s*(?:\*\*)?`)
 
 // answerLikeTitle catches a title that's actually an answer to the
 // user's question instead of a description of it — a real example:
@@ -73,7 +81,7 @@ const maxTitleLen = 60
 // Salvatore..."). The system prompt now says so explicitly with
 // matching examples, and answerLikeTitle below catches whatever slips
 // through anyway.
-func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string, weaverThread bool) (string, float64, error) {
+func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string, weaverThread bool, sessionID string) (string, float64, error) {
 	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
 		// AllowFallbacks(true) — see the main turn client's construction
 		// above for why: an escape valve for every pinned provider being
@@ -104,11 +112,20 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 		{Role: "user", Content: userMessage},
 	}
 
-	resp, err := titleClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	res, err := agent.CompleteOneShot(context.Background(), cfg, titleClient, modelCfg.ID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		OnFallback: func(from, to string, err error) {
+			// Background call, no live turn to chip — the ledger row
+			// (below) and this log line are its visibility.
+			log.Warn("title generation spilled providers", "from", from, "to", to, "err", err)
+		},
+	}, prompt)
 	if err != nil {
 		return "", 0, err
 	}
-	return sanitizeGeneratedTitle(resp.Content), resp.CostUSD, nil
+	s.logOneShotProviderUsage(res, modelCfg.ID)
+	return sanitizeGeneratedTitle(res.Text), res.ListCost, nil
 }
 
 // sanitizeGeneratedTitle cleans up a raw title completion into something
@@ -119,10 +136,22 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 // model sends back.
 func sanitizeGeneratedTitle(raw string) string {
 	title := strings.TrimSpace(raw)
+	// A title is one line; anything after the first newline is the model
+	// continuing to chat (an explanation, a second candidate) — and left in,
+	// it would be truncated mid-word into the stored title.
+	title, _, _ = strings.Cut(title, "\n")
+	title = strings.TrimSpace(titleLabelPrefix.ReplaceAllString(strings.TrimSpace(title), ""))
 	title = strings.TrimSpace(titleQuotePrefix.ReplaceAllString(title, ""))
 	title = strings.TrimRight(title, ".!。")
 	if len(title) > maxTitleLen {
-		title = title[:maxTitleLen]
+		// Back off to a rune boundary: a plain byte cut mid-rune (any CJK or
+		// accented title) stored invalid UTF-8 — found by
+		// FuzzSanitizeGeneratedTitle.
+		cut := maxTitleLen
+		for cut > 0 && !utf8.RuneStart(title[cut]) {
+			cut--
+		}
+		title = title[:cut]
 	}
 	if answerLikeTitle.MatchString(title) {
 		return ""
@@ -143,7 +172,7 @@ func sanitizeGeneratedTitle(raw string) string {
 // (which the raw history always does) invites a helpful model to keep
 // answering instead of switching to the actual task, so the instruction
 // needs to be the very last thing it sees.
-func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig, history []llm.ChatMessage) (string, float64, error) {
+func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig, history []llm.ChatMessage, sessionID string) (string, float64, error) {
 	if len(history) == 0 {
 		return "", 0, fmt.Errorf("thread has no messages to title")
 	}
@@ -161,9 +190,16 @@ func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig
 	prompt = append(prompt, history...)
 	prompt = append(prompt, llm.ChatMessage{Role: "user", Content: p.Turn.TitleRegenerateTask})
 
-	resp, err := titleClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	res, err := agent.CompleteOneShot(context.Background(), cfg, titleClient, modelCfg.ID, agent.OneShotOptions{
+		SessionID: sessionID,
+		UserAgent: "Polaris/" + s.version,
+		OnFallback: func(from, to string, err error) {
+			log.Warn("title regeneration spilled providers", "from", from, "to", to, "err", err)
+		},
+	}, prompt)
 	if err != nil {
 		return "", 0, err
 	}
-	return sanitizeGeneratedTitle(resp.Content), resp.CostUSD, nil
+	s.logOneShotProviderUsage(res, modelCfg.ID)
+	return sanitizeGeneratedTitle(res.Text), res.ListCost, nil
 }

@@ -1,0 +1,8 @@
+id: em-biopsy-waiting
+track: emotional
+rationale: >-
+  Health scare with anxious waiting. No question asked, just distress. Clear emotional=yes.
+state:
+  latest: "biopsy results come back thursday and i literally cant think about anything else"
+expect:
+  emotional: {answer: "yes"}

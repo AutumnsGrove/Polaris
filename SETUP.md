@@ -12,7 +12,13 @@ GHCR, updated by a host-side watcher. There's no other install path.
 - A running [SearXNG](https://github.com/searxng/searxng) instance with JSON output enabled
   (disabled by default upstream — see below). Docker's bundled SearXNG already has this on.
 - An [OpenRouter](https://openrouter.ai) API key — also what source verification and the optional
-  Oracle mode setting use for their own Jev classification calls; no separate key needed
+  Oracle mode setting use for their own decision-model classification calls; no separate key needed.
+  Those calls default to Jev; `decisions.model` in `config.yaml` swaps in another decision model
+  (see `config.yaml.example`)
+- Optional: an [OpenCode Go](https://opencode.ai) subscription key (`OPENCODE_API_KEY` in `.env`),
+  to run DeepSeek against the subscription's allowance with OpenRouter as the paid fallback.
+  Off until the `providers.opencode_go` block is uncommented in `config.yaml` and routing is
+  switched on (see `config.yaml.example`); `polaris providers status` shows the effective routes
 - Optional: a [Foursquare](https://foursquare.com/developers) Service API Key for structured
   nearby-place search (free tier: 10k calls/month) — without it, `nearby_search` falls back to
   plain web search
@@ -21,8 +27,9 @@ GHCR, updated by a host-side watcher. There's no other install path.
   **Search** (the last tier of the web-search fallback chain). Free tier: 1,000 credits/month
   total, no card required
 - Optional: a [Brave Search API](https://brave.com/search/api/) key, tried first in the web-search
-  fallback chain (SearXNG → Brave → Parallel → Tavily Search). **No ongoing free tier** (a
-  one-time $5/mo credit, ~1,000 queries), so usage is capped at 1,000/mo in the DB
+  fallback chain (SearXNG → Brave → Parallel → Tavily Search). Free tier: a recurring **$5/month
+  credit** (~1,000 queries), but past it every query bills the card on file, so usage is capped at
+  1,000/mo in the DB
 - Optional: a [Parallel](https://parallel.ai) API key, second in that fallback chain. Free tier:
   5,000 requests/month, but the account has a card on file, so usage is capped in the DB a little
   under that limit
@@ -44,14 +51,28 @@ GHCR, updated by a host-side watcher. There's no other install path.
 - Required for the `movies` tool: a free [TMDB API key](https://www.themoviedb.org/settings/api) —
   no unauthenticated fallback
 - Required for the `youtube_transcript` tool: [yt-dlp](https://github.com/yt-dlp/yt-dlp) on
-  `PATH` (the Docker image already has it; for local dev, `pip install yt-dlp` — skip the
+  `PATH` (the Docker image already has it; for local dev, `pip install "yt-dlp[default]"` plus Node.js on `PATH` — skip the
   apt/Alpine package, it drags in ffmpeg, +276MB, for functionality this tool doesn't use). Without it,
   `youtube_transcript` returns a clear "yt-dlp is not installed" error; every other tool still works
-- Optional: a local [Ollama](https://ollama.com) instance serving `nomic-embed-text`, for a
+- Optional: semantic search over your own chat history and Constellation stars, plus a
   research-loop signal that catches consecutive `web_search` queries rephrasing the same thing.
-  Without it, that one signal is just disabled. Under Docker this needs Ollama rebound beyond
-  `127.0.0.1` and a compose route to the host — see `compose/polaris/config.yaml.example`'s
-  `ollama` section
+  Configured under `embeddings:` in `config.yaml`; **no extra key needed** — `provider: openrouter`
+  reuses the OpenRouter key above. Left unset, Polaris falls back to a local
+  [Ollama](https://ollama.com) instance if `ollama.base_url` is set, and otherwise simply runs
+  keyword-only. Either way, search still works without it; semantic retrieval is an extra tier
+  fused with keyword results, never a dependency.
+
+  A hosted model is the recommended default because the index is built off-device: the real
+  2,344-message history used to design this cost **$0.002** to embed and about 80 seconds. Run
+  `polaris embeddings backfill` once after enabling it to load history that predates the setting,
+  and `polaris embeddings reindex --yes` after changing `embeddings.model` (vectors from different
+  models aren't comparable, so semantic retrieval stays off until they're recomputed — keyword
+  search is unaffected throughout). `polaris embeddings status` shows coverage and spend.
+
+  Choosing `provider: ollama` instead keeps everything local, at the cost of CPU time on this
+  host and a smaller context window (nomic truncates at 2,048 tokens, so long answers get cut).
+  Under Docker that also needs Ollama rebound beyond `127.0.0.1` and a compose route to the host —
+  see `compose/polaris/config.yaml.example`'s `ollama` section
 
 ### SearXNG's JSON API
 
@@ -133,13 +154,21 @@ settings panel:
 - **`.env`** — Docker Compose's own secret-interpolation mechanism (API keys, `SEARXNG_SECRET`).
 - **`compose/polaris/config.yaml`** — the model catalog (each entry pins a specific OpenRouter
   provider for consistent prompt-cache pricing), SearXNG's URL, logging, voice model choices.
-  Meant to be hand-edited; changes require a restart.
+  Meant to be hand-edited. Most fields need a restart (the OpenRouter/SearXNG clients are built at
+  startup); the handful that are re-read on every request — `max_agent_turns`,
+  `context_window_tokens` — apply to the next turn with no restart. Its whole
+  directory is bind-mounted into the container rather than the single file, so replacing the file
+  (`sed -i`, a GUI editor, `git checkout`) is picked up too — that used to silently leave the
+  container reading its start-up copy until it was recreated.
 - **Settings panel** (gear icon in the sidebar) — theme, default model, price visibility, a manual
   location fallback for `nearby_search`, the update button, and (behind the small info-icon
   button) a usage/tuning stats page — cost, tool-call counts/error rates, research-loop steering
   signals. Changes apply instantly, no restart, no file editing.
 - **prompt.md** — the system prompt, read fresh on every turn. Edit it, see the change on your
-  very next message.
+  very next message. (Same for `prompts.yaml`, `blocked_sources.txt` and `tools/descriptions/`.)
+  These are still single-*file* bind mounts, unlike `config.yaml`: a save that replaces the file
+  rather than rewriting it — `sed -i`, `mv` — leaves the container serving the old copy until it is
+  recreated (`docker compose up -d --force-recreate`). vim/nano's normal save is fine.
 
 Browser geolocation (used automatically for "near me" questions, before falling back to the
 manual location above or `config.yaml`'s `default_location`) needs a secure context — it won't
@@ -172,7 +201,7 @@ one-off container sharing the same data volume, with the real service stopped fi
 
 ```bash
 docker compose stop polaris
-docker compose run --rm --no-deps polaris backup restore <name> --config /data/config.yaml --yes
+docker compose run --rm --no-deps polaris backup restore <name> --config /data/config/config.yaml --yes
 docker compose up -d polaris
 ```
 
@@ -191,6 +220,13 @@ backups keep working exactly as before. Use a bucket dedicated to this and a sco
 (Object Read & Write on that bucket only) rather than an account-wide key —
 [creating one](https://developers.cloudflare.com/r2/api/tokens/).
 
+Mirrored objects are gzip-compressed inside the bucket, at roughly 40% of the local file's size,
+and decompressed automatically on the way back out — including for objects mirrored before that
+compression existed, so nothing needs re-uploading. The object name is still the backup's own
+filename (`polaris-YYYYMMDD-HHMMSS.db`, no `.gz`). One consequence worth expecting:
+`backup list --remote` reports the *stored* size, so its numbers will look a few times smaller
+than `backup list`'s for the same day. That's compression, not a truncated upload.
+
 ```bash
 polaris backup list --remote               # what's actually recoverable from R2, not local disk
 polaris backup restore-remote <name>       # disaster recovery: download from R2, then restore
@@ -200,6 +236,6 @@ polaris backup restore-remote <name>       # disaster recovery: download from R2
 configured, it downloads the named backup from R2 into `backup.dir` and then runs the exact same
 verify/preserve/swap sequence `restore` does. Same one-off-container invocation as plain
 `restore` above (`docker compose stop polaris && docker compose run --rm --no-deps polaris
-backup restore-remote <name> --config /data/config.yaml --yes && docker compose up -d polaris`)
+backup restore-remote <name> --config /data/config/config.yaml --yes && docker compose up -d polaris`)
 — that container shares the same bind-mounted `config.yaml` (so it has the R2 credentials) and
 the same data volume as the real service.

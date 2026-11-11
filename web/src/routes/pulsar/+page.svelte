@@ -107,7 +107,10 @@
 					<div class="routine-name">{routine.name}</div>
 					<div class="routine-schedule">{scheduleSummary(routine)}</div>
 				</div>
-				<PulsarUnreadBadge count={pulsarState.unreadCounts[String(routine.id)] ?? 0} />
+				<PulsarUnreadBadge
+					count={pulsarState.unreadCounts[String(routine.id)] ?? 0}
+					alert={(pulsarState.alertCounts[String(routine.id)] ?? 0) > 0}
+				/>
 			</div>
 		{/each}
 	</div>

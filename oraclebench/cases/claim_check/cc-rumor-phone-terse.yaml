@@ -1,0 +1,10 @@
+id: cc-rumor-phone-terse
+track: claim_check
+rationale: >-
+  A rumor ("heard...") followed by "true?" is a request to verify a specific claim.
+state:
+  latest: "heard my bank is going to start charging a fee to get cash back at stores. true?"
+expect:
+  claim_check: {answer: "yes"}
+quiet:
+  - emotional

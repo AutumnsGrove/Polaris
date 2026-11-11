@@ -1,0 +1,12 @@
+id: rs-speed-of-light
+track: research
+rationale: >-
+  Trap: a specific number, but a defined physical constant that never changes, so it is stable
+  knowledge. research=no. Contrasts with rs-saturn-moons (a count that keeps changing).
+state:
+  latest: "whats the speed of light in m/s"
+expect:
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

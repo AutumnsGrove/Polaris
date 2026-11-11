@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sidebar connection indicator — set 2</title>
+<!--
+  Set 2. Set 1 (mockups/status-indicator-options.html) was four drawings of
+  the same idea: a small mark sitting in the footer's left cell. These are
+  different in KIND, not in style — each answers a different question:
+
+    F  "does this need saying at all?"            absence
+    G  "how healthy is the box, actually?"        measurement
+    H  "what exactly is degraded?"                panel
+    I  "can the surface carry it instead?"        light
+    J  "is it alive right now?"                   heartbeat
+
+  Real footer strip, real 260px width, real tokens from web/src/app.css.
+  Flip themes with the button (or ?theme=light).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Asimovian&family=Lexend:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-bg: oklch(15% 0.014 65);
+    --color-surface: oklch(19% 0.014 65);
+    --color-surface-2: oklch(23% 0.016 65);
+    --color-surface-3: oklch(28% 0.018 65);
+    --color-border: oklch(30% 0.016 65);
+    --color-border-strong: oklch(40% 0.02 65);
+    --color-text: oklch(93% 0.01 75);
+    --color-text-dim: oklch(64% 0.014 70);
+    --color-accent: oklch(82% 0.17 78);
+    --color-accent-2: oklch(78% 0.06 235);
+    --color-danger: oklch(65% 0.19 25);
+    --color-danger-bg: oklch(28% 0.05 25);
+    --shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+    --shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+    --space-2xl: 32px;
+    --font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  :root[data-theme='light'] {
+    --color-bg: oklch(97% 0.008 75);
+    --color-surface: oklch(99% 0.004 80);
+    --color-surface-2: oklch(95% 0.01 75);
+    --color-surface-3: oklch(91% 0.012 75);
+    --color-border: oklch(87% 0.012 75);
+    --color-border-strong: oklch(78% 0.016 75);
+    --color-text: oklch(24% 0.016 60);
+    --color-text-dim: oklch(46% 0.018 60);
+    --color-accent: oklch(54% 0.17 68);
+    --color-accent-2: oklch(48% 0.1 240);
+    --color-danger: oklch(52% 0.19 25);
+    --color-danger-bg: oklch(93% 0.04 25);
+    --shadow-well: inset 0 1px 3px rgba(50, 40, 28, 0.16), inset 0 0 0 1px rgba(50, 40, 28, 0.08);
+    --shadow-md: 0 8px 24px -8px rgba(60, 48, 32, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: var(--space-2xl) var(--space-lg);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1240px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: var(--space-lg); flex-wrap: wrap; }
+  h1 {
+    font-family: var(--font-wordmark);
+    font-weight: 400;
+    font-size: 24px;
+    letter-spacing: 0.02em;
+    margin: 0;
+  }
+  .theme-btn {
+    margin-left: auto;
+    font: inherit; font-size: 12px;
+    color: var(--color-text-dim);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+  .theme-btn:hover { color: var(--color-text); border-color: var(--color-border-strong); }
+  .lede {
+    color: var(--color-text-dim);
+    font-size: 13.5px; line-height: 1.65;
+    max-width: 86ch;
+    margin: var(--space-md) 0 0;
+  }
+  .lede b { color: var(--color-text); font-weight: 500; }
+  .lede code, .note code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--color-surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(356px, 1fr));
+    gap: var(--space-xl);
+    margin-top: var(--space-2xl);
+  }
+  .card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg) var(--space-lg) var(--space-md);
+    box-shadow: var(--shadow-md);
+  }
+  .card-head { display: flex; align-items: baseline; gap: var(--space-sm); }
+  .tag { font-family: var(--font-wordmark); font-size: 15px; color: var(--color-accent); line-height: 1; }
+  .card-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .idea { font-size: 12.5px; line-height: 1.6; color: var(--color-text-dim); margin: var(--space-sm) 0 var(--space-lg); }
+  .idea b { color: var(--color-text); font-weight: 500; }
+
+  .state-label {
+    font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--color-text-dim); opacity: 0.6;
+    margin: 0 0 var(--space-xs);
+  }
+  .state-label + .strip { margin-bottom: var(--space-md); }
+
+  /* ---------------------------------------------------------------
+     The real footer strip: Sidebar.svelte's .status, 260px, well.
+     --------------------------------------------------------------- */
+  .strip {
+    width: 260px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    box-shadow: var(--shadow-well);
+    font-size: 12px;
+    color: var(--color-text-dim);
+    white-space: nowrap;
+    position: relative;
+    overflow: hidden;
+  }
+  .fill { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .foot { display: flex; align-items: center; gap: 2px; flex-shrink: 0; margin-left: auto; }
+  .foot .ib {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: var(--space-sm);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-dim);
+  }
+
+  /* ---- F. Silent ---- */
+  .strip.silent-down {
+    background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+    color: color-mix(in srgb, var(--color-danger) 80%, var(--color-text));
+  }
+  .strip.silent-up .foot { margin-left: auto; }
+
+  /* ---- G. Readout ---- */
+  .readout {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.01em;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    color: var(--color-text-dim);
+  }
+  .readout .lbl { opacity: 0.55; }
+  .readout .val { color: var(--color-text); font-size: 11.5px; }
+  .readout .unit { opacity: 0.5; font-size: 10px; }
+  .readout.is-down .val { color: var(--color-danger); }
+  .readout.is-down { opacity: 0.95; }
+  .readout.is-wait .val { opacity: 0.45; }
+  .readout .try { opacity: 0.55; font-size: 10px; }
+
+  /* ---- H. Panel ---- */
+  .lamps { display: flex; align-items: center; gap: 10px; }
+  .lamp-item { display: inline-flex; align-items: center; gap: 4px; }
+  .lamp-name {
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-text-dim);
+    opacity: 0.62;
+  }
+  .lamp {
+    width: 5px; height: 5px;
+    border-radius: 1px;   /* square, like a hardware panel — not a dot */
+    background: var(--color-accent);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  .lamp.warn {
+    background: color-mix(in srgb, var(--color-accent) 45%, var(--color-text-dim));
+    box-shadow: none;
+    animation: lamp-warn 4s ease-in-out infinite;
+  }
+  .lamp.off {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--color-danger);
+    animation: none;
+  }
+  .lamp-item.cool .lamp-name { opacity: 0.4; }
+  @keyframes lamp-warn { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .lamp-sep { width: 1px; height: 9px; background: var(--color-surface-3); }
+
+  /* ---- I. Ambient ---- */
+  .strip.amb-up {
+    box-shadow:
+      var(--shadow-well),
+      inset 3px 0 14px -8px color-mix(in srgb, var(--color-accent) 100%, transparent),
+      inset 0 6px 12px -10px color-mix(in srgb, var(--color-accent) 80%, transparent);
+  }
+  .strip.amb-down {
+    box-shadow:
+      var(--shadow-well),
+      inset 0 0 0 1px color-mix(in srgb, var(--color-danger) 22%, transparent);
+    animation: amb-breathe 3.4s ease-in-out infinite;
+    color: color-mix(in srgb, var(--color-danger) 70%, var(--color-text-dim));
+  }
+  @keyframes amb-breathe {
+    0%, 100% { background-color: color-mix(in srgb, var(--color-danger) 4%, transparent); }
+    50% { background-color: color-mix(in srgb, var(--color-danger) 12%, transparent); }
+  }
+
+  /* ---- J. Heartbeat ---- */
+  .spark { flex: 1; display: flex; align-items: center; min-width: 0; }
+  .spark svg { display: block; overflow: visible; }
+  .spark .trace { fill: none; stroke: var(--color-accent); stroke-width: 1; stroke-linejoin: round; stroke-linecap: round; opacity: 0.55; }
+  .spark .tick { fill: var(--color-accent); opacity: 0.9; }
+  .spark .live { animation: spark-live 2s ease-out infinite; }
+  @keyframes spark-live { 0% { opacity: 1; } 70%, 100% { opacity: 0.15; } }
+  .spark.is-down .trace { stroke: var(--color-text-dim); opacity: 0.3; stroke-dasharray: none; }
+  .spark.is-down .gapmark { stroke: var(--color-danger); opacity: 0.7; }
+
+  /* detail rows */
+  .detail {
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-surface-3);
+  }
+  .detail-label {
+    font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--color-text-dim); opacity: 0.55; margin: 0 0 var(--space-sm);
+  }
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .row { display: flex; align-items: center; gap: var(--space-sm); font-size: 12px; color: var(--color-text-dim); }
+  .row .who { width: 26px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.5; }
+  .row .strip { width: 240px; padding: var(--space-sm) var(--space-md); }
+
+  .note { font-size: 11.5px; line-height: 1.6; color: var(--color-text-dim); margin: var(--space-md) 0 var(--space-xs); }
+  .note .k { color: var(--color-text); font-weight: 500; }
+  .note.warn { opacity: 0.92; }
+
+  .footer {
+    margin-top: var(--space-2xl); padding-top: var(--space-lg);
+    border-top: 1px solid var(--color-border);
+    font-size: 12px; color: var(--color-text-dim); line-height: 1.7;
+  }
+  .footer code { font-family: var(--font-mono); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>Connection indicator — second set</h1>
+    <button class="theme-btn" id="themeBtn" type="button">light theme</button>
+  </div>
+  <p class="lede">
+    Set one was four drawings of the same thing: a small mark in the footer's left cell. These are
+    different in <b>kind</b>, not style — each answers a different question. Same real 260px footer strip,
+    same tokens, both states.
+  </p>
+
+  <div class="cards">
+
+    <!-- ============================== F ============================== -->
+    <div class="card">
+      <div class="card-head"><span class="tag">F</span><h2>Silent</h2></div>
+      <p class="idea">
+        <b>Nothing at all</b> while it works — the left cell is empty, the icons sit at the right.
+        The footer only speaks when the socket is gone: the well tints, and one line of plain text
+        appears. Absence as the "everything's fine" signal.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip silent-up">
+        <span class="fill"></span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">not connected</div>
+      <div class="strip silent-down">
+        <span class="fill">no link · retry 2s</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="detail">
+        <p class="detail-label">why the empty cell is honest</p>
+        <p class="note">
+          A healthy socket has nothing you can do about it, and a broken one announces itself: the
+          composer refuses to send, the header stops streaming. The status line only has to confirm
+          the thing you can't otherwise see — <span class="k">the retry cadence</span>.
+        </p>
+      </div>
+
+      <p class="note warn">
+        <span class="k">Watch:</span> a completely empty left cell may read as "unfinished" on first load,
+        before the socket has ever opened — if so, show the down line until it first connects. And the
+        copy has to stay short: "retrying every 2s" truncates at 260px next to three footer icons, which
+        is how this one ended up as "no link · retry 2s".
+      </p>
+    </div>
+
+    <!-- ============================== G ============================== -->
+    <div class="card">
+      <div class="card-head"><span class="tag">G</span><h2>Readout</h2></div>
+      <p class="idea">
+        No mark: <b>mono type with real numbers</b>. Round-trip time to the box while it's up, and the
+        retry counter while it isn't. Answers "is the potato healthy and how slow is it" — which a dot
+        can never do.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="readout"><span class="lbl">link</span><span class="val">14</span><span class="unit">ms</span></span>
+        <span class="fill"></span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="readout is-down"><span class="lbl">link</span><span class="val">—</span><span class="try">retry 4</span></span>
+        <span class="fill"></span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="detail">
+        <p class="detail-label">the three states it actually has</p>
+        <div class="rows">
+          <div class="row"><span class="who">wait</span>
+            <div class="strip"><span class="readout is-wait"><span class="lbl">link</span><span class="val">…</span></span><span class="fill"></span></div>
+          </div>
+          <div class="row"><span class="who">slow</span>
+            <div class="strip"><span class="readout"><span class="lbl">link</span><span class="val">480</span><span class="unit">ms</span></span><span class="fill"></span></div>
+          </div>
+        </div>
+        <p class="note">
+          Needs a <code>ping</code>/<code>pong</code> frame on the existing socket (<code>ws.ts</code>, ~10
+          lines) and a retry counter in the reconnect timer. The number also earns its keep: it's the only
+          way to see the potato itself getting slow vs. the internet getting slow.
+        </p>
+      </div>
+
+      <p class="note warn">
+        <span class="k">Watch:</span> a changing number in peripheral vision pulls the eye every 2s. Only
+        re-measure on a 30s cadence (or on demand), and never animate the value.
+      </p>
+    </div>
+
+    <!-- ============================== H ============================== -->
+    <div class="card">
+      <div class="card-head"><span class="tag">H</span><h2>Panel</h2></div>
+      <p class="idea">
+        A hardware front panel: <b>WSS · SEARX</b>, square lamps, mono labels. Tells you <i>what</i> is
+        degraded, not just that something is — SearXNG already knows when it's in its hour-long engine
+        cooldown, and today that fact is only visible in the transcript.
+      </p>
+
+      <div class="state-label">all good</div>
+      <div class="strip">
+        <span class="lamps">
+          <span class="lamp-item"><span class="lamp-name">wss</span><span class="lamp"></span></span>
+          <span class="lamp-sep"></span>
+          <span class="lamp-item"><span class="lamp-name">searx</span><span class="lamp"></span></span>
+        </span>
+        <span class="fill"></span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">socket down</div>
+      <div class="strip">
+        <span class="lamps">
+          <span class="lamp-item"><span class="lamp-name">wss</span><span class="lamp off"></span></span>
+          <span class="lamp-sep"></span>
+          <span class="lamp-item cool"><span class="lamp-name">searx</span><span class="lamp warn"></span></span>
+        </span>
+        <span class="fill"></span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="detail">
+        <p class="detail-label">the state that actually happens most</p>
+        <div class="rows">
+          <div class="row"><span class="who">cool</span>
+            <div class="strip">
+              <span class="lamps">
+                <span class="lamp-item"><span class="lamp-name">wss</span><span class="lamp"></span></span>
+                <span class="lamp-sep"></span>
+                <span class="lamp-item cool"><span class="lamp-name">searx</span><span class="lamp warn"></span></span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          SearXNG's engine cooldown (<code>search/searxng.go</code>) is a real, already-tracked state that
+          the UI currently hides — search silently degrades to the paid chain instead. Giving it a lamp
+          turns a mystery into a readout.
+        </p>
+      </div>
+
+      <p class="note warn">
+        <span class="k">Watch:</span> two labeled lamps + three icons in 260px is the densest option here,
+        and labels are 8.5px mono — legible on a phone, but only just. Three lamps (<code>db</code>?) would
+        not fit, and SQLite can't fail independently of the process anyway.
+      </p>
+    </div>
+
+    <!-- ============================== I ============================== -->
+    <div class="card">
+      <div class="card-head"><span class="tag">I</span><h2>Well</h2></div>
+      <p class="idea">
+        No mark at all — <b>the strip's own surface carries it</b>. Connected: a faint warm spill of light
+        from the left edge of the carved well, as if the panel is lit from inside. Disconnected: the light
+        leaves and the well slowly breathes a dim red wash.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip amb-up">
+        <span class="fill">connected</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">reconnecting</div>
+      <div class="strip amb-down">
+        <span class="fill">reconnecting…</span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="detail">
+        <p class="detail-label">why this is the calmest one</p>
+        <p class="note">
+          Nothing in the footer is an object anymore — the state is a property of the room. It also can't
+          be confused with the Pulsar/Daily unread dots, because there is no dot. The down state still has
+          to be findable, so the breathing wash does the work the word alone can't.
+        </p>
+      </div>
+
+      <p class="note warn">
+        <span class="k">Watch:</span> the weakest at a glance — you cannot tell up from down from a still
+        frame at arm's length; it relies on the word and on motion. It's also the only option that can be
+        layered <i>on top of</i> any other (keep a mark and add the lit well), which might be its best use.
+      </p>
+    </div>
+
+    <!-- ============================== J ============================== -->
+    <div class="card">
+      <div class="card-head"><span class="tag">J</span><h2>Heartbeat</h2></div>
+      <p class="idea">
+        A 1px trace along the strip: a blip each time the socket answers a ping. Alive = a real rhythm you
+        can read at a glance, without a single word. Dead = a flatline with a break where the beat stopped.
+      </p>
+
+      <div class="state-label">connected</div>
+      <div class="strip">
+        <span class="spark">
+          <svg width="150" height="14" viewBox="0 0 150 14" aria-hidden="true">
+            <path class="trace" d="M0 9 L8 9 L10 4 L13 12 L16 9 L36 9 L38 4 L41 12 L44 9 L64 9 L66 4 L69 12 L72 9 L92 9 L94 4 L97 12 L100 9 L120 9 L122 4 L125 12 L128 9 L150 9"/>
+            <circle class="tick live" cx="122" cy="4" r="1.6"/>
+          </svg>
+        </span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="state-label">reconnecting</div>
+      <div class="strip">
+        <span class="spark is-down">
+          <svg width="150" height="14" viewBox="0 0 150 14" aria-hidden="true">
+            <path class="trace" d="M0 9 L46 9"/>
+            <path class="gapmark" d="M50 9 L54 9" stroke-width="1" stroke-linecap="round" fill="none"/>
+            <path class="trace" d="M58 9 L150 9" opacity="0.14"/>
+          </svg>
+        </span>
+        <span class="foot">
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+        </span>
+      </div>
+
+      <div class="detail">
+        <p class="detail-label">zoomed</p>
+        <div class="rows">
+          <div class="row"><span class="who">up</span>
+            <div class="spark" style="transform: scale(1.9); transform-origin: left center;">
+              <svg width="150" height="14" viewBox="0 0 150 14">
+                <path class="trace" d="M0 9 L8 9 L10 4 L13 12 L16 9 L36 9 L38 4 L41 12 L44 9 L64 9 L66 4 L69 12 L72 9 L92 9 L94 4 L97 12 L100 9 L120 9 L122 4 L125 12 L128 9 L150 9"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          Needs the same <code>ping</code>/<code>pong</code> frame as G, plus a rollover buffer of the last
+          ~10 beats. Without real beats it's a decorative squiggle, which is the thing to avoid.
+        </p>
+      </div>
+
+      <p class="note warn">
+        <span class="k">Watch:</span> a 2s blip is a lot of motion for a footer that lives next to the
+        settings gear; and it's the only option that looks like a graph, so it reads "status page", not
+        "calm room".
+      </p>
+    </div>
+
+  </div>
+
+  <p class="footer">
+    Rejected from set 1 on the way here, for the record: a heuristic bar meter, a wifi ripple, a
+    lighthouse sweep, a crescent "occultation" (reads as Do Not Disturb), and a browser-tab spinner
+    variant (reads as loading, not disconnected). They were all still "a mark in the left cell" — the
+    same failure mode as the dot.
+  </p>
+</main>
+
+<script>
+  const btn = document.getElementById('themeBtn');
+  const root = document.documentElement;
+  const setTheme = (light) => {
+    root.setAttribute('data-theme', light ? 'light' : 'dark');
+    btn.textContent = light ? 'dark theme' : 'light theme';
+  };
+  setTheme(new URLSearchParams(location.search).get('theme') === 'light');
+  btn.addEventListener('click', () => setTheme(root.getAttribute('data-theme') !== 'light'));
+</script>
+</body>
+</html>

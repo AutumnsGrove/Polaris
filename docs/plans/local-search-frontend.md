@@ -9,7 +9,7 @@ the header and a shared sidebar shell (see "Shared chrome" below). Named in the 
 navigation-instrument register as Polaris (the star you steer by) — Atlas is the reference you
 consult, a companion product rather than a clone.
 
-Design reference: `design/mockups/search-results.html` (open directly in a browser, works
+Design reference: `mockups/search-results.html` (open directly in a browser, works
 offline, no build step — the header wordmark there now reads "Atlas"). That mockup is the source
 of truth for visual decisions below; this document is the source of truth for scope, data model,
 and architecture.

@@ -1,5 +1,6 @@
 name: memory
 requires: memory_store
+export_privacy: memory
 description: >-
   write, edit, view, or forget durable memories about the user or ongoing work.
 api_description: >-

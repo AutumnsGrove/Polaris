@@ -1,0 +1,15 @@
+id: cl-followup-vague-price
+track: clarify
+rationale: >-
+  Mid-thread twin of cl-is-it-worth-it: "how much is it" is vague alone, but the previous turn
+  names the product. Labeled on intent=product only. clarify is deliberately unlabeled because
+  production never asks it mid-thread.
+state:
+  previous: "tell me about the sony wh-1000xm5 headphones"
+  latest: "how much is it"
+expect:
+  intent: {answer: product}
+  research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

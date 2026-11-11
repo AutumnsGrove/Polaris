@@ -1,0 +1,15 @@
+id: ui-none-best-sci-fi-books
+track: ui
+rationale: >-
+  Near-miss for readings: a best-of recommendation list to pick from, which readings
+  explicitly excludes ("Not a best-of list"). A short list serves best, so ui none and
+  format list.
+state:
+  latest: "best sci fi books of the last decade"
+expect:
+  ui: {answer: "none"}
+  format: {answer: list}
+  intent: {answer: book}
+quiet:
+  - emotional
+  - private_person

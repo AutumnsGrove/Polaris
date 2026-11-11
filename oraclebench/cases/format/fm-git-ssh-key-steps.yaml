@@ -1,0 +1,15 @@
+id: fm-git-ssh-key-steps
+track: format
+rationale: >-
+  An ordered how-to with commands. format=steps is the cleanest read; code is defensible
+  because the answer is mostly commands. Overlaps with ui=steps by design (ui holds format
+  back when it fires), so ui is labeled separately.
+state:
+  latest: "How do I set up an SSH key for GitHub on a Mac? Please go through it step by step."
+expect:
+  format: {answer: steps, accept: [steps, code]}
+  ui: {answer: steps}
+  task: {answer: plan, accept: [plan, answer, troubleshoot]}
+quiet:
+  - emotional
+  - private_person

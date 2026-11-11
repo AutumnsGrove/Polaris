@@ -27,11 +27,6 @@ var log = logger.WithPrefix("cmd")
 var configPath string
 var devMode bool
 
-// eventRetentionDays mirrors the log files' own 90-day retention (see
-// logger.rotatingWriter) so the events table's durable evidence trail
-// doesn't grow forever on a long-running install.
-const eventRetentionDays = 90
-
 // attachmentMaxAge is generous on purpose — this only ever catches an
 // upload that was written to disk but never actually sent in a message
 // (see gateway.PruneOldAttachments), so there's no cost to erring toward
@@ -80,9 +75,16 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	if err := db.PruneEvents(eventRetentionDays); err != nil {
-		log.Warn("pruning old events failed", "err", err)
-	}
+	// Events are deliberately never pruned. They're the only place a turn's
+	// thinking traces survive (messages.transcript holds tool calls and
+	// results but no reasoning), so a thread's audit trail should live exactly
+	// as long as the thread itself: a hard-deleted thread's events go with it
+	// (events.thread_id's ON DELETE CASCADE, see store/schema.go), a
+	// soft-deleted thread keeps them forever. Global thread-less events
+	// (startup, self-update, config reload) have no thread to outlive and
+	// simply accumulate. Each row is capped at store's maxEventDataBytes, so
+	// the table grows with usage, never per-row size
+	// (docs/plans/thread-export.md).
 	if err := gateway.PruneOldAttachments(cfg.Attachments.Dir, attachmentMaxAge); err != nil {
 		log.Warn("pruning old attachments failed", "err", err)
 	}
@@ -106,6 +108,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+	gateway.ApplyTimezoneFromStore(db)
 	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode}, "")
 
 	// Runs for the life of the process, roughly once a day (see
@@ -153,6 +156,14 @@ func runRun(cmd *cobra.Command, args []string) error {
 	constellationDone := make(chan struct{})
 	defer close(constellationDone)
 	go srv.RunConstellationScheduler(constellationDone)
+
+	// The embedding indexer — loads the semantic-search cache, then sweeps
+	// for unembedded rows. No-op entirely (and Start returns immediately)
+	// when no embedding provider is configured, which is the default for a
+	// config.yaml with no embeddings section and no ollama.base_url.
+	embedDone := make(chan struct{})
+	defer close(embedDone)
+	go srv.RunEmbedIndexer(embedDone)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}

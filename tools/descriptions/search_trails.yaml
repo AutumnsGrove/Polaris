@@ -1,0 +1,14 @@
+name: search_trails
+requires: approach_run
+export_privacy: personal
+description: >-
+  keyword-search prior Comet trails, for cross-period consistency.
+api_description: >-
+  Keyword search over prior Comet trails — the topic/mood/intent/resolved classifications recorded for
+  conversations that took place in earlier periods — plus the title of the thread each one describes.
+  Returns up to 8 results, newest period first.
+
+  Two uses: (1) if the thread you're classifying has been through a previous period, its own earlier trail
+  gives you continuity — note in your intent that it's a continuation rather than re-deriving the whole
+  thread cold; (2) to see how similar conversations have been phrased before, so your topic/mood labels stay
+  consistent with the existing vocabulary instead of drifting into near-synonyms.

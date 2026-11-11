@@ -1,0 +1,13 @@
+id: rs-no-thanks-followup
+track: research
+rationale: >-
+  A closing thank-you after an answer is small talk, nothing to look up: research=no
+  ("casual conversation").
+state:
+  previous: "how do i split a restaurant bill fairly when some people had drinks and others didnt"
+  latest: "perfect, thanks, thats all i needed"
+expect:
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

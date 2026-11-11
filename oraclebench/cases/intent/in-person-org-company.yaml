@@ -1,0 +1,12 @@
+id: in-person-org-company
+track: intent
+rationale: >-
+  Background on a specific company: person_org ("who they are, what they did, background").
+  Clean positive.
+state:
+  latest: "who owns Framework the laptop company and how did they start"
+expect:
+  intent: {answer: person_org}
+quiet:
+  - emotional
+  - private_person

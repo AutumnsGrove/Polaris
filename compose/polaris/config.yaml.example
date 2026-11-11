@@ -24,6 +24,28 @@ openrouter:
   api_key: "${OPENROUTER_API_KEY}"
   base_url: "https://openrouter.ai/api/v1"
 
+# Multi-provider routing (docs/plans/multi-provider.md). Dark by default:
+# with only the openrouter block above, every model resolves to OpenRouter
+# and nothing changes. To route DeepSeek through the OpenCode Go
+# subscription instead:
+#   1. uncomment the opencode_go provider below (needs OPENCODE_API_KEY),
+#   2. set routing.default_backend to "auto" (or add the model_backends
+#      line) — see `polaris providers status` to confirm the effective
+#      routes before and after.
+# providers:
+#   openrouter:
+#     api_key: "${OPENROUTER_API_KEY}"
+#     base_url: "https://openrouter.ai/api/v1"
+#   opencode_go:
+#     api_key: "${OPENCODE_API_KEY}"
+#     base_url: "https://opencode.ai/zen/go/v1"
+#     plan: "go"
+# routing:
+#   default_backend: "openrouter"  # auto | openrouter | opencode_go
+#   failover: "openrouter"         # openrouter | none
+# model_backends:
+#   deepseek: opencode_go
+
 searxng:
   base_url: "http://searxng:8080"
 
@@ -49,10 +71,33 @@ ollama:
   # this URL does anything. That widens Ollama's reach to your whole LAN,
   # not just Docker, since it has no built-in auth — only do this on a
   # host with no untrusted local network users. Empty base_url just
-  # disables agent.Run's query-similarity stale-search signal, nothing
-  # else breaks — see config.Config's Ollama field doc comment.
+  # disables embeddings, nothing else breaks — see config.Config's Ollama
+  # field doc comment.
   base_url: "http://host.docker.internal:11434"
   embed_model: "nomic-embed-text"
+
+embeddings:
+  # Which backend computes every embedding in Polaris — the semantic index
+  # over your own chat history and Constellation stars, plus the
+  # query-similarity signal in the research loop.
+  #
+  # "openrouter" is the recommended default: a hosted model, reusing
+  # openrouter.api_key above (no extra secret), so nothing runs on this
+  # host. That matters on hardware like a Le Potato — a full backfill of a
+  # real history measured ~$0.004 and 80 seconds off-device, versus minutes
+  # of pegged CPU locally for a smaller-context model.
+  #
+  # "ollama" uses the local instance configured above instead, and is what
+  # an empty `embeddings:` block falls back to for back-compat.
+  #
+  # Changing model invalidates every stored vector — they're tagged with the
+  # model that produced them, so semantic search turns itself off (keyword
+  # search keeps working) until you run `polaris embeddings reindex --yes`.
+  provider: "openrouter"
+  # Empty picks the provider's default:
+  # perplexity/pplx-embed-v1-0.6b (1024 dims, 32k context) for openrouter,
+  # nomic-embed-text for ollama.
+  model: "perplexity/pplx-embed-v1-0.6b"
 
 reddit:
   archive_url: "${REDDIT_ARCHIVE_URL}"
@@ -72,8 +117,8 @@ tmdb:
 default_location: ""
 
 voice:
-  stt_model: "mistralai/voxtral-mini-transcribe"
-  stt_fallback_model: "openai/whisper-large-v3"
+  stt_model: "mistralai/voxtral-small-transcribe-3-0"
+  stt_fallback_model: "mistralai/voxtral-mini-transcribe"
   tts_model: "hexgrad/kokoro-82m"
   tts_voice: "bf_lily"
   tts_format: "mp3"
@@ -128,14 +173,25 @@ service:
 
 context_window_tokens: 200000
 max_agent_turns: 50
+
 default_model: "deepseek"
 
+# Which decision model answers Oracle, the source-verification badge, and
+# compare_sources — an OpenRouter decision-model catalog id, reached with the
+# same api_key as above. Optional: left out, it stays on the pinned
+# typesafe/jev-1.14. Re-read on every turn, no restart. A wrong id makes every
+# call fail quietly (Oracle just goes off), so check the logs after changing
+# it, and re-run `polaris oracle-bench` first — it only measures Oracle's task.
+# decisions:
+#   model: "typesafe/jev-1.14"
+
 # Oracle mode tuning (opt-in in Settings; see README). Thresholds are the
-# minimum probability Jev's answer needs for a check to fire; the lists
-# decide which focus modes Oracle may pick, keep, or skip. All of this is
-# optional — anything left out uses the value shown here — and it's re-read
-# on every turn, so edits take effect without a restart. The wording Jev is
-# asked, and the text injected into the answer, lives in prompts.yaml.
+# minimum probability the decision model's answer needs for a check to fire;
+# the lists decide which focus modes Oracle may pick, keep, or skip. All of
+# this is optional — anything left out uses the value shown here — and it's
+# re-read on every turn, so edits take effect without a restart. The wording
+# the model is asked, and the text injected into the answer, lives in
+# prompts.yaml.
 oracle:
   checks:
     focus:
@@ -150,6 +206,14 @@ oracle:
       never_with_high_stakes: [brief]   # not picked when high_stakes fired
     research:
       threshold: 0.85
+    # Promotes the turn to Deep Research (the multi-agent fan-out, many times the
+    # cost of a normal answer), so the bar is high. Only asked in an interactive
+    # chat with Deep Research off, Research on, and a worker model configured —
+    # the plan-confirmation step needs someone to answer it. Safari and Brief
+    # skip it; a distressed or ambiguous message never gets it.
+    deep_research:
+      threshold: 0.85
+      skip_for_focus: [safari, brief]
     high_stakes:
       threshold: 0.75
     intent:
@@ -161,12 +225,22 @@ oracle:
       threshold: 0.85
       first_message_only: true
       skip_for_focus: [safari]  # Safari's Embark step already asks
+      suppresses: [deep_research]  # don't fan out research on a question still being clarified
     recall:
       threshold: 0.80
     # Answer shape. Safari owns its own format; Brief is already short.
     format:
       threshold: 0.75
       skip_for_focus: [safari]
+    # Whether a visual block (the Prism setting) would beat prose. Brief is a few
+    # sentences and Safari runs its own pacing. When it fires it holds back
+    # `format`, since two answer-shape nudges would contradict each other. On the
+    # Low Prism setting the bar rises by visuals_low_offset; Off never asks.
+    ui:
+      threshold: 0.70
+      skip_for_focus: [safari, brief]
+      suppresses: [format]
+      visuals_low_offset: 0.15
     depth:
       threshold: 0.80
       skip_for_focus: [safari, brief]
@@ -197,7 +271,7 @@ oracle:
       # table format, an agency-citation nudge, a step-by-step plan, or a
       # "stop and ask a question first" stacked on top. High-stakes, locale,
       # and freshness stay — those carry facts, not tone.
-      suppresses: [format, depth, source_type, task, clarify]
+      suppresses: [format, depth, source_type, task, clarify, ui, deep_research]
     private_person:
       threshold: 0.85
     premise:

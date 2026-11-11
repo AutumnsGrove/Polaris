@@ -202,15 +202,29 @@ type bookCandidate struct {
 	Key string
 }
 
-// addBookCards converts ranked candidates (already capped to
-// maxBooksResultsShown by the caller) into the frontend's recommendation
-// carousel, same shape/rationale as music.go's Card population — Cards are
-// a UI presentation of the same ranked list already in the text result, not
-// a second, independent computation.
-func addBookCards(ctx *Context, ranked []*bookCandidate) {
-	for _, c := range ranked {
-		ctx.AddCard(Card{Title: c.Title, Subtitle: c.Author, ImageURL: c.CoverURL, URL: c.URL})
+// poolBookCandidates records ranked candidates (already capped to
+// maxBooksResultsShown by the caller) in the shared candidate pool and
+// returns their pool numbers. Nothing is displayed until the model picks
+// with highlight/show — see tools/recommendations.go. Same ranked list as the
+// text result, so the two always describe the same set.
+func poolBookCandidates(ctx *Context, ranked []*bookCandidate) []int {
+	cards := make([]Card, len(ranked))
+	for i, c := range ranked {
+		cards[i] = Card{
+			Title: c.Title, Subtitle: c.Author, ImageURL: c.CoverURL, FullImageURL: largeBookCoverURL(c.CoverURL), URL: c.URL,
+		}
 	}
+	return poolRecommendations(ctx, cards)
+}
+
+// largeBookCoverURL upgrades an Open Library "-M" cover to "-L" for show's
+// gallery; Hardcover gives a single image URL, so anything else passes
+// through unchanged.
+func largeBookCoverURL(coverURL string) string {
+	if strings.HasPrefix(coverURL, "https://covers.openlibrary.org/") {
+		return strings.Replace(coverURL, "-M.jpg", "-L.jpg", 1)
+	}
+	return coverURL
 }
 
 func rankBookCandidates(agg map[string]*bookCandidate) []*bookCandidate {
@@ -345,9 +359,10 @@ func capBookCandidates(ranked []*bookCandidate) []*bookCandidate {
 }
 
 // formatBooksResult assumes ranked is already capped (see
-// capBookCandidates) — callers pass the same capped slice to addBookCards,
-// so the text list and the Card carousel always describe the same set.
-func formatBooksResult(title, author, description string, tags []string, ranked []*bookCandidate, supplemented bool) string {
+// capBookCandidates) — callers pass the same capped slice to
+// poolBookCandidates, and numbers are its return value, so the text list and
+// the candidate pool always describe the same set.
+func formatBooksResult(title, author, description string, tags []string, ranked []*bookCandidate, numbers []int, supplemented bool) string {
 	var sb strings.Builder
 	if author != "" {
 		fmt.Fprintf(&sb, "%s by %s\n", title, author)
@@ -375,12 +390,15 @@ func formatBooksResult(title, author, description string, tags []string, ranked 
 			label = " (via shared subjects)"
 		}
 		if c.Author == "" {
-			fmt.Fprintf(&sb, "%d. %s%s", i+1, c.Title, label)
+			fmt.Fprintf(&sb, "%d. %s%s", recNumber(numbers, i), c.Title, label)
 		} else {
-			fmt.Fprintf(&sb, "%d. %s by %s%s", i+1, c.Title, c.Author, label)
+			fmt.Fprintf(&sb, "%d. %s by %s%s", recNumber(numbers, i), c.Title, c.Author, label)
 		}
 		if c.Description != "" {
 			fmt.Fprintf(&sb, " — %s", c.Description)
+		}
+		if c.CoverURL == "" {
+			sb.WriteString(coverNote(Card{}))
 		}
 		sb.WriteString("\n")
 	}
@@ -389,7 +407,7 @@ func formatBooksResult(title, author, description string, tags []string, ranked 
 			"supplemented via Open Library's shared-subject data, a weaker \"same genre\" signal rather than " +
 			"\"readers curated these together\".)\n")
 	}
-	return strings.TrimSpace(sb.String())
+	return withRecommendationsFooter(sb.String(), numbers)
 }
 
 // --- Hardcover path ---
@@ -933,8 +951,8 @@ func lookupViaHardcover(ctx *Context, title, author string) (string, error) {
 
 	ranked = capBookCandidates(ranked)
 	enrichSubjectDescriptions(ctx, ranked)
-	addBookCards(ctx, ranked)
-	return formatBooksResult(book.Title, book.Author, book.Description, hardcoverGenreTags(sourceGenres), ranked, supplemented), nil
+	numbers := poolBookCandidates(ctx, ranked)
+	return formatBooksResult(book.Title, book.Author, book.Description, hardcoverGenreTags(sourceGenres), ranked, numbers, supplemented), nil
 }
 
 // --- Open Library path ---
@@ -1243,8 +1261,8 @@ func lookupViaOpenLibrary(ctx *Context, title, author string) (string, error) {
 
 	ranked = capBookCandidates(ranked)
 	enrichSubjectDescriptions(ctx, ranked)
-	addBookCards(ctx, ranked)
-	return formatBooksResult(work.Title, work.Author, work.Description, work.Subjects, ranked, false), nil
+	numbers := poolBookCandidates(ctx, ranked)
+	return formatBooksResult(work.Title, work.Author, work.Description, work.Subjects, ranked, numbers, false), nil
 }
 
 // openLibraryExtras is lookupViaHardcover's thin-data path — filters an

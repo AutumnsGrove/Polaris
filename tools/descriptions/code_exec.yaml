@@ -2,14 +2,15 @@ name: code_exec
 category: compute
 description: >-
   run Python in a locked-down, network-less sandbox — numpy/pandas/matplotlib/scipy/scikit-learn/
-  pillow/sympy/seaborn/pyarrow preinstalled, nothing else can be added. Files written to the
-  workspace persist across calls within the same thread, so a dataset fetched or built on an
-  earlier turn is still there. Also the only way to write a document (a report, a CSV export,
+  pillow/sympy/seaborn/pyarrow/pyyaml/pypdf preinstalled, nothing else can be added. Files written
+  to the workspace persist across calls within the same thread, so a dataset fetched or built on
+  an earlier turn is still there. To search inside a long PDF (a manual, a datasheet), fetch_url it
+  into the workspace, then use pypdf here to find the relevant pages — see fetch_url. Also the only way to write a document (a report, a CSV export,
   anything file-shaped) — see docs/plans/artifacts.md; there's no separate file-writing tool.
 api_description: >-
   Run Python code in a sandboxed environment for calculations, data analysis, file processing, or
-  writing documents. numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn, and
-  pyarrow are preinstalled — no other packages can be installed, and there is no network access
+  writing documents. numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn,
+  pyarrow, pyyaml, and pypdf are preinstalled — no other packages can be installed, and there is no network access
   from inside the sandbox at all. Files written to the current directory persist across calls
   within this conversation. This is also how to produce a Markdown report, a CSV export, or any
   other document the user asks for: write it with plain Python file I/O

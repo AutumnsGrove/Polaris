@@ -1,0 +1,13 @@
+id: ui-timeline-apollo-program
+track: ui
+rationale: >-
+  A sequence of dated events (Apollo missions) is the timeline description. Clean positive,
+  paired with format=timeline.
+state:
+  latest: "key moments of the apollo program from 1961 to 1972"
+expect:
+  ui: {answer: timeline}
+  format: {answer: timeline}
+quiet:
+  - emotional
+  - private_person
