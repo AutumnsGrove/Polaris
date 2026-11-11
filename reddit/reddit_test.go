@@ -33,24 +33,9 @@ const archiveListingJSON = `{"data":[
   "created_utc":1760000000,"selftext":"","permalink":"/r/golang/comments/2/second/"}
 ]}`
 
-const threadJSON = `[
- {"kind":"Listing","data":{"children":[{"kind":"t3","data":` + archivePostJSON + `}]}},
- {"kind":"Listing","data":{"children":` + archiveTreeJSON + `}}
-]`
-
-const listingJSON = `{"kind":"Listing","data":{"children":[
-  {"kind":"t3","data":{"title":"First post","subreddit_name_prefixed":"r/golang","author":"a","score":10,"num_comments":3,"created_utc":1760000000,"selftext":"hello world","permalink":"/r/golang/comments/1/first/"}},
-  {"kind":"t3","data":{"title":"Second post","subreddit_name_prefixed":"r/golang","author":"b","score":5,"num_comments":0,"created_utc":1760000000,"selftext":"","permalink":"/r/golang/comments/2/second/"}}
-]}}`
-
-// fakeReddit serves the token and OAuth API endpoints off the mux root, and the
-// archive under /api/*. apiStatus/archiveStatus (or per-endpoint overrides) let
-// each test script failures.
+// fakeReddit serves the archive endpoints off one host and records what was
+// asked for. Per-endpoint status/body overrides let each test script failures.
 type fakeReddit struct {
-	tokenHits, apiHits atomic.Int32
-
-	apiStatus    int
-	apiBody      string
 	postsStatus  int
 	postsBody    string
 	treeStatus   int
@@ -58,12 +43,10 @@ type fakeReddit struct {
 	searchStatus int
 	searchBody   string
 
-	lastTokenForm string
-	lastAuth      string
-	lastUA        string
-	lastPath      string
-	lastQuery     url.Values
-	queries       map[string]url.Values // per archive path, for asserting each request
+	lastUA    string
+	lastPath  string
+	lastQuery url.Values
+	queries   map[string]url.Values // per archive path, for asserting each request
 
 	// arrivals records when each archive request landed, for the spacing test.
 	arrivals []time.Time
@@ -72,13 +55,6 @@ type fakeReddit struct {
 func (f *fakeReddit) server(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		f.tokenHits.Add(1)
-		_ = r.ParseForm()
-		f.lastTokenForm = r.PostForm.Encode()
-		w.Write([]byte(`{"access_token":"tok123","expires_in":3600}`))
-	})
 
 	mux.HandleFunc("/api/posts/ids", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
@@ -119,21 +95,6 @@ func (f *fakeReddit) server(t *testing.T) *httptest.Server {
 		w.Write([]byte(body))
 	})
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		f.apiHits.Add(1)
-		f.lastAuth = r.Header.Get("Authorization")
-		f.lastUA = r.Header.Get("User-Agent")
-		if f.apiStatus != 0 {
-			w.WriteHeader(f.apiStatus)
-			return
-		}
-		body := f.apiBody
-		if body == "" {
-			body = threadJSON
-		}
-		w.Write([]byte(body))
-	})
-
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -155,7 +116,7 @@ func (f *fakeReddit) record(r *http.Request) {
 func TestFetch_ThreadViaArchive(t *testing.T) {
 	f := &fakeReddit{}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	res, err := c.Fetch(t.Context(), "https://old.reddit.com/r/golang/comments/abc/go_130/")
 	if err != nil {
@@ -177,8 +138,8 @@ func TestFetch_ThreadViaArchive(t *testing.T) {
 	if strings.Contains(res.Text, "more") {
 		t.Errorf("'more' stub leaked into output:\n%s", res.Text)
 	}
-	if f.tokenHits.Load() != 0 || f.apiHits.Load() != 0 {
-		t.Errorf("OAuth tier touched without credentials (%d tokens, %d api)", f.tokenHits.Load(), f.apiHits.Load())
+	if len(f.arrivals) != 2 {
+		t.Errorf("archive requests = %d, want exactly 2 (post + comments)", len(f.arrivals))
 	}
 	if got := f.queries["/api/posts/ids"].Get("ids"); got != "abc" {
 		t.Errorf("posts/ids ids = %q, want abc", got)
@@ -200,7 +161,7 @@ func TestFetch_ThreadCountsCommentsNotShown(t *testing.T) {
 			"score":10,"num_comments":9,"created_utc":1700000000,"permalink":"/r/golang/comments/abc/x/"}]}`,
 	}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	res, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err != nil {
@@ -217,7 +178,7 @@ func TestFetch_ThreadYoungerThanArchiveSettlingGetsANote(t *testing.T) {
 			"score":1,"num_comments":0,"created_utc":` + itoa(time.Now().Unix()) + `,"permalink":"/r/golang/comments/abc/x/"}]}`,
 	}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	res, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err != nil {
@@ -237,7 +198,7 @@ func TestFetch_ThreadWithCountedButUnarchivedCommentsSaysSo(t *testing.T) {
 		treeBody: `{"data":[]}`,
 	}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	res, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err != nil {
@@ -260,7 +221,7 @@ func TestFetch_SettledThreadGetsNoCaveat(t *testing.T) {
 			"permalink":"/r/golang/comments/abc/x/"}]}`,
 	}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	res, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err != nil {
@@ -276,7 +237,7 @@ func TestFetch_CommentTreeFailureKeepsThePost(t *testing.T) {
 	// better than "couldn't read this page" does.
 	f := &fakeReddit{treeStatus: http.StatusInternalServerError}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	res, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err != nil {
@@ -290,7 +251,7 @@ func TestFetch_CommentTreeFailureKeepsThePost(t *testing.T) {
 func TestFetch_ListingViaArchiveNewestFirst(t *testing.T) {
 	f := &fakeReddit{}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	res, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/top/?t=week")
 	if err != nil {
@@ -325,7 +286,7 @@ func TestFetch_SubredditSearchAndUserPagesRouteToSearch(t *testing.T) {
 	} {
 		f := &fakeReddit{}
 		srv := f.server(t)
-		c := NewClientForTest("", "", srv.URL)
+		c := NewClientForTest(srv.URL)
 		if _, err := c.Fetch(t.Context(), tc.url); err != nil {
 			t.Fatalf("%s: %v", tc.url, err)
 		}
@@ -335,10 +296,38 @@ func TestFetch_SubredditSearchAndUserPagesRouteToSearch(t *testing.T) {
 	}
 }
 
+func TestFetch_BoundedWindowsForListingShapes(t *testing.T) {
+	// Unbounded, these are the queries the archive times out on; bounded, they
+	// are also the ones a reader actually meant.
+	for _, tc := range []struct {
+		url  string
+		want string
+	}{
+		{"https://www.reddit.com/r/golang/", "1year"},
+		{"https://www.reddit.com/r/golang/hot/", "1year"},
+		{"https://www.reddit.com/r/golang/top/", "1day"},
+		{"https://www.reddit.com/r/golang/top/?t=all", ""},
+		{"https://www.reddit.com/r/golang/top/?t=month", "1month"},
+		{"https://www.reddit.com/u/spez", "1year"},
+		{"https://www.reddit.com/u/spez?t=week", "7d"},
+		{"https://www.reddit.com/r/golang/search/?q=channels", ""},
+	} {
+		f := &fakeReddit{}
+		srv := f.server(t)
+		c := NewClientForTest(srv.URL)
+		if _, err := c.Fetch(t.Context(), tc.url); err != nil {
+			t.Fatalf("%s: %v", tc.url, err)
+		}
+		if got := f.queries["/api/posts/search"].Get("after"); got != tc.want {
+			t.Errorf("%s: after = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}
+
 func TestFetch_SiteFrontPageIsUnsupportedByTheArchive(t *testing.T) {
 	f := &fakeReddit{}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/popular")
 	if !errors.Is(err, ErrUnsupportedURL) {
@@ -354,7 +343,7 @@ func TestFetch_SiteFrontPageIsUnsupportedByTheArchive(t *testing.T) {
 func TestFetch_NotArchivedIsItsOwnError(t *testing.T) {
 	f := &fakeReddit{postsBody: `{"data":[]}`}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if !errors.Is(err, ErrNotArchived) {
@@ -375,7 +364,7 @@ func TestFetch_RateLimitReportsTheResetWindow(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err == nil || !strings.Contains(err.Error(), "overloaded") || !strings.Contains(err.Error(), "42s") {
 		t.Errorf("err = %v, want the archive's reset window", err)
@@ -392,7 +381,7 @@ func TestFetch_ArchiveOverload422ReportsItsOwnReason(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err == nil || !strings.Contains(err.Error(), "Timeout. Maybe slow down a bit") || !strings.Contains(err.Error(), "9s") {
 		t.Errorf("err = %v, want the archive's own reason and reset window", err)
@@ -406,7 +395,7 @@ func TestFetch_ArchiveBadQueryShowsTheAPIsOwnError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/top/?t=week")
 	if err == nil || !strings.Contains(err.Error(), "status 400") || !strings.Contains(err.Error(), "'after' must be a valid date") {
 		t.Errorf("err = %v, want the API's validation message, so a broken mapping is obvious", err)
@@ -427,7 +416,7 @@ func TestFetch_OverloadWithShortWindowIsWaitedOut(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	// The retry is real, so this one test pays the (short) wait; asserting the
 	// retry happened at all is what matters.
@@ -440,7 +429,7 @@ func TestFetch_ArchiveOutageIsReportedAsUnreachable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	srv.Close() // nothing listening now
 
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err == nil || !strings.Contains(err.Error(), "arctic shift archive unreachable") {
 		t.Errorf("err = %v, want an unreachable-archive error", err)
@@ -450,7 +439,7 @@ func TestFetch_ArchiveOutageIsReportedAsUnreachable(t *testing.T) {
 func TestFetch_ArchiveServerErrorIsReportedWithStatus(t *testing.T) {
 	f := &fakeReddit{postsStatus: http.StatusBadGateway}
 	srv := f.server(t)
-	c := NewClientForTest("", "", srv.URL)
+	c := NewClientForTest(srv.URL)
 
 	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/x/")
 	if err == nil || !strings.Contains(err.Error(), "status 502") {
@@ -461,7 +450,7 @@ func TestFetch_ArchiveServerErrorIsReportedWithStatus(t *testing.T) {
 func TestFetch_ArchiveSpacesRequests(t *testing.T) {
 	f := &fakeReddit{}
 	srv := f.server(t)
-	c := NewClient("", "", "", srv.URL) // real spacing, not the test default
+	c := NewClient("", srv.URL) // real spacing, not the test default
 	c.http = &http.Client{Timeout: 5 * time.Second}
 	c.archiveInterval = 40 * time.Millisecond
 
@@ -481,7 +470,7 @@ func TestFetch_CancelledContextStopsTheChain(t *testing.T) {
 	// source and don't spend another request on it.
 	f := &fakeReddit{}
 	srv := f.server(t)
-	c := NewClient("id", "secret", "", srv.URL)
+	c := NewClient("", srv.URL)
 	c.http = &http.Client{Timeout: 5 * time.Second}
 
 	canceled, stop := context.WithCancel(t.Context())
@@ -490,126 +479,8 @@ func TestFetch_CancelledContextStopsTheChain(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
-	if f.tokenHits.Load() != 0 || len(f.arrivals) != 0 {
-		t.Errorf("sources were still called after cancellation (tokens=%d archive=%d)", f.tokenHits.Load(), len(f.arrivals))
-	}
-}
-
-// --- OAuth tier, which only exists when credentials are configured ---
-
-func TestFetch_APIAnsweredFirstWhenConfigured(t *testing.T) {
-	f := &fakeReddit{apiBody: threadJSON}
-	srv := f.server(t)
-	c := NewClientForTest("id", "secret", srv.URL)
-
-	res, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/go_130/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Source != "reddit api" {
-		t.Errorf("source = %q, want the live API when credentials exist", res.Source)
-	}
-	if f.lastAuth != "Bearer tok123" {
-		t.Errorf("Authorization = %q, want Bearer tok123", f.lastAuth)
-	}
-	if !strings.Contains(f.lastTokenForm, "grant_type=client_credentials") {
-		t.Errorf("token form = %q, want client_credentials when a secret is set", f.lastTokenForm)
-	}
 	if len(f.arrivals) != 0 {
-		t.Error("archive must not be touched when the API succeeds")
-	}
-}
-
-func TestFetch_FallsBackToArchiveWhenAPIFails(t *testing.T) {
-	f := &fakeReddit{apiStatus: http.StatusForbidden}
-	srv := f.server(t)
-	c := NewClientForTest("id", "secret", srv.URL)
-
-	res, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/comments/abc/go_130/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Source != "arctic shift archive" || !strings.Contains(res.Text, "Top comment") {
-		t.Errorf("source=%q text=%q, want the archive's answer", res.Source, res.Text)
-	}
-}
-
-func TestFetch_InstalledAppGrantWhenNoSecret(t *testing.T) {
-	f := &fakeReddit{apiBody: listingJSON}
-	srv := f.server(t)
-	c := NewClientForTest("apollo-id", "", srv.URL)
-
-	if _, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/top/?t=week"); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(f.lastTokenForm, "installed_client") || !strings.Contains(f.lastTokenForm, "device_id=") {
-		t.Errorf("token form = %q, want installed_client grant with a device_id", f.lastTokenForm)
-	}
-}
-
-func TestFetch_TokenIsCachedAcrossCalls(t *testing.T) {
-	f := &fakeReddit{apiBody: listingJSON}
-	srv := f.server(t)
-	c := NewClientForTest("id", "secret", srv.URL)
-
-	for i := 0; i < 3; i++ {
-		if _, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := f.tokenHits.Load(); got != 1 {
-		t.Errorf("token requests = %d, want 1 (cached)", got)
-	}
-}
-
-func TestFetch_RetriesOnceAfter401WithFreshToken(t *testing.T) {
-	var apiCalls atomic.Int32
-	mux := http.NewServeMux()
-	var tokens atomic.Int32
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		n := tokens.Add(1)
-		w.Write([]byte(`{"access_token":"tok` + string(rune('0'+n)) + `","expires_in":3600}`))
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if apiCalls.Add(1) == 1 {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		if r.Header.Get("Authorization") != "Bearer tok2" {
-			t.Errorf("retry used %q, want the refreshed token", r.Header.Get("Authorization"))
-		}
-		w.Write([]byte(listingJSON))
-	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-
-	c := NewClientForTest("id", "secret", srv.URL)
-	if _, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/"); err != nil {
-		t.Fatal(err)
-	}
-	if tokens.Load() != 2 {
-		t.Errorf("tokens issued = %d, want 2", tokens.Load())
-	}
-}
-
-func TestFetch_BadCredentialsReportedFromTokenBody(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"error":"invalid_grant"}`)) // Reddit answers 200 + error body
-	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-
-	c := NewClientForTest("id", "wrong", srv.URL)
-	_, err := c.Fetch(t.Context(), "https://www.reddit.com/r/golang/")
-	if err == nil || !strings.Contains(err.Error(), "invalid_grant") {
-		t.Errorf("err = %v, want the token endpoint's error surfaced", err)
-	}
-	// The archive is the fallback, and here it has nothing either: the failure
-	// text has to name both tiers so "credentials are bad" and "the archive
-	// can't reach its own host" aren't confused in a log.
-	if !strings.Contains(err.Error(), "reddit api") || !strings.Contains(err.Error(), "arctic shift archive") {
-		t.Errorf("err = %v, want every tier named", err)
+		t.Errorf("sources were still called after cancellation (%d archive requests)", len(f.arrivals))
 	}
 }
 
@@ -625,14 +496,14 @@ func TestParseURL(t *testing.T) {
 		search            bool
 		wantErr           bool
 	}{
-		{in: "https://www.reddit.com/r/golang/comments/abc/slug/", wantPath: "/r/golang/comments/abc/slug", thread: true, postID: "abc", sub: "golang"},
-		{in: "https://old.reddit.com/r/golang/comments/abc/slug/.json", wantPath: "/r/golang/comments/abc/slug", thread: true, postID: "abc", sub: "golang"},
+		{in: "https://www.reddit.com/r/golang/comments/abc/slug/", wantPath: "/r/golang/comments/abc/slug", postID: "abc", sub: "golang"},
+		{in: "https://old.reddit.com/r/golang/comments/abc/slug/.json", wantPath: "/r/golang/comments/abc/slug", postID: "abc", sub: "golang"},
 		{in: "https://reddit.com/r/golang/top/?t=week", wantPath: "/r/golang/top", sub: "golang", sort: "top"},
 		{in: "https://www.reddit.com/r/golang/new/", wantPath: "/r/golang/new", sub: "golang", sort: "new"},
 		{in: "https://www.reddit.com/r/golang/search/?q=x", wantPath: "/r/golang/search", sub: "golang", search: true},
 		{in: "https://www.reddit.com/u/spez", wantPath: "/u/spez", user: "spez"},
-		{in: "https://redd.it/abc123", wantPath: "/comments/abc123", thread: true, postID: "abc123"},
-		{in: "https://www.reddit.com/gallery/xyz", wantPath: "/comments/xyz", thread: true, postID: "xyz"},
+		{in: "https://redd.it/abc123", wantPath: "/comments/abc123", postID: "abc123"},
+		{in: "https://www.reddit.com/gallery/xyz", wantPath: "/comments/xyz", postID: "xyz"},
 		{in: "https://www.reddit.com/", wantPath: "/r/popular"},
 		{in: "https://www.reddit.com/r/popular", wantPath: "/r/popular"},
 		{in: "https://www.reddit.com/r/golang/s/AbCdEf", wantErr: true},
@@ -650,10 +521,10 @@ func TestParseURL(t *testing.T) {
 			t.Errorf("%s: unexpected error %v", tc.in, err)
 			continue
 		}
-		if got.path != tc.wantPath || got.isThread != tc.thread || got.postID != tc.postID ||
-			got.subreddit != tc.sub || got.user != tc.user || got.sort != tc.sort || got.search != tc.search {
-			t.Errorf("%s: got %+v, want path=%q thread=%v id=%q sub=%q user=%q sort=%q search=%v",
-				tc.in, got, tc.wantPath, tc.thread, tc.postID, tc.sub, tc.user, tc.sort, tc.search)
+		if got.path != tc.wantPath || got.postID != tc.postID || got.subreddit != tc.sub ||
+			got.user != tc.user || got.sort != tc.sort || got.search != tc.search {
+			t.Errorf("%s: got %+v, want path=%q id=%q sub=%q user=%q sort=%q search=%v",
+				tc.in, got, tc.wantPath, tc.postID, tc.sub, tc.user, tc.sort, tc.search)
 		}
 	}
 }

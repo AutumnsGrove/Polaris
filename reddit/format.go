@@ -1,12 +1,12 @@
 package reddit
 
-// Rendering for both tiers. Everything here works on Reddit's own object
-// shapes (t3 posts, t1 comments with Listing-wrapped replies), which is what
-// makes the archive tier cheap: Arctic Shift hands back the same shapes the
-// Data API does, so only the transport differs.
+// Rendering. Everything here works on Reddit's own object shapes (t3 posts, t1
+// comments with Listing-wrapped replies), which is what makes the archive tier
+// cheap: Arctic Shift hands back the same shapes the Data API did, so this code
+// survived Reddit shutting that API's doors and will survive the archive being
+// replaced by the next source.
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -22,6 +22,7 @@ type thing struct {
 	Data json.RawMessage `json:"data"`
 }
 
+// listing is only here to unwrap a comment's replies.
 type listing struct {
 	Data struct {
 		Children []thing `json:"children"`
@@ -47,51 +48,6 @@ type comment struct {
 	Score   int             `json:"score"`
 	Body    string          `json:"body"`
 	Replies json.RawMessage `json:"replies"` // "" when there are none, a Listing otherwise
-}
-
-// formatAPI parses a Reddit Data API response into title/text.
-func formatAPI(body []byte) (title, text string, err error) {
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) == 0 {
-		return "", "", fmt.Errorf("empty api response")
-	}
-
-	if trimmed[0] == '[' {
-		var listings []listing
-		if err := json.Unmarshal(trimmed, &listings); err != nil {
-			return "", "", fmt.Errorf("parsing thread: %w", err)
-		}
-		if len(listings) < 2 || len(listings[0].Data.Children) == 0 {
-			return "", "", fmt.Errorf("thread response had no post")
-		}
-		var p post
-		if err := json.Unmarshal(listings[0].Data.Children[0].Data, &p); err != nil {
-			return "", "", fmt.Errorf("parsing post: %w", err)
-		}
-		title, text = renderThread(p, listings[1].Data.Children, "")
-		return title, text, nil
-	}
-
-	var l listing
-	if err := json.Unmarshal(trimmed, &l); err != nil {
-		return "", "", fmt.Errorf("parsing listing: %w", err)
-	}
-	var posts []post
-	for _, c := range l.Data.Children {
-		if c.Kind != "t3" {
-			continue
-		}
-		var p post
-		if json.Unmarshal(c.Data, &p) != nil {
-			continue
-		}
-		posts = append(posts, p)
-	}
-	if len(posts) == 0 {
-		return "", "", fmt.Errorf("listing had no posts")
-	}
-	text, _ = renderListing(posts, "")
-	return "Reddit listing", text, nil
 }
 
 // renderThread writes a post header, any caller-supplied caveat, and the

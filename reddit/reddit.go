@@ -1,41 +1,31 @@
 // Package reddit reads Reddit threads and listings for web_read.
 //
-// Reddit closed nearly every door in 2026: unauthenticated HTML/.json fetches
-// from non-browser clients get a 403 or a JS challenge (TLS-fingerprint and
-// IP-reputation checks, so a spoofed User-Agent doesn't help), Atom feeds stop
-// being served on 2026-11-13, new Data API app registrations closed on
-// 2026-10-31, and the public Data API itself ends in March 2027. Alternative
-// frontends don't rescue it either: self-hosted Redlib v0.40.0 gets the same
-// 403s from an ordinary residential IP, and the public instances behind
-// redirector hubs like ueddit.com sit behind Anubis/Cloudflare bot walls (all
-// verified live on 2026-11-11).
+// Reddit closed every door in 2026: unauthenticated HTML/.json fetches from
+// non-browser clients get a 403 or a JS challenge (TLS-fingerprint and
+// IP-reputation checks, so a spoofed User-Agent doesn't help), Atom feeds
+// stopped on 2026-11-13, Data API app registrations closed on 2026-10-31, and
+// the public Data API itself ends in March 2027. Alternative frontends don't
+// rescue it either: self-hosted Redlib v0.40.0 gets the same 403s from an
+// ordinary residential IP, and the public instances behind redirector hubs
+// like ueddit.com sit behind Anubis/Cloudflare bot walls (all verified live on
+// 2026-11-11). There is no first-party path left to build on.
 //
-// Reads therefore go through an ordered list of sources, not one hardcoded
-// trick — see newSources:
+// Reads go through one source: the Arctic Shift archive (see archive.go), a
+// community-run Reddit archive with a keyless JSON API whose posts and
+// comments are shaped like Reddit's own, so they render with formatting code
+// that outlives the archive itself.
 //
-//  1. The Arctic Shift archive (default; no key, no credentials) — a
-//     community-run Reddit archive whose JSON API returns Reddit-shaped post
-//     and comment objects, so it feeds the same formatting code as the
-//     official API. It carries a thread and its full comment tree for anything
-//     more than a few minutes old; brand-new comments can lag hours, and
-//     score/comment counts only settle after roughly 36h.
-//  2. Reddit's own OAuth Data API, registered only when the operator has
-//     credentials. UNVERIFIED against live Reddit: app registration is closed
-//     and our own access request was denied, so this tier exists for whoever
-//     already holds an old app's credentials. If Reddit refuses it, the
-//     archive below still answers.
-//
-// Fetch tries each source in order and, when all of them fail, returns an
-// error naming every source and what happened to it. That text matters twice:
-// the model needs to know not to retry or spend a Tavily credit, and whoever
-// is deciding whether to swap an engine needs to see which one broke and how.
-// Adding a source (another archive, a frontend that starts working again, a
-// paid API) is one entry in newSources — nothing outside this package changes.
+// That is still expressed as an ordered source list rather than a single call,
+// because the archive is one person's server fed by the API Reddit shuts down
+// in March 2027 — the next engine is a question of when, not if. Adding one
+// (another archive, a frontend that starts working again, a paid API) is an
+// entry in newSources; nothing outside this package changes. Fetch names every
+// source that failed and why, which is the text that tells a model not to
+// retry and tells a human which engine broke.
 package reddit
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -55,10 +45,6 @@ const maxResponseBytes = 10 << 20 // 10MB
 // harder than a descriptive one, so this is worth getting right.
 const defaultUserAgent = "linux:polaris:1.0 (self-hosted assistant; +https://github.com/AutumnsGrove/Polaris)"
 
-// installedClientDeviceID is the value Reddit documents for an app-only
-// installed_client grant when there is no per-device identity to report.
-const installedClientDeviceID = "DO_NOT_TRACK_THIS_DEVICE"
-
 // ErrUnsupportedURL means the URL is on Reddit but isn't a shape any source
 // can map to something it knows how to read (share links like /r/x/s/abc need
 // a redirect Reddit won't serve us, media/image hosts, the site front page).
@@ -70,23 +56,12 @@ var ErrUnsupportedURL = errors.New("unsupported Reddit URL")
 // engines, and both messages say which they are.
 var ErrNotArchived = errors.New("not in the archive")
 
-// Client reads Reddit. It is never nil-by-configuration: with no credentials
-// it skips the OAuth tier and reads through the archive, which needs no key.
-// Safe for concurrent use.
+// Client reads Reddit. It is never nil-by-configuration: the archive needs no
+// key. Safe for concurrent use.
 type Client struct {
 	http      *http.Client
 	userAgent string
 	sources   []source
-
-	// OAuth tier state; unused by the archive tier.
-	clientID     string
-	clientSecret string
-	tokenURL     string
-	apiBase      string
-
-	mu          sync.Mutex
-	token       string
-	tokenExpiry time.Time
 
 	// Archive tier state. archiveNext is the earliest time the next request
 	// may start (see archiveInterval); the mutex also keeps a single thread
@@ -105,12 +80,11 @@ type source struct {
 	fetch func(context.Context, redditPath) (*Result, error)
 }
 
-// NewClient builds a Client. An empty clientID means archive-only; clientSecret
-// may be empty even with a clientID (an installed-app credential). userAgent
-// may be empty for the default. archiveBase may be empty for Arctic Shift, or
-// point anywhere that speaks the same API — the knob exists so a dead archive
-// is a config change rather than a code change.
-func NewClient(clientID, clientSecret, userAgent, archiveBase string) *Client {
+// NewClient builds a Client. userAgent may be empty for the default.
+// archiveBase may be empty for Arctic Shift, or point anywhere that speaks the
+// same API — the knob exists so a dead archive is a config change rather than
+// a code change.
+func NewClient(userAgent, archiveBase string) *Client {
 	if userAgent == "" {
 		userAgent = defaultUserAgent
 	}
@@ -118,13 +92,9 @@ func NewClient(clientID, clientSecret, userAgent, archiveBase string) *Client {
 		archiveBase = defaultArchiveBase
 	}
 	c := &Client{
-		clientID:     clientID,
-		clientSecret: clientSecret,
-		userAgent:    userAgent,
-		http:         &http.Client{Timeout: 20 * time.Second},
-		tokenURL:     "https://www.reddit.com/api/v1/access_token",
-		apiBase:      "https://oauth.reddit.com",
-		archiveBase:  strings.TrimRight(archiveBase, "/"),
+		userAgent:   userAgent,
+		http:        &http.Client{Timeout: 20 * time.Second},
+		archiveBase: strings.TrimRight(archiveBase, "/"),
 		// Tests override this; see NewClientForTest.
 		archiveInterval: archiveMinInterval,
 	}
@@ -132,32 +102,23 @@ func NewClient(clientID, clientSecret, userAgent, archiveBase string) *Client {
 	return c
 }
 
-// NewClientForTest points every endpoint at base (token at base+"/token", API
-// at base, archive at base) and disables the archive's request spacing, which
-// exists for a real archive's benefit and would just make tests sleep.
-// Exported solely for other packages' tests.
-func NewClientForTest(clientID, clientSecret, base string) *Client {
-	c := NewClient(clientID, clientSecret, "", base)
+// NewClientForTest points the archive at base and disables its request
+// spacing, which exists for a real archive's benefit and would just make tests
+// sleep. Exported solely for other packages' tests.
+func NewClientForTest(base string) *Client {
+	c := NewClient("", base)
 	c.http = &http.Client{Timeout: 5 * time.Second}
-	c.tokenURL, c.apiBase = base+"/token", base
 	c.archiveInterval = 0
 	return c
 }
 
-// newSources is the read chain, in the order Fetch tries it. The OAuth tier is
-// only registered when credentials exist, so an unconfigured install makes
-// exactly one request per read and its failure text doesn't mention a tier it
-// never had.
+// newSources is the read chain, in the order Fetch tries it. One entry today —
+// the OAuth Data API that used to be the backup is gone, because Reddit stopped
+// accepting app registrations on 2026-10-31 and denied the access request for
+// this project, so there is no way to obtain credentials to give it.
 func (c *Client) newSources() []source {
-	var out []source
-	if c.Authenticated() {
-		out = append(out, source{name: "reddit api", fetch: c.fetchAPI})
-	}
-	return append(out, source{name: "arctic shift archive", fetch: c.fetchArchive})
+	return []source{{name: "arctic shift archive", fetch: c.fetchArchive}}
 }
-
-// Authenticated reports whether OAuth credentials are configured.
-func (c *Client) Authenticated() bool { return c.clientID != "" }
 
 // IsRedditURL reports whether rawURL is a Reddit page web_read should route
 // here rather than through the generic fetch chain.
@@ -174,8 +135,8 @@ func IsRedditURL(rawURL string) bool {
 type Result struct {
 	Title string
 	Text  string
-	// Source names the tier that answered ("arctic shift archive", "reddit
-	// api"), for logging and for web_read's [via …] tag.
+	// Source names the tier that answered ("arctic shift archive"), for
+	// logging and for web_read's [via …] tag.
 	Source string
 }
 
@@ -226,9 +187,8 @@ func (e *FetchError) Unwrap() []error { return e.Failures }
 
 // redditPath is a Reddit URL reduced to the parts the sources need.
 type redditPath struct {
-	path     string // normalized, no trailing slash or .json/.rss suffix; always starts with "/"
-	query    url.Values
-	isThread bool
+	path  string // normalized, no trailing slash or .json/.rss suffix; always starts with "/"
+	query url.Values
 
 	// Derived pieces, filled by parseURL. Empty when the URL has no such part
 	// (and empty subreddit for the synthetic "popular"/"all" listings).
@@ -278,7 +238,6 @@ func parseURL(rawURL string) (redditPath, error) {
 	for i, s := range segs {
 		switch {
 		case s == "comments":
-			p.isThread = true
 			if i+1 < len(segs) {
 				p.postID = segs[i+1]
 			}
@@ -305,106 +264,6 @@ func parseURL(rawURL string) (redditPath, error) {
 	return p, nil
 }
 
-// --- OAuth tier ---
-
-func (c *Client) accessToken(ctx context.Context, force bool) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !force && c.token != "" && time.Now().Before(c.tokenExpiry) {
-		return c.token, nil
-	}
-
-	form := url.Values{}
-	if c.clientSecret != "" {
-		form.Set("grant_type", "client_credentials")
-	} else {
-		form.Set("grant_type", "https://oauth.reddit.com/grants/installed_client")
-		form.Set("device_id", installedClientDeviceID)
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", c.tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.SetBasicAuth(c.clientID, c.clientSecret)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", c.userAgent)
-
-	body, status, _, err := c.do(req)
-	if err != nil {
-		return "", fmt.Errorf("requesting token: %w", err)
-	}
-	if status != http.StatusOK {
-		return "", fmt.Errorf("token request returned status %d", status)
-	}
-	var tr struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		Error       string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &tr); err != nil {
-		return "", fmt.Errorf("parsing token response: %w", err)
-	}
-	// Reddit reports bad credentials as HTTP 200 + {"error": "..."} on some
-	// grant types, so a 200 alone isn't proof of a token.
-	if tr.AccessToken == "" {
-		return "", fmt.Errorf("token request rejected (%s) — check reddit.client_id/client_secret", firstNonEmpty(tr.Error, "no access_token in response"))
-	}
-	if tr.ExpiresIn <= 0 {
-		tr.ExpiresIn = 3600
-	}
-	c.token = tr.AccessToken
-	// Refresh a minute early so a token never expires mid-request.
-	c.tokenExpiry = time.Now().Add(time.Duration(tr.ExpiresIn)*time.Second - time.Minute)
-	return c.token, nil
-}
-
-func (c *Client) fetchAPI(ctx context.Context, p redditPath) (*Result, error) {
-	q := url.Values{}
-	for k, v := range p.query {
-		q[k] = v
-	}
-	q.Set("raw_json", "1")
-	if !p.isThread && q.Get("limit") == "" {
-		q.Set("limit", "25")
-	}
-	endpoint := c.apiBase + p.path + "?" + q.Encode()
-
-	var body []byte
-	for attempt := 0; attempt < 2; attempt++ {
-		tok, err := c.accessToken(ctx, attempt > 0)
-		if err != nil {
-			return nil, err
-		}
-		req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+tok)
-		req.Header.Set("User-Agent", c.userAgent)
-
-		b, status, _, err := c.do(req)
-		if err != nil {
-			return nil, err
-		}
-		// A 401 on the first attempt means the cached token was revoked or
-		// expired early — fetch a fresh one and retry once.
-		if status == http.StatusUnauthorized && attempt == 0 {
-			continue
-		}
-		if status != http.StatusOK {
-			return nil, fmt.Errorf("api returned status %d", status)
-		}
-		body = b
-		break
-	}
-
-	title, text, err := formatAPI(body)
-	if err != nil {
-		return nil, err
-	}
-	return &Result{Title: title, Text: text, Source: "reddit api"}, nil
-}
-
 // do runs req and returns the size-bounded body, status code and headers.
 func (c *Client) do(req *http.Request) ([]byte, int, http.Header, error) {
 	resp, err := c.http.Do(req)
@@ -420,13 +279,4 @@ func (c *Client) do(req *http.Request) ([]byte, int, http.Header, error) {
 		return nil, resp.StatusCode, resp.Header, fmt.Errorf("response exceeds %d byte limit", maxResponseBytes)
 	}
 	return data, resp.StatusCode, resp.Header, nil
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

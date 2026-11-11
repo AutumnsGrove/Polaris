@@ -133,12 +133,11 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 		// 403 or a 200 JS-challenge page (so nothing below ever sees an
 		// error to react to), and Wayback/Tavily/Jina are refused by Reddit
 		// too — spending a Tavily credit on it just fails. Reads go through
-		// the reddit package's source chain instead (a community archive by
-		// default); its doc comment explains why that is the only thing
-		// left that answers.
+		// the reddit package instead, whose doc comment explains why its
+		// archive is the only thing left that answers.
 		rc := ctx.Reddit
 		if rc == nil {
-			rc = reddit.NewClient("", "", "", "")
+			rc = reddit.NewClient("", "")
 		}
 		res, rErr := rc.Fetch(ctx.Ctx, args.URL)
 		if rErr != nil {

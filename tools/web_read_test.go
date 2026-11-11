@@ -896,31 +896,20 @@ func TestHandleWebRead_NoFallbackConfigured_ReturnsError(t *testing.T) {
 	}
 }
 
-// fakeRedditServer serves both reddit tiers off one host: the OAuth API at the
-// root (apiStatus scripts a failure) and an Arctic Shift-shaped archive under
-// /api/*, so a test can prove the archive answers when the API doesn't.
-func fakeRedditServer(t *testing.T, apiStatus int) *httptest.Server {
+// fakeRedditServer serves an Arctic Shift-shaped archive, so the tests below
+// prove a Reddit URL is answered by the reddit package and never by the
+// generic fetch/Wayback/Tavily chain.
+func fakeRedditServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	const postJSON = `{"title":"Real thread","subreddit_name_prefixed":"r/golang","author":"op","score":9,` +
 		`"num_comments":1,"created_utc":1760000000,"selftext":"op text","is_self":true,` +
 		`"permalink":"/r/golang/comments/abc/real_thread/"}`
 	mux := http.NewServeMux()
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"access_token":"tok","expires_in":3600}`))
-	})
 	mux.HandleFunc("/api/posts/ids", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"data":[` + postJSON + `]}`))
 	})
 	mux.HandleFunc("/api/comments/tree", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"data":[{"kind":"t1","data":{"author":"c","score":3,"body":"a comment","replies":""}}]}`))
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if apiStatus != 0 {
-			w.WriteHeader(apiStatus)
-			return
-		}
-		w.Write([]byte(`[{"data":{"children":[{"kind":"t3","data":` + postJSON + `}]}},` +
-			`{"data":{"children":[{"kind":"t1","data":{"author":"c","score":3,"body":"a comment","replies":""}}]}}]`))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -932,14 +921,14 @@ func fakeRedditServer(t *testing.T, apiStatus int) *httptest.Server {
 // the reddit package instead of the free-fetch/Wayback/Tavily chain — which
 // here is wired to fail the test if anything in it is touched.
 func TestHandleWebRead_RedditUsesRedditClientNotGenericChain(t *testing.T) {
-	srv := fakeRedditServer(t, 0)
+	srv := fakeRedditServer(t)
 	tavilyHits := 0
 	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { tavilyHits++ }))
 	defer tavilySrv.Close()
 
 	ctx := &Context{
 		Ctx:                  context.Background(),
-		Reddit:               reddit.NewClientForTest("id", "secret", srv.URL),
+		Reddit:               reddit.NewClientForTest(srv.URL),
 		Tavily:               tavily.NewClientForTest("k", tavilySrv.URL),
 		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
 		IncrementTavilyUsage: func() error { t.Error("Tavily credit spent on a Reddit URL"); return nil },
@@ -955,18 +944,6 @@ func TestHandleWebRead_RedditUsesRedditClientNotGenericChain(t *testing.T) {
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].SiteName != "Reddit" {
 		t.Errorf("Citations = %+v, want one citation labelled Reddit", ctx.Citations)
-	}
-}
-
-func TestHandleWebRead_RedditFallsBackToArchiveWhenAPIDown(t *testing.T) {
-	srv := fakeRedditServer(t, http.StatusForbidden)
-	ctx := &Context{Ctx: context.Background(), Reddit: reddit.NewClientForTest("id", "secret", srv.URL), Emit: func(string, map[string]interface{}) {}}
-	out := handleWebRead(`{"url":"https://old.reddit.com/r/golang/comments/abc/x/"}`, ctx, "c1")
-	if !strings.Contains(out, "Real thread") || !strings.Contains(out, "a comment") {
-		t.Errorf("result = %q, want the archive fallback's post and comments", out)
-	}
-	if !strings.Contains(out, "op text") {
-		t.Errorf("result = %q, want the archive's post body", out)
 	}
 }
 

@@ -56,8 +56,6 @@ ollama:
 
 reddit:
   archive_url: "${REDDIT_ARCHIVE_URL}"
-  client_id: "${REDDIT_CLIENT_ID}"
-  client_secret: "${REDDIT_CLIENT_SECRET}"
 
 github:
   token: "${GITHUB_TOKEN}"

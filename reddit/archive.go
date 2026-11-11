@@ -11,7 +11,7 @@ package reddit
 //
 //   - Its responses are Reddit-shaped — posts are t3 objects, and a comment's
 //     replies are either "" or a Listing exactly like the live API's — so
-//     format.go renders archive and API results with the same code.
+//     format.go needs no knowledge of where a result came from.
 //   - It is one person's server with no commitments ("No uptime or performance
 //     guarantees :)", says its README, and it is fed by the same Data API that
 //     Reddit closes in March 2027). So the base URL is configurable, requests
@@ -40,7 +40,8 @@ const (
 	// would truncate anyway.
 	archiveCommentLimit = 200
 
-	// archiveListingLimit mirrors the 25 the OAuth tier asks for.
+	// archiveListingLimit is a page of thread links: enough to browse, small
+	// enough that the result stays a readable tool output.
 	archiveListingLimit = 25
 
 	// archiveMinInterval spaces consecutive archive requests. Its README asks
@@ -79,8 +80,7 @@ func (c *Client) fetchArchive(ctx context.Context, p redditPath) (*Result, error
 }
 
 // archiveThread reads a post and its comment tree: two requests, because the
-// archive keeps posts and comments in separate endpoints (the live API returns
-// both in one response).
+// archive keeps posts and comments in separate endpoints.
 func (c *Client) archiveThread(ctx context.Context, p redditPath) (*Result, error) {
 	body, err := c.archiveGet(ctx, "/api/posts/ids", url.Values{"ids": {p.postID}})
 	if err != nil {
@@ -146,7 +146,7 @@ func (c *Client) archivePosts(ctx context.Context, p redditPath, key, value stri
 	// The archive orders by created_utc only — there is no hot/top/rising
 	// ranking to reproduce, so ask for newest and say so below.
 	params.Set("sort", "desc")
-	if w := archiveWindow(p.query.Get("t")); w != "" {
+	if w := archivePostWindow(p, key); w != "" {
 		params.Set("after", w)
 	}
 
@@ -173,6 +173,37 @@ func (c *Client) archivePosts(ctx context.Context, p redditPath, key, value stri
 		title = "Reddit user " + value
 	}
 	return &Result{Title: title, Text: text, Source: "arctic shift archive"}, nil
+}
+
+// archivePostWindow picks the date window for a listing-shaped query.
+//
+// An explicit ?t= always wins (and "all" means no bound at all). Without one,
+// the default is bounded, for two reasons: an unbounded search by author or
+// subreddit is an expensive query this archive does time out on — its own docs
+// warn that very active users and subreddits time out, and /u/spez without a
+// bound did exactly that in live testing — and the unbounded answer is the
+// wrong answer anyway. Someone reading /u/x wants the last year, not 2006, and
+// Reddit's own default window for top/best listings is a single day.
+func archivePostWindow(p redditPath, key string) string {
+	if p.query.Get("t") != "" {
+		return archiveWindow(p.query.Get("t"))
+	}
+	switch {
+	case key == "author":
+		// Still the costliest shape: the archive's docs warn that searches by
+		// very active users time out, and bounding them doesn't fully fix that
+		// (a 90-day window can time out where a year doesn't, depending on
+		// load). It's a rare read, and the failure is a clear, non-retryable
+		// message.
+		return "1year"
+	case key == "query":
+		// Keyword search is cheap by the archive's own account, and an old
+		// thread is exactly what someone searching for a topic wants.
+		return ""
+	case p.sort == "top" || p.sort == "best" || p.sort == "controversial":
+		return "1day"
+	}
+	return "1year"
 }
 
 // archiveWindow maps Reddit's ?t= listing window onto the archive's relative

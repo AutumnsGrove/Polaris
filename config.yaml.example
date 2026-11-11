@@ -37,9 +37,7 @@ ollama:
   embed_model: "nomic-embed-text"   # defaults to this if left empty
 
 reddit:
-  archive_url: "${REDDIT_ARCHIVE_URL}"   # optional — where web_read reads Reddit from: an Arctic Shift API (https://arctic-shift.photon-reddit.com by default, needs no key), because Reddit blocks page fetches, retired RSS on 2026-11-13 and closed new API registrations. It's a third party with no uptime promise; if it dies, point this at a mirror
-  client_id: "${REDDIT_CLIENT_ID}"       # optional — existing Reddit API credentials make reads live instead of archived; nothing needs them, and Reddit refuses new app registrations. https://www.reddit.com/prefs/apps
-  client_secret: "${REDDIT_CLIENT_SECRET}"   # leave empty for an "installed app" credential (those have no secret)
+  archive_url: "${REDDIT_ARCHIVE_URL}"   # optional — where web_read reads Reddit from: an Arctic Shift API (https://arctic-shift.photon-reddit.com by default, needs no key). Reddit itself is closed off (blocked bot fetches, RSS retired 2026-11-13, no new API apps), so this third-party archive is the only way in; if it dies, point this at a mirror
 
 github:
   token: "${GITHUB_TOKEN}"   # optional — github_repo works unauthenticated (60 requests/hour); a token raises that to 5000/hour. No scopes needed for public repos. https://github.com/settings/tokens

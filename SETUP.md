@@ -26,13 +26,12 @@ GHCR, updated by a host-side watcher. There's no other install path.
 - Optional: a [Parallel](https://parallel.ai) API key, second in that fallback chain. Free tier:
   5,000 requests/month, but the account has a card on file, so usage is capped in the DB a little
   under that limit
-- Reddit needs no key at all: `web_read` reads Reddit threads through the
-  [Arctic Shift](https://arctic-shift.photon-reddit.com) community archive, because Reddit now
-  blocks ordinary page fetches, retired RSS on 2026-11-13, and has closed new API registrations.
-  It's a third party with no uptime promise — if it dies, set `reddit.archive_url` to a mirror and
-  reads keep working. Optional: existing Reddit API credentials (`REDDIT_CLIENT_ID`, plus
-  `REDDIT_CLIENT_SECRET` unless it's an "installed app" credential) let Polaris read live instead of
-  from the archive, but new registrations are refused, so most installs won't have any
+- Nothing is needed for Reddit: `web_read` reads Reddit threads through the
+  [Arctic Shift](https://arctic-shift.photon-reddit.com) community archive, because Reddit blocks
+  ordinary page fetches, retired RSS on 2026-11-13, and closed new API app registrations. There is
+  no credential to add — Reddit denied this project's API access request. It's a third party with
+  no uptime promise: if it dies, set `reddit.archive_url` (or `REDDIT_ARCHIVE_URL`) to a mirror and
+  reads keep working
 - Optional: a [GitHub personal access token](https://github.com/settings/tokens) so `github_repo`
   can make 5000 requests/hour instead of GitHub's unauthenticated 60/hour cap — works fine with no
   token for occasional lookups

@@ -62,8 +62,6 @@ services:
       - TAVILY_API_KEY
       - BRAVE_API_KEY
       - PARALLEL_API_KEY
-      - REDDIT_CLIENT_ID
-      - REDDIT_CLIENT_SECRET
       - REDDIT_ARCHIVE_URL
       - GITHUB_TOKEN
       - LASTFM_API_KEY
