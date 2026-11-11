@@ -1,0 +1,144 @@
+{
+  "run_at": "2026-11-11T18:57:22Z",
+  "cases": 295,
+  "repeats": 3,
+  "concurrency": 2,
+  "latency_budget": 5000000000,
+  "weights_hash": "a6cbc140bd53",
+  "entries": [
+    {
+      "model": "google/gemini-decision-1",
+      "resolved_models": [
+        "google/gemini-decision-1-20261111"
+      ],
+      "score": {
+        "cases": 274,
+        "disputed_cases": 21,
+        "headline": 66.69643277106142,
+        "headline_lo": 60.69749042789688,
+        "headline_hi": 72.72366565516998,
+        "headline_within_budget": 66.69643277106142,
+        "headline_disputed": 56.25,
+        "verdict": 0.7543859649122807,
+        "closeness": 0.7128413225641008,
+        "trigger": 0.96,
+        "focus": 0.8235294117647058,
+        "brier": 0.1434145800515287,
+        "dangerous_fp": 0,
+        "dangerous_opportunities": 298,
+        "dangerous_fp_rate": 0,
+        "calls": 885,
+        "error_rate": 0.38757062146892657,
+        "refusal_rate": 0,
+        "within_budget": 0.6124293785310735,
+        "latency_p50": 380787792,
+        "latency_p95": 561762875,
+        "latency_max": 1570579208,
+        "cost_usd": 0.21409659999999983,
+        "judge_cost_usd": 0.014865471720000004,
+        "fresh_cost_usd": 0.07033600000000004,
+        "fresh_calls": 295,
+        "input_tokens": 2382541,
+        "judge_audited": 31,
+        "judge_disagreed": 0,
+        "by_track": {
+          "chips": {
+            "cases": 16,
+            "score": 99.25884791928605
+          },
+          "claim_check": {
+            "cases": 8,
+            "score": 99.5142505135609
+          },
+          "clarify": {
+            "cases": 9,
+            "errored": 1,
+            "score": 60.74591645631524
+          },
+          "contested": {
+            "cases": 7,
+            "errored": 4,
+            "score": 35.61114044523372
+          },
+          "deep_research": {
+            "cases": 13,
+            "errored": 6,
+            "score": 34.208629949581024
+          },
+          "depth": {
+            "cases": 6,
+            "errored": 2,
+            "score": 41.2190650446361
+          },
+          "emotional": {
+            "cases": 14,
+            "score": 93.15534778742133
+          },
+          "focus": {
+            "cases": 38,
+            "errored": 6,
+            "score": 67.43035596855115
+          },
+          "format": {
+            "cases": 10,
+            "score": 89.8479748846854
+          },
+          "high_stakes": {
+            "cases": 24,
+            "errored": 11,
+            "score": 47.6834663303515
+          },
+          "intent": {
+            "cases": 22,
+            "errored": 8,
+            "score": 61.99978242064512
+          },
+          "locale": {
+            "cases": 5,
+            "score": 99.4692502921962
+          },
+          "premise": {
+            "cases": 13,
+            "score": 89.95725645573846
+          },
+          "private_person": {
+            "cases": 8,
+            "score": 87.2886065637282
+          },
+          "recall": {
+            "cases": 7,
+            "score": 96.21789171306247
+          },
+          "recency": {
+            "cases": 8,
+            "errored": 1,
+            "score": 76.55323482673914
+          },
+          "research": {
+            "cases": 19,
+            "errored": 3,
+            "score": 79.67454036970624
+          },
+          "source_type": {
+            "cases": 20,
+            "errored": 12,
+            "score": 38.48776777951192
+          },
+          "task": {
+            "cases": 11,
+            "errored": 4,
+            "score": 62.31703336449917
+          },
+          "ui": {
+            "cases": 16,
+            "errored": 3,
+            "score": 57.91397855481234
+          }
+        },
+        "disqualified": [
+          "error/refusal rate above 5%"
+        ]
+      }
+    }
+  ]
+}

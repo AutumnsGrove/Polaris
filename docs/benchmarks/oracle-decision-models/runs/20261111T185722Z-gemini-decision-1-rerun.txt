@@ -1,0 +1,15 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                     score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+x   google/gemini-decision-1  66.7   60.7-72.7  66.7       75%      71%    96%      82%    0%         39%  380ms  561ms  $0.229  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+x = disqualified:
+  google/gemini-decision-1: error/refusal rate above 5%
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  google/gemini-decision-1  ██░                             |         p50 380ms  p95 561ms 
+
+Tracks scoring 25+ points below the model's own headline:
+  google/gemini-decision-1: contested 36, deep_research 34, depth 41, source_type 38

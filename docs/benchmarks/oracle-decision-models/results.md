@@ -28,12 +28,15 @@ Run 2026-10-16T01:49:50Z: 295 cases x 3 repeats, concurrency 2, weights `a6cbc14
 | 24 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
 | 25 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
 | 26 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| x | `google/gemini-decision-1` † | **80.3** (74.8-85.6) | 92% | 96% | 84% | 0% | 19% | 402ms | 643ms | 81.4% | $0.334 |
 | x | `nace-ai/drex-v2.0` † | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.175 |
 | x | `inception/mercury-decide` § | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 
-† ran at a different concurrency than the rest (2): `nace-ai/drex-max` (1), `nace-ai/drex-v1.5` (1), `nace-ai/drex-v2.0` (1). Their latency and under-2.5s share were measured under a different load; accuracy is unaffected.
+† ran at a different concurrency than the rest (2): `nace-ai/drex-max` (1), `nace-ai/drex-v1.5` (1), `google/gemini-decision-1` (1), `nace-ai/drex-v2.0` (1). Their latency and under-2.5s share were measured under a different load; accuracy is unaffected.
 
 § cost averaged over the run's identical repeats, not measured as a production turn (`perplexity/pplx-decider-v1.1-27b`, `inception/mercury-decide:free`, `liquid/d1-ultra`, `typesafe/jev-1.14`, `microsoft/microsoft-decision-1`, `typesafe/jev-1.13`, `openai/gpt-6-luna-decisions`, `liquid/d1`, `cloudflare/clef`, `scaledown/classify-1`, `cloudflare/clef-flash`, `upstage/solar-decide-flash`, `inception/mercury-decide`). A provider prefix cache makes repeats 2..n cheaper, so such a row can understate a cache-capable model by a few percent; re-run it to replace this with the fresh-state figure.
+
+x = disqualified, `google/gemini-decision-1`: error/refusal rate above 5%.
 
 x = disqualified, `nace-ai/drex-v2.0`: error/refusal rate above 5%.
 

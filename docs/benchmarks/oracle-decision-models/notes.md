@@ -4,11 +4,11 @@ The detail behind [README.md](README.md)'s table: what each model does well and 
 workaround, the models that could not be scored, and how the run was made. The recommendation lives in
 the README; this page is for when a row needs explaining.
 
-Catalog and availability notes here were checked live on **2026-11-10**.
+Catalog and availability notes here were checked live on **2026-11-11**.
 
 ## Runs
 
-Sixteen invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-06, all with `--repeats 3 --seed 1
+Twenty invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-11, all with `--repeats 3 --seed 1
 --timeout 15s` and 2 calls in flight except where noted. The report command refuses to merge runs that
 differ in cases, repeats or weights, and in concurrency unless given `--allow-concurrency-mismatch`, which
 marks the affected rows (†) — accuracy is unaffected by concurrency, latency is not.
@@ -27,6 +27,10 @@ marks the affected rows (†) — accuracy is unaffected by concurrency, latency
 - **2026-11-04** — Reflex, twice: the first run, then a second to capture per-call cost and token
   accounting. The second is the row in the table.
 - **2026-11-06** — Parallel's Decisions Fast.
+- **2026-11-11** — `google/gemini-decision-1`, four attempts: two at concurrency 2, then two at concurrency
+  1 once the first pair had lost a third of its calls to 429s. All four are disqualified; the row in the
+  table is the best of them. See [the shared Google
+  quota](#gemini-decision-1-and-the-shared-google-quota).
 
 The two earliest files in `runs/` (2026-10-15) used an older, smaller case bank and older weights, so
 they are not comparable and do not appear in the table.
@@ -85,6 +89,14 @@ score is credit earned minus penalties, so it can go negative.
   actions (80%). Also `:free` when run, now paid at $0.035/M.
 - **`nace-ai/drex-v1.5` (80.5)** — fast (293ms, no question cap, single request) but 7 points behind Jev,
   mostly on focus actions (82%), `premise` (49) and `private_person` (48).
+- **`google/gemini-decision-1` (80.3, disqualified)** — the calls that answered were quick (402ms median,
+  643ms p95, every one inside 2.5s) and scored 80.3, which is 7.5 points behind Jev and 2.6x its median
+  latency for $0.40 a turn against $0.212. Only 81.4% of calls answered at all — OpenRouter's shared
+  Google quota 429s in bursts — so the score above is what it managed on the calls that got through. Weak
+  on `high_stakes` (53) and `deep_research` (64) in this run; across the four attempts the low family
+  moves around — `private_person` 40, `contested` 36, `depth` 41, `recency` 28 — because which calls the
+  limiter erased differs each time. Only `high_stakes` is low in more than one attempt (48 and 53). Its
+  best family is `locale` (99.5), the exact place Jev is weakest (61).
 - **`liquid/d1.1` (79.3)** — a tie with the D1 it replaces (78.5) and not a step toward D1 Ultra. Cheaper
   ($0.075 against $0.089) and better at focus actions (80% against 68%), but ~160ms slower at the median
   and still 8.5 points behind Jev, with weak `locale` (61), `private_person` (62), `contested` (64),
@@ -311,6 +323,54 @@ failed entry (the 2026-10-19 file in `runs/` still holds the failed attempt). Li
 models it is hidden from OpenRouter's public `/models` list (output modality `decisions`), so look it up
 through `/api/v1/models/perplexity/pplx-decider-flash-v1.2/endpoints`.
 
+## Gemini Decision 1 and the shared Google quota
+
+`google/gemini-decision-1` (`google/gemini-decision-1-20261111`, $0.10 per million input tokens) is the
+newest entry in the catalog and it is **disqualified on errors, not on quality**: in its best attempt, 19%
+of its calls never returned an answer. It arrived on 2026-11-11 and was benched the same day, four times.
+
+| Attempt | Concurrency | Calls answered | Errors | Score | p50 | $ / answered turn |
+|---|--:|--:|--:|--:|--:|--:|
+| 1 | 2 | 605 / 885 | 32% | 71.5 | 392ms | $0.42 |
+| 2 | 2 | 542 / 885 | 39% | 66.7 | 380ms | $0.39 |
+| 3 (the row in the table) | 1 | 720 / 885 | 19% | 80.3 | 402ms | $0.40 |
+| 4 | 1 | 630 / 885 | 29% | 73.3 | 421ms | $0.39 |
+
+Every failure is the same error, and it is not about the question format:
+
+```
+HTTP 429: {"error":{"message":"Rate limit exceeded for model gemini-decision-1 (limit: 10000000 input
+ tokens per minute on Tier 3). Please retry in 2s or upgrade your tier at https://ai.dev/rate-limit."}}
+```
+
+**It is Google's per-minute input-token budget for the model, not our own spend.** A call is 4,398 input
+tokens, so 885 calls at concurrency 1 is about 0.7M tokens a minute, 7% of that 10M budget — and yet the
+429s still came, in bursts: 25-call windows in which every call succeeded sat beside windows in which 20
+of 25 failed, at both concurrencies. That pattern says the budget is shared with everyone else routing
+`gemini-decision-1` through the same OpenRouter key (the model's own `request_count` was 31,200 in the
+last 30 minutes when the first run started), so the limit is not something pacing on our side can buy our
+way out of: three extra attempts are the evidence, two of them at half the load (a run takes 6m10s at
+concurrency 1 against 2m48s at 2).
+
+What that leaves is a conditional measurement, and it is not a candidate either way:
+
+- **When it answers, it is quick and still less accurate.** 402ms median, 643ms p95, and every single
+  answered call across all four attempts landed inside the 2.5s timeout (slowest ever: 2.34s). The score
+  is 80.3, 7.5 points behind Jev, with focus actions right 84% against Jev's 98%.
+- **The failures cost nothing but the turn is lost.** A 429 is a turn with Oracle off, exactly as a
+  timeout would be, which is why 19% to 39% is disqualifying rather than "noisy".
+- **It is expensive for what it does.** $0.40 per turn that actually answered is 1.9x Jev's $0.212, for
+  2.6x Jev's median latency and 7.5 fewer points, and it reports no prefix caching (`cached_tokens` 0 on
+  every call). The $0.334 in the table is the harness's production basis (first sends ÷ 295) with the 47
+  first-sends that 429'd billing nothing in the denominator — a floor on the price, not the price of a
+  turn that works.
+
+**When to look again:** this is a launch-day rate limit on a model Google is still ramping, so the honest
+reading is "today's availability", not "the model's ceiling". Re-run it in a few days — one invocation,
+same flags — and if the error rate is under the 5% line the row can be re-measured and re-ranked. Nothing
+in this changes the pin in the meantime: a clean 80.3 is still behind Jev and D1 Ultra, and only a
+statistical tie with Drex 1.5 at 80.5.
+
 ## Mercury Decide
 
 Mercury has two entries and neither was a clean result, and as of **2026-11-10 both are gone**:
@@ -364,9 +424,12 @@ Mercury has two entries and neither was a clean result, and as of **2026-11-10 b
   idea of the right answer. The judge found 1% disagreement, not zero.
 - Three repeats and 274 scored cases give intervals of about plus or minus 4 points. Do not read ranks
   inside a tier as meaningful.
-- Latency was measured once, on one day, at concurrency 2 (except the Drex rows, at 1).
+- Latency was measured once, on one day, at concurrency 2 (except the Drex rows and Gemini, at 1).
 - One row is not reproducible by design: `parallel/decisions-fast` answers from live web research, so its
   78.4 is a snapshot of 2026-11-06 rather than a measurement anyone can repeat exactly.
+- `google/gemini-decision-1`'s row is conditional on the provider answering: 19% of its calls were 429s
+  that no pacing or concurrency change prevented, so both its score and its cost are measured over the
+  calls that got through. See [its section](#gemini-decision-1-and-the-shared-google-quota).
 - Some `prompts.yaml` options genuinely overlap (`brief` vs `off`, `legal` vs `financial`), so a few labels
   are ambiguous by construction. Changing them changes live Oracle behavior, so they were left alone.
 
@@ -404,6 +467,10 @@ entries into the committed `call-stats.json` by hand and re-run `report` *withou
 glob against a partial set of logs silently drops every other model's timeout and refusal share.
 
 The run saves its leaderboard to `runs/` on its own, and `report` saves the per-model call tallies (timeout
-share, refusals by family) to `call-stats.json` so charts can be rebuilt without the raw log. Do not edit
-`prompts.yaml` or pull while a run is in flight, because it hot-reloads and would change the questions for
-the remaining calls. About 8,000 calls take roughly 50 minutes plus a judging pass, and cost about $1.20.
+share, refusals by family) to `call-stats.json` so charts can be rebuilt without the raw log. A model that
+loses calls to upstream 429s is a provider-availability measurement: re-run it later at the standard
+`--concurrency 2` rather than settling for a slower run, since a concurrency change costs the row its †
+and the latency columns lose comparability. Gemini's four attempts are both kinds of evidence in `runs/`.
+Do not edit `prompts.yaml` or pull while a run is in flight, because it hot-reloads and would change the
+questions for the remaining calls. About 8,000 calls take roughly 50 minutes plus a judging pass, and cost
+about $1.20.

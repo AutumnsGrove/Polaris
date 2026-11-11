@@ -690,3 +690,17 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   pin or Reflex either; a full 885-call row would buy a footnote. A 20-case sample run first (95.7 vs 90.1,
   94.2% agreement) points the same way. Re-probe only if Max's two-request cap ever becomes the thing
   worth fixing.
+- `google/gemini-decision-1` (created 2026-11-11) was benched the same day and is **disqualified on
+  availability, not quality**: four full runs, two at concurrency 2 and two at 1, lost 19% to 39% of calls to
+  `HTTP 429 Rate limit exceeded for model gemini-decision-1 (limit: 10000000 input tokens per minute on
+  Tier 3)`. Every failure is that one error, it arrives in bursts (25-call windows of 100% success beside
+  windows of 80% failure), and it is not our own spend — a call is 4,398 input tokens, so even at
+  concurrency 1 the run is ~0.7M tokens/min, 7% of that budget — which means the budget is shared with
+  everything else routing the model through the same OpenRouter key and pacing cannot buy out of it.
+  Conditional on answering it is fast and mid-tier: 402ms p50, 643ms p95, every answered call inside the
+  2.5s timeout in all four attempts, **80.3** on the best run (7.5 points behind Jev), focus 84% against
+  Jev's 98%, ~$0.40 per answered turn against $0.212, no prefix cache. Weakest families move between
+  attempts (which calls the limiter erased differs); `high_stakes` is low in two of the four (48, 53) and
+  `locale` is its best family (99.5), where Jev scores 61. Not a candidate today; **re-run once the
+  launch-week quota pressure subsides** — one invocation, same flags — since a clean row could change the
+  ranking but not the pin.
