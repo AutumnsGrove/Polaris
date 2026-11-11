@@ -130,19 +130,21 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 	if reddit.IsRedditURL(args.URL) {
 		// Reddit gets its own path ahead of everything else: the generic
 		// chain can't work for it at all. The free fetch is answered with a
-		// 200 JS-challenge page (so nothing below ever sees an error to
-		// react to), and Wayback/Tavily/force_tavily are all refused by
-		// Reddit too — spending a Tavily credit on it just fails. See the
-		// reddit package's doc comment for the two paths that do work.
+		// 403 or a 200 JS-challenge page (so nothing below ever sees an
+		// error to react to), and Wayback/Tavily/Jina are refused by Reddit
+		// too — spending a Tavily credit on it just fails. Reads go through
+		// the reddit package's source chain instead (a community archive by
+		// default); its doc comment explains why that is the only thing
+		// left that answers.
 		rc := ctx.Reddit
 		if rc == nil {
-			rc = reddit.NewClient("", "", "")
+			rc = reddit.NewClient("", "", "", "")
 		}
 		res, rErr := rc.Fetch(ctx.Ctx, args.URL)
 		if rErr != nil {
 			log.Warn("web_read: reddit read failed", "url", args.URL, "err", rErr)
-			msg := "error: couldn't read this Reddit page (" + rErr.Error() + "). Reddit blocks ordinary page fetches, " +
-				"and archived copies and extraction services are refused too, so retrying or force_tavily won't help — " +
+			msg := "error: couldn't read this Reddit page (" + rErr.Error() + "). Reddit now blocks ordinary page " +
+				"fetches, and Wayback/Tavily/Jina are refused for it too, so retrying or force_tavily won't help — " +
 				"try another source, or use the search result snippet."
 			ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": msg, "call_id": callID})
 			return msg

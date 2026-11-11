@@ -1,23 +1,36 @@
 // Package reddit reads Reddit threads and listings for web_read.
 //
-// Plain scraping is closed: since mid-2026 Reddit answers unauthenticated
-// HTML/.json fetches from non-browser clients with a JS challenge or a 403
-// (TLS-fingerprint + IP-reputation checks, so a spoofed User-Agent doesn't
-// help), and the hosted readers web_read normally falls back to (Tavily
-// Extract, archive.org, Jina Reader) are all refused too — which is why a
-// Reddit URL used to come back as nothing. Two paths still work, tried in
-// order by Fetch:
+// Reddit closed nearly every door in 2026: unauthenticated HTML/.json fetches
+// from non-browser clients get a 403 or a JS challenge (TLS-fingerprint and
+// IP-reputation checks, so a spoofed User-Agent doesn't help), Atom feeds stop
+// being served on 2026-11-13, new Data API app registrations closed on
+// 2026-10-31, and the public Data API itself ends in March 2027. Alternative
+// frontends don't rescue it either: self-hosted Redlib v0.40.0 gets the same
+// 403s from an ordinary residential IP, and the public instances behind
+// redirector hubs like ueddit.com sit behind Anubis/Cloudflare bot walls (all
+// verified live on 2026-11-11).
 //
-//  1. Reddit's official OAuth Data API (oauth.reddit.com) with the
-//     operator's own app credentials. New app registrations are mostly
-//     refused now, but credentials that already exist (e.g. an old
-//     third-party-client app) keep working — see config.Reddit. App-only
-//     auth: a client secret uses the client_credentials grant, an empty one
-//     (Reddit's "installed app" type) uses the installed_client grant.
-//  2. The public Atom feeds (<url>/.rss), no credentials at all. Flat text
-//     and rate-limited, and Reddit has publicly called feeds "another
-//     common surface for scraping", so treat this as a best-effort floor
-//     rather than something to build on.
+// Reads therefore go through an ordered list of sources, not one hardcoded
+// trick — see newSources:
+//
+//  1. The Arctic Shift archive (default; no key, no credentials) — a
+//     community-run Reddit archive whose JSON API returns Reddit-shaped post
+//     and comment objects, so it feeds the same formatting code as the
+//     official API. It carries a thread and its full comment tree for anything
+//     more than a few minutes old; brand-new comments can lag hours, and
+//     score/comment counts only settle after roughly 36h.
+//  2. Reddit's own OAuth Data API, registered only when the operator has
+//     credentials. UNVERIFIED against live Reddit: app registration is closed
+//     and our own access request was denied, so this tier exists for whoever
+//     already holds an old app's credentials. If Reddit refuses it, the
+//     archive below still answers.
+//
+// Fetch tries each source in order and, when all of them fail, returns an
+// error naming every source and what happened to it. That text matters twice:
+// the model needs to know not to retry or spend a Tavily credit, and whoever
+// is deciding whether to swap an engine needs to see which one broke and how.
+// Adding a source (another archive, a frontend that starts working again, a
+// paid API) is one entry in newSources — nothing outside this package changes.
 package reddit
 
 import (
@@ -38,64 +51,109 @@ import (
 const maxResponseBytes = 10 << 20 // 10MB
 
 // defaultUserAgent follows Reddit's documented "<platform>:<app>:<version>"
-// shape. Reddit throttles generic/library User-Agents far harder than a
-// descriptive one, so this is worth getting right even for the RSS path.
+// shape. Both Reddit and the archive throttle generic/library User-Agents
+// harder than a descriptive one, so this is worth getting right.
 const defaultUserAgent = "linux:polaris:1.0 (self-hosted assistant; +https://github.com/AutumnsGrove/Polaris)"
 
 // installedClientDeviceID is the value Reddit documents for an app-only
 // installed_client grant when there is no per-device identity to report.
 const installedClientDeviceID = "DO_NOT_TRACK_THIS_DEVICE"
 
-// ErrUnsupportedURL means the URL is on Reddit but isn't a shape Fetch can
-// map to an API path (share links like /r/x/s/abc need a redirect Reddit
-// won't serve us, media/image hosts, etc.).
+// ErrUnsupportedURL means the URL is on Reddit but isn't a shape any source
+// can map to something it knows how to read (share links like /r/x/s/abc need
+// a redirect Reddit won't serve us, media/image hosts, the site front page).
 var ErrUnsupportedURL = errors.New("unsupported Reddit URL")
 
+// ErrNotArchived means the archive answered normally but has no copy of the
+// requested thing. Deliberately distinct from "the archive is down": the first
+// means too new, deleted, or not carried, the second means retry later or swap
+// engines, and both messages say which they are.
+var ErrNotArchived = errors.New("not in the archive")
+
 // Client reads Reddit. It is never nil-by-configuration: with no credentials
-// it simply skips the OAuth tier and goes straight to RSS, since that path
-// needs no key. Safe for concurrent use.
+// it skips the OAuth tier and reads through the archive, which needs no key.
+// Safe for concurrent use.
 type Client struct {
+	http      *http.Client
+	userAgent string
+	sources   []source
+
+	// OAuth tier state; unused by the archive tier.
 	clientID     string
 	clientSecret string
-	userAgent    string
-	http         *http.Client
-
-	// Endpoints are fields (not consts) so tests can point them at an
-	// httptest server; see NewClientForTest.
-	tokenURL string
-	apiBase  string
-	rssBase  string
+	tokenURL     string
+	apiBase      string
 
 	mu          sync.Mutex
 	token       string
 	tokenExpiry time.Time
+
+	// Archive tier state. archiveNext is the earliest time the next request
+	// may start (see archiveInterval); the mutex also keeps a single thread
+	// read's two requests from racing each other into a 429.
+	archiveBase     string
+	archiveInterval time.Duration
+	archiveMu       sync.Mutex
+	archiveNext     time.Time
 }
 
-// NewClient builds a Client. An empty clientID means RSS-only; clientSecret
+// source is one way of reading a Reddit page. Fetch tries sources in order;
+// name is what Result.Source and the aggregated failure message report, so
+// keep it short and provider-specific.
+type source struct {
+	name  string
+	fetch func(context.Context, redditPath) (*Result, error)
+}
+
+// NewClient builds a Client. An empty clientID means archive-only; clientSecret
 // may be empty even with a clientID (an installed-app credential). userAgent
-// may be empty for the default.
-func NewClient(clientID, clientSecret, userAgent string) *Client {
+// may be empty for the default. archiveBase may be empty for Arctic Shift, or
+// point anywhere that speaks the same API — the knob exists so a dead archive
+// is a config change rather than a code change.
+func NewClient(clientID, clientSecret, userAgent, archiveBase string) *Client {
 	if userAgent == "" {
 		userAgent = defaultUserAgent
 	}
-	return &Client{
+	if archiveBase == "" {
+		archiveBase = defaultArchiveBase
+	}
+	c := &Client{
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		userAgent:    userAgent,
 		http:         &http.Client{Timeout: 20 * time.Second},
 		tokenURL:     "https://www.reddit.com/api/v1/access_token",
 		apiBase:      "https://oauth.reddit.com",
-		rssBase:      "https://www.reddit.com",
+		archiveBase:  strings.TrimRight(archiveBase, "/"),
+		// Tests override this; see NewClientForTest.
+		archiveInterval: archiveMinInterval,
 	}
+	c.sources = c.newSources()
+	return c
 }
 
-// NewClientForTest points every endpoint at base (token at base+"/token",
-// API at base, RSS at base). Exported solely for other packages' tests.
+// NewClientForTest points every endpoint at base (token at base+"/token", API
+// at base, archive at base) and disables the archive's request spacing, which
+// exists for a real archive's benefit and would just make tests sleep.
+// Exported solely for other packages' tests.
 func NewClientForTest(clientID, clientSecret, base string) *Client {
-	c := NewClient(clientID, clientSecret, "")
+	c := NewClient(clientID, clientSecret, "", base)
 	c.http = &http.Client{Timeout: 5 * time.Second}
-	c.tokenURL, c.apiBase, c.rssBase = base+"/token", base, base
+	c.tokenURL, c.apiBase = base+"/token", base
+	c.archiveInterval = 0
 	return c
+}
+
+// newSources is the read chain, in the order Fetch tries it. The OAuth tier is
+// only registered when credentials exist, so an unconfigured install makes
+// exactly one request per read and its failure text doesn't mention a tier it
+// never had.
+func (c *Client) newSources() []source {
+	var out []source
+	if c.Authenticated() {
+		out = append(out, source{name: "reddit api", fetch: c.fetchAPI})
+	}
+	return append(out, source{name: "arctic shift archive", fetch: c.fetchArchive})
 }
 
 // Authenticated reports whether OAuth credentials are configured.
@@ -116,44 +174,69 @@ func IsRedditURL(rawURL string) bool {
 type Result struct {
 	Title string
 	Text  string
-	// Source is "reddit api" or "reddit rss", for logging which tier answered.
+	// Source names the tier that answered ("arctic shift archive", "reddit
+	// api"), for logging and for web_read's [via …] tag.
 	Source string
 }
 
-// Fetch reads rawURL via the OAuth API when configured, falling back to the
-// public RSS feed if that's unconfigured or fails. The returned error names
-// every tier that was tried, so the caller can tell the model *why* Reddit
-// couldn't be read rather than just that it couldn't.
+// Fetch reads rawURL through the first source that succeeds.
 func (c *Client) Fetch(ctx context.Context, rawURL string) (*Result, error) {
 	p, err := parseURL(rawURL)
 	if err != nil {
 		return nil, err
 	}
 
-	var apiErr error
-	if c.Authenticated() {
-		res, err := c.fetchAPI(ctx, p)
+	errs := make([]error, 0, len(c.sources))
+	for _, s := range c.sources {
+		res, err := s.fetch(ctx, p)
 		if err == nil {
 			return res, nil
 		}
-		apiErr = err
+		// A cancelled turn isn't a source failing: don't try the next one and
+		// don't dress the cancellation up as a source error.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		errs = append(errs, fmt.Errorf("%s: %w", s.name, err))
 	}
-
-	res, rssErr := c.fetchRSS(ctx, p)
-	if rssErr == nil {
-		return res, nil
-	}
-	if apiErr != nil {
-		return nil, fmt.Errorf("reddit api: %v; reddit rss: %v", apiErr, rssErr)
-	}
-	return nil, fmt.Errorf("reddit rss: %v (no Reddit API credentials are configured, so the feed was the only option)", rssErr)
+	return nil, &FetchError{URL: rawURL, Failures: errs}
 }
 
-// redditPath is a Reddit URL reduced to what both tiers need.
+// FetchError reports every source's failure for one read, in the order they
+// were tried. It unwraps to the individual errors, so callers can still ask
+// errors.Is(err, ErrNotArchived) — or ErrUnsupportedURL — without parsing text.
+// The message names every source because "the archive is down" and "this page
+// isn't in it" call for different responses, and only the source that answered
+// can say which happened.
+type FetchError struct {
+	URL      string
+	Failures []error
+}
+
+func (e *FetchError) Error() string {
+	shown := make([]string, 0, len(e.Failures))
+	for _, err := range e.Failures {
+		shown = append(shown, err.Error())
+	}
+	return "no Reddit source could read it (" + strings.Join(shown, "; ") + ")"
+}
+
+// Unwrap exposes every source's error to errors.Is/errors.As.
+func (e *FetchError) Unwrap() []error { return e.Failures }
+
+// redditPath is a Reddit URL reduced to the parts the sources need.
 type redditPath struct {
 	path     string // normalized, no trailing slash or .json/.rss suffix; always starts with "/"
 	query    url.Values
 	isThread bool
+
+	// Derived pieces, filled by parseURL. Empty when the URL has no such part
+	// (and empty subreddit for the synthetic "popular"/"all" listings).
+	postID    string
+	subreddit string
+	user      string
+	sort      string // the listing's sort segment: hot, new, top, rising…
+	search    bool   // /r/<sub>/search
 }
 
 func parseURL(rawURL string) (redditPath, error) {
@@ -191,13 +274,35 @@ func parseURL(rawURL string) (redditPath, error) {
 		}
 	}
 
-	isThread := false
-	for _, s := range segs {
-		if s == "comments" {
-			isThread = true
+	p := redditPath{path: path, query: u.Query()}
+	for i, s := range segs {
+		switch {
+		case s == "comments":
+			p.isThread = true
+			if i+1 < len(segs) {
+				p.postID = segs[i+1]
+			}
+		case s == "r" && i == 0 && i+1 < len(segs):
+			// "popular" and "all" are synthetic site-wide listings, not
+			// subreddits an archive can list.
+			if sub := segs[i+1]; sub != "popular" && sub != "all" {
+				p.subreddit = sub
+			}
+		case (s == "u" || s == "user") && i == 0 && i+1 < len(segs):
+			p.user = segs[i+1]
 		}
 	}
-	return redditPath{path: path, query: u.Query(), isThread: isThread}, nil
+	if p.subreddit != "" && len(segs) >= 3 {
+		switch segs[2] {
+		case "search":
+			p.search = true
+		case "comments":
+			// Thread; postID already set above.
+		default:
+			p.sort = segs[2]
+		}
+	}
+	return p, nil
 }
 
 // --- OAuth tier ---
@@ -224,7 +329,7 @@ func (c *Client) accessToken(ctx context.Context, force bool) (string, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", c.userAgent)
 
-	body, status, err := c.do(req)
+	body, status, _, err := c.do(req)
 	if err != nil {
 		return "", fmt.Errorf("requesting token: %w", err)
 	}
@@ -277,7 +382,7 @@ func (c *Client) fetchAPI(ctx context.Context, p redditPath) (*Result, error) {
 		req.Header.Set("Authorization", "Bearer "+tok)
 		req.Header.Set("User-Agent", c.userAgent)
 
-		b, status, err := c.do(req)
+		b, status, _, err := c.do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -300,21 +405,21 @@ func (c *Client) fetchAPI(ctx context.Context, p redditPath) (*Result, error) {
 	return &Result{Title: title, Text: text, Source: "reddit api"}, nil
 }
 
-// do runs req and returns the size-bounded body and status code.
-func (c *Client) do(req *http.Request) ([]byte, int, error) {
+// do runs req and returns the size-bounded body, status code and headers.
+func (c *Client) do(req *http.Request) ([]byte, int, http.Header, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("reading response: %w", err)
+		return nil, resp.StatusCode, resp.Header, fmt.Errorf("reading response: %w", err)
 	}
 	if len(data) > maxResponseBytes {
-		return nil, resp.StatusCode, fmt.Errorf("response exceeds %d byte limit", maxResponseBytes)
+		return nil, resp.StatusCode, resp.Header, fmt.Errorf("response exceeds %d byte limit", maxResponseBytes)
 	}
-	return data, resp.StatusCode, nil
+	return data, resp.StatusCode, resp.Header, nil
 }
 
 func firstNonEmpty(vals ...string) string {

@@ -37,7 +37,8 @@ ollama:
   embed_model: "nomic-embed-text"   # defaults to this if left empty
 
 reddit:
-  client_id: "${REDDIT_CLIENT_ID}"       # optional — Reddit blocks ordinary page fetches, so web_read reads Reddit through its API with these credentials, falling back to Reddit's public RSS feeds (flat text, rate-limited, no key) when empty or when the API call fails. New app registrations are mostly refused now, but an existing app's credentials (e.g. an old third-party-client app) keep working. https://www.reddit.com/prefs/apps
+  archive_url: "${REDDIT_ARCHIVE_URL}"   # optional — where web_read reads Reddit from: an Arctic Shift API (https://arctic-shift.photon-reddit.com by default, needs no key), because Reddit blocks page fetches, retired RSS on 2026-11-13 and closed new API registrations. It's a third party with no uptime promise; if it dies, point this at a mirror
+  client_id: "${REDDIT_CLIENT_ID}"       # optional — existing Reddit API credentials make reads live instead of archived; nothing needs them, and Reddit refuses new app registrations. https://www.reddit.com/prefs/apps
   client_secret: "${REDDIT_CLIENT_SECRET}"   # leave empty for an "installed app" credential (those have no secret)
 
 github:

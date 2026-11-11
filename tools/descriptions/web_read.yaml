@@ -13,7 +13,8 @@ api_description: >-
   absolute last resort for when you already have specific reason to believe a plain read gave
   stale data (e.g. a live-updating page) — it costs a real, limited paid credit, so don't set it
   by default.
-  Reddit is unreliable: Reddit blocks bots, so a reddit.com read only sometimes works (a flat,
-  rate-limited text feed), and often fails outright. Don't count on it or retry it, and
-  force_tavily doesn't help there — treat a Reddit link as a bonus source, and lean on search
-  snippets and other sites when a read fails.
+  Reddit is read through a third-party community archive (Reddit itself blocks bots). That means
+  a thread arrives complete with its comments, but the archive can be missing very recent posts
+  and replies, and its "score" and comment count are often out of date — say so if the numbers
+  matter. Don't retry a failed Reddit read and don't fall back to force_tavily (Reddit refuses
+  it); treat the link as a bonus source and lean on search snippets when it fails.

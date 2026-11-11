@@ -90,21 +90,29 @@ type Config struct {
 	} `yaml:"brave"`
 
 	Reddit struct {
+		// ArchiveURL is where web_read reads Reddit from — an Arctic Shift API
+		// (see the reddit package's doc comment for why Reddit itself can no
+		// longer be read and why this is a third-party archive). Optional;
+		// empty means Arctic Shift's public instance. Set it to point at a
+		// mirror or a self-hosted one if that instance dies or turns hostile:
+		// this is a config change, not a code change.
+		ArchiveURL string `yaml:"archive_url"`
+
 		// ClientID/ClientSecret are an optional Reddit Data API app's
-		// credentials, used by web_read for Reddit URLs (see the reddit
-		// package's doc comment for why plain fetching no longer works).
-		// Empty never disables Reddit support — web_read falls back to
-		// Reddit's public RSS feeds, which are flat and rate-limited but
-		// need no key. New app registrations are mostly refused now, but
-		// credentials that already exist (e.g. an old third-party-client
-		// app) keep working. ClientSecret may stay empty for an
-		// "installed app" credential (those have no secret). UserAgent is
-		// optional; Reddit throttles generic ones, so the default is
-		// already a descriptive "platform:app:version" string.
-		// https://www.reddit.com/prefs/apps
+		// credentials, used by web_read for Reddit URLs. Nothing needs them:
+		// the archive above carries reads without a key. They still buy one
+		// thing when they exist — a live read instead of an archived copy —
+		// and Reddit refuses new app registrations now, so only credentials
+		// that already exist (e.g. an old third-party-client app) can work.
+		// ClientSecret may stay empty for an "installed app" credential
+		// (those have no secret). https://www.reddit.com/prefs/apps
 		ClientID     string `yaml:"client_id"`
 		ClientSecret string `yaml:"client_secret"`
-		UserAgent    string `yaml:"user_agent"`
+
+		// UserAgent is optional; both Reddit and the archive throttle generic
+		// ones, so the default is already a descriptive
+		// "platform:app:version" string.
+		UserAgent string `yaml:"user_agent"`
 	} `yaml:"reddit"`
 
 	GitHub struct {
@@ -475,6 +483,7 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	warnIfEnvSetButUnconfigured("PARALLEL_API_KEY", cfg.Parallel.APIKey, "parallel.api_key")
 	warnIfEnvSetButUnconfigured("TAVILY_API_KEY", cfg.Tavily.APIKey, "tavily.api_key")
 	warnIfEnvSetButUnconfigured("REDDIT_CLIENT_ID", cfg.Reddit.ClientID, "reddit.client_id")
+	warnIfEnvSetButUnconfigured("REDDIT_ARCHIVE_URL", cfg.Reddit.ArchiveURL, "reddit.archive_url")
 	if cfg.BlockedSourcesFile == "" {
 		cfg.BlockedSourcesFile = "./blocked_sources.txt"
 	}

@@ -896,25 +896,31 @@ func TestHandleWebRead_NoFallbackConfigured_ReturnsError(t *testing.T) {
 	}
 }
 
-// fakeRedditServer answers the reddit package's token, API and RSS
-// endpoints, plus counts any hit on a generic-chain fallback host so the
-// test can prove Reddit URLs never reach it.
+// fakeRedditServer serves both reddit tiers off one host: the OAuth API at the
+// root (apiStatus scripts a failure) and an Arctic Shift-shaped archive under
+// /api/*, so a test can prove the archive answers when the API doesn't.
 func fakeRedditServer(t *testing.T, apiStatus int) *httptest.Server {
 	t.Helper()
+	const postJSON = `{"title":"Real thread","subreddit_name_prefixed":"r/golang","author":"op","score":9,` +
+		`"num_comments":1,"created_utc":1760000000,"selftext":"op text","is_self":true,` +
+		`"permalink":"/r/golang/comments/abc/real_thread/"}`
 	mux := http.NewServeMux()
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"access_token":"tok","expires_in":3600}`))
 	})
+	mux.HandleFunc("/api/posts/ids", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[` + postJSON + `]}`))
+	})
+	mux.HandleFunc("/api/comments/tree", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[{"kind":"t1","data":{"author":"c","score":3,"body":"a comment","replies":""}}]}`))
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/.rss") {
-			w.Write([]byte(`<feed xmlns="http://www.w3.org/2005/Atom"><title>r/golang</title><entry><title>Feed entry</title><author><name>/u/z</name></author><updated>2026-09-30T00:00:00Z</updated><content type="html">&lt;div class="md"&gt;rss body&lt;/div&gt;</content></entry></feed>`))
-			return
-		}
 		if apiStatus != 0 {
 			w.WriteHeader(apiStatus)
 			return
 		}
-		w.Write([]byte(`[{"data":{"children":[{"kind":"t3","data":{"title":"Real thread","subreddit_name_prefixed":"r/golang","author":"op","score":9,"num_comments":1,"created_utc":1760000000,"selftext":"op text","is_self":true}}]}},{"data":{"children":[{"kind":"t1","data":{"author":"c","score":3,"body":"a comment","replies":""}}]}}]`))
+		w.Write([]byte(`[{"data":{"children":[{"kind":"t3","data":` + postJSON + `}]}},` +
+			`{"data":{"children":[{"kind":"t1","data":{"author":"c","score":3,"body":"a comment","replies":""}}]}}]`))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -952,19 +958,23 @@ func TestHandleWebRead_RedditUsesRedditClientNotGenericChain(t *testing.T) {
 	}
 }
 
-func TestHandleWebRead_RedditFallsBackToRSSWhenAPIDown(t *testing.T) {
+func TestHandleWebRead_RedditFallsBackToArchiveWhenAPIDown(t *testing.T) {
 	srv := fakeRedditServer(t, http.StatusForbidden)
 	ctx := &Context{Ctx: context.Background(), Reddit: reddit.NewClientForTest("id", "secret", srv.URL), Emit: func(string, map[string]interface{}) {}}
 	out := handleWebRead(`{"url":"https://old.reddit.com/r/golang/comments/abc/x/"}`, ctx, "c1")
-	if !strings.Contains(out, "rss body") {
-		t.Errorf("result = %q, want the RSS fallback's content", out)
+	if !strings.Contains(out, "Real thread") || !strings.Contains(out, "a comment") {
+		t.Errorf("result = %q, want the archive fallback's post and comments", out)
+	}
+	if !strings.Contains(out, "op text") {
+		t.Errorf("result = %q, want the archive's post body", out)
 	}
 }
 
-func TestHandleWebRead_RedditNilClientStillAttemptsRSS(t *testing.T) {
+func TestHandleWebRead_RedditNilClientStillWorks(t *testing.T) {
 	// No Context.Reddit at all (e.g. a Context built by a path that never
-	// wired one) must degrade to RSS-only, not panic. The real feed host is
-	// unreachable in tests, so just assert a clean tool error, not a crash.
+	// wired one) must still route through a default client rather than panic.
+	// The canceled context keeps the assertion about the nil client and skips
+	// a real request to the live archive.
 	ctx := &Context{Ctx: canceledCtx(), Emit: func(string, map[string]interface{}) {}}
 	out := handleWebRead(`{"url":"https://www.reddit.com/r/golang/"}`, ctx, "c1")
 	if !strings.HasPrefix(out, "error:") || !strings.Contains(out, "Reddit") {
