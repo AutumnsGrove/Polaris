@@ -17,7 +17,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   ("just the prices"). Handles PDFs directly; falls back to archive.org, then Tavily's Extract API,
   for dead links and JS-rendered pages. Can also skip straight to a real, JS-rendering read as a
   deliberate last resort when a plain read looks stale (e.g. a live-updating page), within Tavily's
-  own monthly cap.
+  own monthly cap. Reddit threads come with their comments via the Arctic Shift community archive,
+  since Reddit itself blocks page fetches; very recent posts and replies may be missing.
 - **YouTube transcripts** — reads a video's captions straight from its watch page via `yt-dlp`, so
   a shared link is as researchable as any article. If YouTube blocks the free fetch, the assistant
   can retry through Tavily (when configured), within the same monthly cap.

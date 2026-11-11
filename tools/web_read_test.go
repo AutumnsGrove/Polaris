@@ -14,6 +14,7 @@ import (
 
 	"polaris/llm"
 	"polaris/llm/llmtest"
+	"polaris/reddit"
 	"polaris/search"
 	"polaris/tavily"
 )
@@ -893,6 +894,75 @@ func TestHandleWebRead_NoFallbackConfigured_ReturnsError(t *testing.T) {
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error when every fallback is unavailable", result)
 	}
+}
+
+// fakeRedditServer serves an Arctic Shift-shaped archive, so the tests below
+// prove a Reddit URL is answered by the reddit package and never by the
+// generic fetch/Wayback/Tavily chain.
+func fakeRedditServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	const postJSON = `{"title":"Real thread","subreddit_name_prefixed":"r/golang","author":"op","score":9,` +
+		`"num_comments":1,"created_utc":1760000000,"selftext":"op text","is_self":true,` +
+		`"permalink":"/r/golang/comments/abc/real_thread/"}`
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/posts/ids", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[` + postJSON + `]}`))
+	})
+	mux.HandleFunc("/api/comments/tree", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[{"kind":"t1","data":{"author":"c","score":3,"body":"a comment","replies":""}}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// Regression for "Reddit threads return NOTHING": Reddit answers the generic
+// fetch with a 200 JS-challenge page, so web_read must route Reddit URLs to
+// the reddit package instead of the free-fetch/Wayback/Tavily chain — which
+// here is wired to fail the test if anything in it is touched.
+func TestHandleWebRead_RedditUsesRedditClientNotGenericChain(t *testing.T) {
+	srv := fakeRedditServer(t)
+	tavilyHits := 0
+	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { tavilyHits++ }))
+	defer tavilySrv.Close()
+
+	ctx := &Context{
+		Ctx:                  context.Background(),
+		Reddit:               reddit.NewClientForTest(srv.URL),
+		Tavily:               tavily.NewClientForTest("k", tavilySrv.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementTavilyUsage: func() error { t.Error("Tavily credit spent on a Reddit URL"); return nil },
+		Emit:                 func(string, map[string]interface{}) {},
+	}
+	out := handleWebRead(`{"url":"https://www.reddit.com/r/golang/comments/abc/real_thread/","force_tavily":true}`, ctx, "c1")
+
+	if strings.HasPrefix(out, "error:") || !strings.Contains(out, "Real thread") || !strings.Contains(out, "a comment") {
+		t.Fatalf("result = %q, want the thread and its comments", out)
+	}
+	if tavilyHits != 0 {
+		t.Errorf("tavily hit %d times, want 0 — Reddit refuses it, and force_tavily must not bypass the Reddit path", tavilyHits)
+	}
+	if len(ctx.Citations) != 1 || ctx.Citations[0].SiteName != "Reddit" {
+		t.Errorf("Citations = %+v, want one citation labelled Reddit", ctx.Citations)
+	}
+}
+
+func TestHandleWebRead_RedditNilClientStillWorks(t *testing.T) {
+	// No Context.Reddit at all (e.g. a Context built by a path that never
+	// wired one) must still route through a default client rather than panic.
+	// The canceled context keeps the assertion about the nil client and skips
+	// a real request to the live archive.
+	ctx := &Context{Ctx: canceledCtx(), Emit: func(string, map[string]interface{}) {}}
+	out := handleWebRead(`{"url":"https://www.reddit.com/r/golang/"}`, ctx, "c1")
+	if !strings.HasPrefix(out, "error:") || !strings.Contains(out, "Reddit") {
+		t.Errorf("result = %q, want a Reddit-specific error", out)
+	}
+}
+
+func canceledCtx() context.Context {
+	c, cancel := context.WithCancel(context.Background())
+	cancel()
+	return c
 }
 
 // A successful read measures the page for the `readings` block: words counted

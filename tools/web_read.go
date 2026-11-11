@@ -43,6 +43,7 @@ import (
 
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/reddit"
 	"polaris/search"
 )
 
@@ -126,7 +127,30 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 	// API to get this" when reading logs later.
 	fallbackUsed := ""
 
-	if args.ForceTavily {
+	if reddit.IsRedditURL(args.URL) {
+		// Reddit gets its own path ahead of everything else: the generic
+		// chain can't work for it at all. The free fetch is answered with a
+		// 403 or a 200 JS-challenge page (so nothing below ever sees an
+		// error to react to), and Wayback/Tavily/Jina are refused by Reddit
+		// too — spending a Tavily credit on it just fails. Reads go through
+		// the reddit package instead, whose doc comment explains why its
+		// archive is the only thing left that answers.
+		rc := ctx.Reddit
+		if rc == nil {
+			rc = reddit.NewClient("", "")
+		}
+		res, rErr := rc.Fetch(ctx.Ctx, args.URL)
+		if rErr != nil {
+			log.Warn("web_read: reddit read failed", "url", args.URL, "err", rErr)
+			msg := "error: couldn't read this Reddit page (" + rErr.Error() + "). Reddit now blocks ordinary page " +
+				"fetches, and Wayback/Tavily/Jina are refused for it too, so retrying or force_tavily won't help — " +
+				"try another source, or use the search result snippet."
+			ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": msg, "call_id": callID})
+			return msg
+		}
+		title, siteName, text = res.Title, "Reddit", res.Text
+		fallbackUsed = res.Source
+	} else if args.ForceTavily {
 		// force_tavily deliberately skips fetchAndExtract and the
 		// archive.org fallback entirely — the whole point of asking for
 		// this is that the model already suspects the free path (and any

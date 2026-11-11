@@ -128,6 +128,22 @@ type Config struct {
 		APIKey string `yaml:"api_key"`
 	} `yaml:"brave"`
 
+	Reddit struct {
+		// ArchiveURL is where web_read reads Reddit from: an Arctic Shift API.
+		// There is no Reddit credential to configure — Reddit closed app
+		// registrations on 2026-10-31, retired RSS on 2026-11-13, and denies
+		// non-browser fetches, so a third-party archive is the only way in
+		// (see the reddit package's doc comment). Optional; empty means
+		// Arctic Shift's public instance. Point it at a mirror, or at a
+		// self-hosted copy, if that instance dies or turns hostile: this is a
+		// config change, not a code change.
+		ArchiveURL string `yaml:"archive_url"`
+
+		// UserAgent is optional; the archive throttles generic ones, so the
+		// default is already a descriptive "platform:app:version" string.
+		UserAgent string `yaml:"user_agent"`
+	} `yaml:"reddit"`
+
 	GitHub struct {
 		// Token is an optional personal access token attached to
 		// github_repo's API calls. Unlike Foursquare/Tavily's API keys,
@@ -648,6 +664,7 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	warnIfEnvSetButUnconfigured("BRAVE_API_KEY", cfg.Brave.APIKey, "brave.api_key")
 	warnIfEnvSetButUnconfigured("PARALLEL_API_KEY", cfg.Parallel.APIKey, "parallel.api_key")
 	warnIfEnvSetButUnconfigured("TAVILY_API_KEY", cfg.Tavily.APIKey, "tavily.api_key")
+	warnIfEnvSetButUnconfigured("REDDIT_ARCHIVE_URL", cfg.Reddit.ArchiveURL, "reddit.archive_url")
 	if cfg.BlockedSourcesFile == "" {
 		cfg.BlockedSourcesFile = "./blocked_sources.txt"
 	}

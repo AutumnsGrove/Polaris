@@ -107,6 +107,7 @@ func newSubAgentContext(baseCtx *tools.Context, llmClient llm.ChatClient, task t
 		SearXNG:                baseCtx.SearXNG,
 		Foursquare:             baseCtx.Foursquare,
 		Tavily:                 baseCtx.Tavily,
+		Reddit:                 baseCtx.Reddit,
 		Brave:                  baseCtx.Brave,
 		Parallel:               baseCtx.Parallel,
 		LLM:                    llmClient,

@@ -99,6 +99,9 @@ embeddings:
   # nomic-embed-text for ollama.
   model: "perplexity/pplx-embed-v1-0.6b"
 
+reddit:
+  archive_url: "${REDDIT_ARCHIVE_URL}"
+
 github:
   token: "${GITHUB_TOKEN}"
 

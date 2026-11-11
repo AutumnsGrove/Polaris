@@ -28,6 +28,7 @@ import (
 	"polaris/models"
 	"polaris/parallel"
 	"polaris/places"
+	"polaris/reddit"
 	"polaris/search"
 	"polaris/store"
 	"polaris/tavily"
@@ -61,6 +62,7 @@ type Server struct {
 	tavily     *tavily.Client           // nil if not configured
 	brave      *brave.Client            // nil if not configured
 	parallel   *parallel.Client         // nil if not configured
+	reddit     *reddit.Client           // never nil — reads through a third-party archive, no credentials involved
 	decisions  *decisions.Client        // nil if openrouter.api_key isn't set — disables compare_sources only
 	embed      *embed.Client            // nil if no embeddings backend is configured (see config.NewEmbedClient) — disables query-similarity and the semantic index
 	embeds     *embedService            // nil whenever embed is — the persisted semantic index (gateway/embedsvc.go)
@@ -183,6 +185,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		tavily:            tavily.NewClient(cfg.Tavily.APIKey),
 		brave:             brave.NewClient(cfg.Brave.APIKey),
 		parallel:          parallel.NewClient(cfg.Parallel.APIKey),
+		reddit:            reddit.NewClient(cfg.Reddit.UserAgent, cfg.Reddit.ArchiveURL),
 		decisions:         decisions.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
 		embed:             cfg.NewEmbedClient(),
 		stt:               voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
