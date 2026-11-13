@@ -4,11 +4,11 @@ The detail behind [README.md](README.md)'s table: what each model does well and 
 workaround, the models that could not be scored, and how the run was made. The recommendation lives in
 the README; this page is for when a row needs explaining.
 
-Catalog and availability notes here were checked live on **2026-11-11**.
+Catalog and availability notes here were checked live on **2026-11-13**.
 
 ## Runs
 
-Twenty invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-11, all with `--repeats 3 --seed 1
+Twenty-two invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-13, all with `--repeats 3 --seed 1
 --timeout 15s` and 2 calls in flight except where noted. The report command refuses to merge runs that
 differ in cases, repeats or weights, and in concurrency unless given `--allow-concurrency-mismatch`, which
 marks the affected rows (†) — accuracy is unaffected by concurrency, latency is not.
@@ -31,6 +31,10 @@ marks the affected rows (†) — accuracy is unaffected by concurrency, latency
   1 once the first pair had lost a third of its calls to 429s. All four are disqualified; the row in the
   table is the best of them. See [the shared Google
   quota](#gemini-decision-1-and-the-shared-google-quota).
+- **2026-11-13** — `perplexity/pplx-decider-v1.3:free`, `heygen/heygen-decision-1` and `-turbo` in one
+  invocation, then `perplexity/pplx-decider-flash-v1.3:free` in a second run **on a key from a separate
+  account** — the free-model quota is per account, and both free builds in one day would not fit under
+  1,000 calls. See [the v1.3 pair](#perplexity-v13-and-the-heygen-pair).
 
 The two earliest files in `runs/` (2026-10-15) used an older, smaller case bank and older weights, so
 they are not comparable and do not appear in the table.
@@ -59,6 +63,13 @@ score is credit earned minus penalties, so it can go negative.
   lead is inside the noise, and it is 4x slower at the median. It ran as `:free`, which Baseten has since
   replaced with a paid build at $0.10/M — and a free tier can also be rate limited or withdrawn without
   notice, which is exactly what happened.
+- **`perplexity/pplx-decider-v1.3:free` (89.5)** — the best free build still callable, and a statistical tie
+  with the pin at $0: 555ms median, 1.3s p95, 99.2% of calls inside the cutoff, focus actions 95%, no weak
+  family by the 25-point rule but `clarify` (60), `contested` (66) and `emotional` (64) are its soft spots
+  in that order. 3.9k input tokens a call, so it is also cheap on the tokenizer side. What keeps it off the
+  pin is the tail, not the score: one call took 10.2s and four more passed 3s, where Jev has none, and it
+  is 3.6x Jev's median in front of every turn. That tail is worth expecting rather than treating as a
+  glitch — pplx-decider-v1.2 had the same 3.7s p95. See [the v1.3 pair](#perplexity-v13-and-the-heygen-pair).
 - **`inception/mercury-decide:free` (89.0, retired)** — 618ms median, 0 errors, focus actions 95%, $0 —
   but p95 4.3s, so about 12% of calls missed the cutoff, and weak on `clarify` (62) and `emotional` (43).
   Both Mercury entries now return `HTTP 404 No endpoints found` (2026-11-10).
@@ -67,7 +78,7 @@ score is credit earned minus penalties, so it can go negative.
   63 and `contested` 66), and it fixes Jev's `locale` blind spot. The cost is focus actions: 90% against
   98%.
 - **`typesafe/jev-1.14` (87.8)** — pinned. 152ms median, 189ms p95, every call inside the cutoff, the best
-  focus actions of all 28 models (98%), $0.212 per 1,000 turns. Weak on `locale` (61); Jev 1.13, Microsoft,
+  focus actions of all 30 scored models (98%), $0.212 per 1,000 turns. Weak on `locale` (61); Jev 1.13, Microsoft,
   D1 and Clef sit at 60 to 62 on the same family too, while Perplexity reaches 97 and Mercury 99, so it is
   a real gap rather than a hard question.
 - **`microsoft/microsoft-decision-1` (87.5)** — 347ms median, 100% inside the cutoff, cheaper than Jev.
@@ -82,11 +93,22 @@ score is credit earned minus penalties, so it can go negative.
   turns), with the same 98% focus actions. Median call 2.3s and p95 2.6s, so about 14% of turns would run
   without Oracle; its lowest families (`clarify` 61, `locale` 62) are just inside the 25-point line.
   Respan's older `span-01` family cannot run at all — see [below](#models-that-couldnt-be-scored).
+- **`heygen/heygen-decision-1-turbo` (85.4) / `heygen/heygen-decision-1` (85.3)** — a tie with each other,
+  2.4 points behind Jev, at 425ms and 600ms median and 100% inside the cutoff. Focus actions are the gap
+  that matters — 85% and 82% against Jev's 98% — along with `clarify` (61 to 65), `private_person` (62) and
+  `contested` (65 to 66). Both bill 10.4k to 10.9k input tokens for the same 23 questions Perplexity fits in
+  3.9k, which is where their $0.98 and $1.46 per 1,000 turns come from: the catalog price ($0.09/M and
+  $0.14/M) is not the reason. Turbo bills *more* tokens than the full build and is only 175ms faster, so
+  the pair is one model in two shapes rather than a speed/accuracy choice.
 - **`openai/gpt-6-luna-decisions` (82.3)** — fast (243ms) but the most expensive per turn ($0.555),
   behind Jev on score, and the only model that **refuses** to answer (see [Refusals](#refusals)). Weak on
   `depth` (56), `emotional` (41) and `private_person` (48, mostly the refusals).
 - **`baseten/elephant-1` (81.2)** — 445ms, no errors, tied with Luna; weak on `premise` (40) and focus
   actions (80%). Also `:free` when run, now paid at $0.035/M.
+- **`perplexity/pplx-decider-flash-v1.3:free` (80.7)** — the fastest model tested (256ms median, 444ms p95,
+  100% inside the cutoff) with no errors, and 7 points behind Jev. `premise` 31 is the lowest family score
+  on the page, with `locale` 61 next and focus actions 75%. Its eight-case smoke said 97; the full bank
+  said 80.7, which is the case for smoking on more than eight cases before writing anything down.
 - **`nace-ai/drex-v1.5` (80.5)** — fast (293ms, no question cap, single request) but 7 points behind Jev,
   mostly on focus actions (82%), `premise` (49) and `private_person` (48).
 - **`google/gemini-decision-1` (80.3, disqualified)** — the calls that answered were quick (402ms median,
@@ -323,6 +345,40 @@ failed entry (the 2026-10-19 file in `runs/` still holds the failed attempt). Li
 models it is hidden from OpenRouter's public `/models` list (output modality `decisions`), so look it up
 through `/api/v1/models/perplexity/pplx-decider-flash-v1.2/endpoints`.
 
+## Perplexity v1.3 and the HeyGen pair
+
+Four entries arrived on 2026-11-12 and were benched on 2026-11-13 (build suffix `-20261112`):
+`perplexity/pplx-decider-v1.3` and its `-flash` sibling, both `:free`, and `heygen/heygen-decision-1` with a
+`-turbo` sibling. None of them needed a question cap, none refused anything, and none errored beyond a
+single 429 (below), so all four take Choice questions in one request like Jev does.
+
+**`perplexity/pplx-decider-v1.3:free` (89.5, 85.8-92.8)** is the result worth the run: 555ms median, 1.3s
+p95, 99.2% of calls inside the 2.5s cutoff, focus actions 95%, $0. It ties the pin within the noise and
+replaces `baseten/mammoth-1` as the best free build measured. Two things keep it off the pin. The tail:
+one call took 10.2s, four more passed 3s, and five of 884 answered past the cutoff — the pin has none of
+that, and a decision model sits in front of every turn. And the family shape: it is the mirror of Jev rather
+than an upgrade, soft on `clarify` (60), `emotional` (64) and `contested` (66) where Jev is 95 to 98, and
+strong on `claim_check`, `chips` and `research` (99 to 100) where Jev is 90. Its tokenizer is also
+uncharacteristically good: 3.9k input tokens per call, the same as v1.2 and a third of the HeyGen pair's.
+
+**`perplexity/pplx-decider-flash-v1.3:free` (80.7, 75.1-85.5)** is the fastest model on the page — 256ms
+median, 444ms p95, every call inside the cutoff — and 7 points behind Jev. `premise` 31 is the lowest
+family score measured on any model, with `locale` 61 behind it and focus actions 75%. An eight-case smoke
+put it at 97; the full bank put it at 80.7. Small-sample smokes are for compatibility and cost, not for
+ranking.
+
+**The HeyGen pair (85.4 turbo, 85.3 full)** ties each other and sits 2.4 points behind Jev, with the two
+weaknesses that matter for Oracle: focus actions at 85% and 82% against 98%, and a tail that is fine
+(100% inside the cutoff) at a median 2.8x Jev's. The reason to rule them out is the bill, and the bill is
+not the catalog price: both send 10.4k to 10.9k input tokens for the same 23 questions (turbo sends
+*more* than the full build), which turns $0.09/M and $0.14/M into $0.98 and $1.46 per 1,000 turns, 5 to
+7 times the pin. A low per-token price on a model that reads the question set twice as expensively is not
+a saving, and only the measured call shows it.
+
+One `429` hit `pplx-decider-v1.3:free` mid-run, one call of 885, at the standard 3.5s pacing. It is
+recorded as that sample's result and the run continued; at one call it does not move the score, but it is
+why a free model's error column is worth reading even when it looks clean.
+
 ## Gemini Decision 1 and the shared Google quota
 
 `google/gemini-decision-1` (`google/gemini-decision-1-20261111`, $0.10 per million input tokens) is the
@@ -451,6 +507,8 @@ polaris oracle-bench --models <id> --n 8 --repeats 1 --no-judge --save-dir /tmp/
 polaris oracle-bench report \
   --run docs/benchmarks/oracle-decision-models/runs/<first>.json,docs/benchmarks/oracle-decision-models/runs/<second>.json,... \
   --calls 'oraclebench/results/*-calls.jsonl'
+# pass only the best of several attempts at one model: a later run of the same model replaces the
+# earlier one, so listing all four Gemini attempts would show the worst (73.3) instead of the row's 80.3
 ```
 
 `:free` models are paced automatically (`--free-interval`, default 3.5s between calls, about 52 minutes for
@@ -458,8 +516,18 @@ a full run). OpenRouter limits free models to roughly 20 calls a minute across t
 bench never retries a 429, so an unpaced free model is disqualified for our account's limit rather than its
 own quality. There is also a daily cap of 1000 free-model requests (`GET /api/v1/key` reports it as
 `free_model_daily_requests`). **It is per OpenRouter account, not per key**: a second key on the same
-account showed the same used count. A full run is 885 calls, so run one free model per day per account. The
+account showed the same used count. A full run is 885 calls, so run one free model per day per account —
+or run the second on **a key from a different account**, which is how the two v1.3 builds were benched on
+the same day (and how the Baseten pair ran before them; a separate account also means its own 1,000). The
 wait is outside the latency timer, so it does not affect measured latency.
+
+**Point the bench at a config with a real `openrouter.base_url`.** `config.yaml` on a dev machine can carry
+a `providers:` block — the local `fakeopenrouter` double is `base_url: http://127.0.0.1:18901` — and
+`config.Load` copies `providers["openrouter"]` back over `openrouter:`, so the bench silently measures the
+double. It does not fail loudly: the first smoke of the v1.3 pair came back in 0ms for $0, every check
+`probability 1.0` on one option, all four models byte-identical, and the run scored and saved like a real
+one. Use a throwaway config (`openrouter:` only) or stop the dev stack, and treat a 0ms median as a
+misconfiguration rather than a fast model.
 
 `--calls` **rewrites `call-stats.json` from only the logs it matches**, and those raw logs are gitignored, so
 a fresh checkout has only the latest run's. When adding a model, tally just its own log, then merge the new
@@ -473,4 +541,5 @@ loses calls to upstream 429s is a provider-availability measurement: re-run it l
 and the latency columns lose comparability. Gemini's four attempts are both kinds of evidence in `runs/`.
 Do not edit `prompts.yaml` or pull while a run is in flight, because it hot-reloads and would change the
 questions for the remaining calls. About 8,000 calls take roughly 50 minutes plus a judging pass, and cost
-about $1.20.
+about $1.20 — unless the roster includes a model that bills 10k tokens a question, which is what made the
+2026-11-13 run $2.30 for four models.
