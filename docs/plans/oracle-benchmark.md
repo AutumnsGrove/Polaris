@@ -704,3 +704,23 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   `locale` is its best family (99.5), where Jev scores 61. Not a candidate today; **re-run once the
   launch-week quota pressure subsides** — one invocation, same flags — since a clean row could change the
   ranking but not the pin.
+- `perplexity/pplx-decider-v1.3:free` and its `-flash` sibling (created 2026-11-12, benched 2026-11-13) are
+  the first Perplexity build since the retired v1.1 to clear the noise floor around the pin. **v1.3 scores
+  89.5** (85.8-92.8), 555ms p50, 1.3s p95, 99.2% under 2.5s, focus 95%, $0, 3.9k input tokens a call — a
+  statistical tie with Jev at 3.6x its median, and the best free build that still exists. The reasons not to
+  swap are the tail (one call at 10.2s, four more past 3s, five of 884 over the cutoff, where Jev has none)
+  and a mirrored family shape: `claim_check`/`chips`/`research` 99 to 100 against Jev's 90, but `clarify` 60,
+  `emotional` 64 and `contested` 66 against Jev's 95 to 98, so a swap moves which mistakes Oracle makes
+  rather than how many. `-flash` is 80.7 (256ms, the fastest measured, `premise` 31) and not a candidate.
+  Benched on the same day in two invocations by using **a key from a separate OpenRouter account** for the
+  second free model: the 1,000/day free cap is per account, and 885 calls a run means one free model a day
+  per account otherwise. An 8-case smoke put `-flash` at 97 and `v1.3` at 98.5; the full bank put them at
+  80.7 and 89.5, which is the case for smoking on compatibility and cost, not on ranking.
+- `heygen/heygen-decision-1` and `-turbo` (created 2026-11-12, benched 2026-11-13) are **not candidates**
+  and are the clearest tokenizer trap in the roster so far: 85.3 and 85.4 (a tie with each other, 2.4 points
+  behind Jev), 600ms and 425ms p50, 100% under 2.5s, but focus actions 82% and 85% against Jev's 98%, and
+  **$1.46 and $0.98 per 1,000 turns — 5 to 7x the pin at a catalog price of $0.14/M and $0.09/M**. The
+  price is not the list price: both send 10.4k to 10.9k input tokens for the same 23 questions Perplexity
+  fits in 3.9k, and turbo sends *more* than the full build while being 175ms faster. Catalog price per
+  million tokens cannot distinguish this from a cheap model; only the measured bill can, which is what the
+  `$/1k turns` column is for. Neither justifies a second attempt.

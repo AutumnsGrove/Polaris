@@ -1,0 +1,17 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                              score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95   cost    
+1   perplexity/pplx-decider-v1.3:free  89.5   85.8-92.8  89.5       97%      94%    97%      95%    0%         0%   555ms  1.3s  $0.023  
+2   heygen/heygen-decision-1-turbo     85.4   81.2-89.6  85.4       96%      92%    96%      85%    0%         0%   425ms  1.2s  $0.893  
+3   heygen/heygen-decision-1           85.3   80.8-89.6  85.3       96%      92%    96%      82%    1%         0%   600ms  1.4s  $1.327  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  heygen/heygen-decision-1-turbo     ██░░░░░                         |         p50 425ms  p95 1.2s  
+  perplexity/pplx-decider-v1.3:free  ███░░░░░                        |         p50 555ms  p95 1.3s  
+  heygen/heygen-decision-1           ███░░░░░                        |         p50 600ms  p95 1.4s  
+
+Tracks scoring 25+ points below the model's own headline:
+  perplexity/pplx-decider-v1.3:free: clarify 60, emotional 64
