@@ -21,8 +21,8 @@ for what was asked?" The answer does three jobs:
    `[Page image: …]` lines `web_search`/`web_read` already add. It points the model at the better
    link instead of letting it keep mining a bad one.
 3. **A cost lever** — a page judged unusable doesn't need its full text re-sent on every later
-   loop iteration, and doesn't need `web_read`'s own LLM filter pass. Phased in only after
-   measurement (see "Cost").
+   loop iteration, and steering the model off a dead end sooner saves a loop iteration. Phased in
+   only after measurement, and only for reads without `instructions` (see "Cost").
 
 Why this fits the product: PRODUCT.md's "sourcing is the product." Oracle already made Polaris's
 *decisions* about a question visible; this makes its *judgment of each source* visible. It was
@@ -135,7 +135,10 @@ Where savings would come from, in rough order:
    only ever runs when `instructions` is set, so there is no other read it could apply to:
    **skip-filter is dropped from v2 entirely** as designed. It comes back only if the judge is fed
    the same 100k slice the filter gets, which has its own cost and latency and is decided from
-   phase 0/1 numbers, not assumed. The savings from items 1 and 3 do not depend on it.
+   phase 0/1 numbers, not assumed. Note that trimming (item 1) and the nudge (item 3) are also
+   withheld for `instructions` reads in this design, so the savings from items 1 and 3 accrue only
+   on reads without `instructions`; the phase-1/2 savings estimate must be computed on that
+   subset, not on all `web_read` calls.
 3. **Fewer wasted reads.** If the nudge steers the model off a dead end one iteration sooner, that
    is a saved loop iteration. Deep Research sub-agents read the most pages, so they would gain the
    most (see the dependency on issue #208 below).
@@ -169,8 +172,9 @@ Design assumptions to check, not facts:
   `web_read`'s latency. If Nova's tool registry dispatches calls concurrently the cost overlaps
   across parallel reads; verify rather than assume.
 - Own short timeout (start near 1.5s, tune from data), far under `decisions.Client`'s 20s default.
-- If the judge replaces the filter pass for junk pages, the net latency on those pages is
-  *negative*.
+- The judge never replaces the filter pass (skip-filter is dropped, see Cost item 2), so on a read
+  with `instructions` it only ever adds a call in front of the filter pass. Phase 0 should measure
+  that serial cost specifically, since those reads already pay for a fetch plus an LLM round-trip.
 
 The alternative of emitting the tool result immediately and lighting the chip up when the verdict
 lands avoids the added latency, but then the model never sees the nudge, which is half the value.
@@ -267,7 +271,8 @@ tech neon, so no red/amber/green traffic light.
    stats breakout, settings toggle, docs. Verify live through `dev/stack.sh --fake-llm` and
    Playwright, then on the potato. A/B answer quality with the pinned-provider benchmark harness
    (`cmd/benchmark.go`) so "does it help" isn't only a feeling.
-4. **Trim and skip-filter (v2).** Only if phase 2's numbers justify it.
+4. **Trim (v2).** Only if phase 2's numbers justify it; reads with `instructions` excluded, and
+   skip-filter dropped.
 5. **Search-result triage (hook A)**, and revisit speculative prefetch (hook C) with real numbers.
 
 ## Open questions
