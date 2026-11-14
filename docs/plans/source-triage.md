@@ -109,7 +109,8 @@ guess being obeyed:
 > answer is probably in another source.]`
 
 Only emitted when the verdict clears its threshold. `answers` emits nothing (no noise on the happy
-path). Same hard rule as Oracle: **nudge only, never remove tools, never block a domain.**
+path). Never emitted for a read that passes `instructions` in v1 (the judge saw less text than the
+model did; see Risks). Same hard rule as Oracle: **nudge only, never remove tools, never block a domain.**
 `domain_rankings.yaml` and the blocklist stay operator-owned; verdicts never write to them. (A
 later "block this domain?" offer chip is fine, since offers are never actions.)
 
@@ -130,10 +131,11 @@ Where savings would come from, in rough order:
    `web_read` makes an extra LLM round-trip over up to 100k chars (`maxFilterInputChars`). Judging
    first and skipping that pass for an unusable page saves a whole call, not just tokens. **But the
    judge only sees the 12k-char display window, while that filter pass reads up to 100k chars**, so
-   an `unusable` verdict would be skipping a pass over text the judge never read. Skip-filter is
-   therefore excluded from v2 for reads that pass `instructions`; it applies only to reads with no
-   filter pass. Feeding the judge the same 100k slice the filter gets is a separate option with its
-   own cost and latency, to be decided from phase 0/1 numbers, not assumed.
+   an `unusable` verdict would be skipping a pass over text the judge never read. The filter pass
+   only ever runs when `instructions` is set, so there is no other read it could apply to:
+   **skip-filter is dropped from v2 entirely** as designed. It comes back only if the judge is fed
+   the same 100k slice the filter gets, which has its own cost and latency and is decided from
+   phase 0/1 numbers, not assumed. The savings from items 1 and 3 do not depend on it.
 3. **Fewer wasted reads.** If the nudge steers the model off a dead end one iteration sooner, that
    is a saved loop iteration. Deep Research sub-agents read the most pages, so they would gain the
    most (see the dependency on issue #208 below).
@@ -143,12 +145,14 @@ Where savings would come from, in rough order:
 - **Shadow mode first.** Judge every page, log the verdict, show nothing, change nothing, and
   record what v2 *would* have trimmed and how many tokens that is. This is the dataset and the
   savings estimate.
-- **v1 annotates** (chip + nudge). Nothing is removed.
+- **v1 annotates** (chip + nudge). Nothing is removed. For reads that pass `instructions`, v1
+  shows the chip but sends **no nudge** (see "Long pages" under Risks).
 - **v2 trims**, only for `unusable`/`off_topic` at a high threshold, only when the shadow data
   shows a false-negative rate on genuinely useful pages low enough to accept. A trimmed result
   keeps the head of the page and says it was trimmed and why, so the model can ask for the rest.
   How it asks (a `full: true` argument, or re-reading with an `offset`) is an open question.
-  Reads that pass `instructions` are excluded from v2 trimming and skip-filter (see item 2).
+  Reads that pass `instructions` are excluded from v2 trimming too (and skip-filter is dropped, see
+  item 2).
 
 ## Latency
 
@@ -205,8 +209,14 @@ tokens, a forum thread with the answer in reply 14. Whether this lives as a new 
   the judge reads what the model reads (that window), so `usefulness` means "useful in this
   window" and the chip should say so for a paginated read. That does **not** hold when
   `instructions` is set: the model then gets filter output over up to 100k chars, which the judge
-  never sees. The chip is still honest there (it describes the window), but the verdict must not be
-  used to trim or to skip the filter pass; see "Cost" item 2.
+  never sees. The chip is still honest there (it says what the window covers), but the verdict must
+  not be used to trim, and **must not be sent as a nudge**: the tool result in that case is filter
+  output that may already contain the answer the judge couldn't see, and "this page doesn't address
+  the question" appended to it would tell the model to distrust text it was just handed. That is
+  the highest-impact false negative in v1 because it needs no shadow data to fire. Two ways to lift
+  the restriction later, both phase 1 questions: judge the same 100k slice the filter reads, or
+  judge the filter *output* itself (small, and exactly what the model reads; it gives up any
+  skip-filter saving, which is already dropped).
 - **Calibration shifts per model and per task.** Thresholds start as guesses and are set from the
   bench, never from the Oracle values.
 - **Stats double-counting.** As with verification and Oracle, the judge's spend is counted once via
