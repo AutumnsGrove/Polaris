@@ -127,8 +127,13 @@ Where savings would come from, in rough order:
    tokens × the remaining iterations. Trimming a page the judge calls unusable is the biggest lever
    and the biggest risk.
 2. **Skipping `web_read`'s filter pass.** When `instructions` is set (and not Quick Answer mode),
-   `web_read` makes an extra LLM round-trip over up to 100k chars. Judging first and skipping that
-   pass for an unusable page saves a whole call, not just tokens.
+   `web_read` makes an extra LLM round-trip over up to 100k chars (`maxFilterInputChars`). Judging
+   first and skipping that pass for an unusable page saves a whole call, not just tokens. **But the
+   judge only sees the 12k-char display window, while that filter pass reads up to 100k chars**, so
+   an `unusable` verdict would be skipping a pass over text the judge never read. Skip-filter is
+   therefore excluded from v2 for reads that pass `instructions`; it applies only to reads with no
+   filter pass. Feeding the judge the same 100k slice the filter gets is a separate option with its
+   own cost and latency, to be decided from phase 0/1 numbers, not assumed.
 3. **Fewer wasted reads.** If the nudge steers the model off a dead end one iteration sooner, that
    is a saved loop iteration. Deep Research sub-agents read the most pages, so they would gain the
    most (see the dependency on issue #208 below).
@@ -143,14 +148,16 @@ Where savings would come from, in rough order:
   shows a false-negative rate on genuinely useful pages low enough to accept. A trimmed result
   keeps the head of the page and says it was trimmed and why, so the model can ask for the rest.
   How it asks (a `full: true` argument, or re-reading with an `offset`) is an open question.
+  Reads that pass `instructions` are excluded from v2 trimming and skip-filter (see item 2).
 
 ## Latency
 
 Oracle's bench: Jev median 152ms, p95 189ms, every call inside Oracle's 2.5s timeout. **That is 23
 short questions on a prompt, not three questions on a 3k-token page.** And Oracle's own earlier
-live spike measured p50 1.9s / p95 10s from the potato before the bench measured 152ms, so the
-number that matters here — the real potato, real page-sized state — is not known. Phase 0
-measures it.
+live spike (`oracle-mode.md`, 2026-09-28; 50 messages sampled from the potato's thread history, run
+location not recorded) measured p50 1.9s / p95 10s before the bench measured 152ms, and
+`oracle-mode.md` still lists a measurement from the potato itself as outstanding. So the number
+that matters here — the real potato, real page-sized state — is not known. Phase 0 measures it.
 
 Design assumptions to check, not facts:
 
@@ -193,10 +200,13 @@ tokens, a forum thread with the answer in reply 14. Whether this lives as a new 
   embedded injection in every spike case (source-verification.md). Worst case for a hostile page in
   v1 is a misleading "answers" chip; it cannot gain anything from being *trimmed*. Still part of
   the eval set.
-- **Long pages.** State is bounded to the display window (≤12k chars) in v1, so an answer past the
-  window is judged on the wrong text. The judge reads what the model reads, which is the honest
-  scope, but it means `usefulness` is "useful in this window," and the chip should say so for a
-  paginated read.
+- **Long pages, and the `instructions` path.** State is bounded to the display window (≤12k chars)
+  in v1, so an answer past the window is judged on the wrong text. For a read with no `instructions`
+  the judge reads what the model reads (that window), so `usefulness` means "useful in this
+  window" and the chip should say so for a paginated read. That does **not** hold when
+  `instructions` is set: the model then gets filter output over up to 100k chars, which the judge
+  never sees. The chip is still honest there (it describes the window), but the verdict must not be
+  used to trim or to skip the filter pass; see "Cost" item 2.
 - **Calibration shifts per model and per task.** Thresholds start as guesses and are set from the
   bench, never from the Oracle values.
 - **Stats double-counting.** As with verification and Oracle, the judge's spend is counted once via
