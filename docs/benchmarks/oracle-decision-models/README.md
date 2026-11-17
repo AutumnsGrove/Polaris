@@ -31,6 +31,12 @@ latency in front of the first token.
 - **Accuracy fallback: `nace-ai/drex-max`** — 91.3, 482ms median, 99.4% inside the timeout, but 1.5x
   Jev's price and a two-request split: it rejects more than 16 questions, so production would need
   `WithMaxQuestions(16)`. See [models with a question cap](notes.md#models-with-a-question-cap).
+- **New and not a candidate (2026-11-17): `microsoft/microsoft-decision-1.1`** — 89.2 (85.0-92.7), which is
+  1.4 points above the pin and therefore inside the noise: a tie, not a win. What it does fix is the
+  predecessor's shape — `clarify` 43 → 64, `locale` 62 → 99 and `private_person` 62 → 91 — at 466ms median
+  (347ms for 1.0, 152ms for Jev), $0.161 per 1,000 turns and 99.9% of calls inside the 2.5s cutoff (one at
+  2.50s). Not a candidate: three times the pin's latency in front of every turn to tie it. See
+  [the 1.1 build](notes.md#microsoft-decision-11).
 - **Speed fallback: `liquid/d1-ultra`** — 87.9, a statistical tie with Jev at 236ms, 100% inside the
   timeout, 12% cheaper and far better on `locale`, at 90% focus actions against Jev's 98%.
 - **Free-tier fallback on paper only: `baseten/mammoth-1`** — 90.1, no weak family, 621ms, 99.4% inside
@@ -61,9 +67,10 @@ latency in front of the first token.
 
 Runs of 2026-10-16 to 2026-11-17: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
 reported separately), 3 repeats each, 2 calls in flight (the Drex models and Gemini ran at 1), weights
-`a6cbc140bd53`. The whole thing cost **$10.36**, about $0.78 of it the judge, $1.07 of it the four
+`a6cbc140bd53`. The whole thing cost **$10.54**, about $0.83 of it the judge, $1.07 of it the four
 Gemini attempts (the 429s themselves are free, but not the calls that then re-sent them), $2.16 of it
-the HeyGen pair and $0.28 of it the d1.2 pair. Raw leaderboards for every invocation are in [`runs/`](runs/), and
+the HeyGen pair, $0.28 of it the d1.2 pair and $0.18 of it Microsoft Decision 1.1. Raw leaderboards for
+every invocation are in [`runs/`](runs/), and
 [notes.md#runs](notes.md#runs) lists which models ran when.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
@@ -73,33 +80,34 @@ the HeyGen pair and $0.28 of it the d1.2 pair. Raw leaderboards for every invoca
 | 3 | `nace-ai/drex-max` † (split) | **91.3** (88.1-94.1) | 97% | 97% | 95% | 0% | 0% | 482ms | 1.2s | 99.4% | $0.317 |
 | 4 | `baseten/mammoth-1:free` | **90.1** (87.1-92.9) | 97% | 97% | 92% | 0% | 0% | 621ms | 1.1s | 99.4% | $0.000 |
 | 5 | `perplexity/pplx-decider-v1.3:free` | **89.5** (85.8-92.8) | 97% | 97% | 95% | 0% | 0% | 555ms | 1.3s | 99.2% | $0.000 |
-| 6 | `inception/mercury-decide:free` (retired) § | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | $0.000 |
-| 7 | `liquid/d1-ultra` § | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
-| 8 | `typesafe/jev-1.14` § | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
-| 9 | `microsoft/microsoft-decision-1` § | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
-| 10 | `typesafe/jev-1.13` § | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
-| 11 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.080 |
-| 12 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
-| 13 | `heygen/heygen-decision-1-turbo` | **85.4** (81.2-89.6) | 96% | 96% | 85% | 0% | 0% | 425ms | 1.2s | 99.9% | $0.978 |
-| 14 | `heygen/heygen-decision-1` | **85.3** (80.8-89.6) | 96% | 96% | 82% | 1% | 0% | 600ms | 1.4s | 99.5% | $1.458 |
-| 15 | `liquid/d1.2-ultra` | **84.5** (79.7-88.7) | 96% | 96% | 92% | 1% | 0% | 345ms | 890ms | 99.4% | $0.157 |
-| 16 | `openai/gpt-6-luna-decisions` § | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
-| 17 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | $0.000 |
-| 18 | `perplexity/pplx-decider-flash-v1.3:free` | **80.7** (75.1-85.5) | 95% | 96% | 75% | 0% | 0% | 256ms | 444ms | 100.0% | $0.000 |
-| 19 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
-| 20 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
-| 21 | `liquid/d1` § | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 22 | `parallel/decisions-fast` ‡ | **78.4** (72.3-84.0) | 94% | 95% | 85% | 1% | 0% | 697ms | 1.0s | 99.8% | $0.000 |
-| 23 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 24 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
-| 25 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 26 | `liquid/d1.2` | **74.0** (69.0-78.8) | 95% | 93% | 75% | 1% | 0% | 387ms | 809ms | 100.0% | $0.075 |
-| 27 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
-| 28 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
-| 29 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
-| 30 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
-| 31 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
-| 32 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| 6 | `microsoft/microsoft-decision-1.1` | **89.2** (85.0-92.7) | 96% | 96% | 95% | 1% | 0% | 466ms | 613ms | 99.9% | $0.161 |
+| 7 | `inception/mercury-decide:free` (retired) § | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | $0.000 |
+| 8 | `liquid/d1-ultra` § | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
+| 9 | `typesafe/jev-1.14` § | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
+| 10 | `microsoft/microsoft-decision-1` § | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
+| 11 | `typesafe/jev-1.13` § | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
+| 12 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.080 |
+| 13 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
+| 14 | `heygen/heygen-decision-1-turbo` | **85.4** (81.2-89.6) | 96% | 96% | 85% | 0% | 0% | 425ms | 1.2s | 99.9% | $0.978 |
+| 15 | `heygen/heygen-decision-1` | **85.3** (80.8-89.6) | 96% | 96% | 82% | 1% | 0% | 600ms | 1.4s | 99.5% | $1.458 |
+| 16 | `liquid/d1.2-ultra` | **84.5** (79.7-88.7) | 96% | 96% | 92% | 1% | 0% | 345ms | 890ms | 99.4% | $0.157 |
+| 17 | `openai/gpt-6-luna-decisions` § | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 18 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | $0.000 |
+| 19 | `perplexity/pplx-decider-flash-v1.3:free` | **80.7** (75.1-85.5) | 95% | 96% | 75% | 0% | 0% | 256ms | 444ms | 100.0% | $0.000 |
+| 20 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
+| 21 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
+| 22 | `liquid/d1` § | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 23 | `parallel/decisions-fast` ‡ | **78.4** (72.3-84.0) | 94% | 95% | 85% | 1% | 0% | 697ms | 1.0s | 99.8% | $0.000 |
+| 24 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 25 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
+| 26 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 27 | `liquid/d1.2` | **74.0** (69.0-78.8) | 95% | 93% | 75% | 1% | 0% | 387ms | 809ms | 100.0% | $0.075 |
+| 28 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 29 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
+| 30 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
+| 31 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
+| 32 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 33 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
 | x | `google/gemini-decision-1` † | **80.3** (74.8-85.6) | 92% | 96% | 84% | 0% | 19% | 402ms | 643ms | 81.4% | $0.334 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.175 |
 | x | `inception/mercury-decide` (retired) § | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |

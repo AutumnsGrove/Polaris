@@ -1,0 +1,10 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                             score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   microsoft/microsoft-decision-1.1  89.2   85.0-92.7  89.2       96%      95%    96%      95%    1%         0%   466ms  613ms  $0.177  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  microsoft/microsoft-decision-1.1  ██░                             |         p50 466ms  p95 613ms 
