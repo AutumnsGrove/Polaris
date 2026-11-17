@@ -4,11 +4,11 @@ The detail behind [README.md](README.md)'s table: what each model does well and 
 workaround, the models that could not be scored, and how the run was made. The recommendation lives in
 the README; this page is for when a row needs explaining.
 
-Catalog and availability notes here were checked live on **2026-11-13**.
+Catalog and availability notes here were checked live on **2026-11-17**.
 
 ## Runs
 
-Twenty-two invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-13, all with `--repeats 3 --seed 1
+Twenty-three invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-17, all with `--repeats 3 --seed 1
 --timeout 15s` and 2 calls in flight except where noted. The report command refuses to merge runs that
 differ in cases, repeats or weights, and in concurrency unless given `--allow-concurrency-mismatch`, which
 marks the affected rows (†) — accuracy is unaffected by concurrency, latency is not.
@@ -35,6 +35,9 @@ marks the affected rows (†) — accuracy is unaffected by concurrency, latency
   invocation, then `perplexity/pplx-decider-flash-v1.3:free` in a second run **on a key from a separate
   account** — the free-model quota is per account, and both free builds in one day would not fit under
   1,000 calls. See [the v1.3 pair](#perplexity-v13-and-the-heygen-pair).
+- **2026-11-17** — `liquid/d1.2` and `liquid/d1.2-ultra` in one invocation (created 2026-11-16). Neither
+  needed a question cap, neither refused or errored. See [the d1.2
+  pair](#liquid-d12-and-d12-ultra-a-step-backwards).
 
 The two earliest files in `runs/` (2026-10-15) used an older, smaller case bank and older weights, so
 they are not comparable and do not appear in the table.
@@ -78,7 +81,7 @@ score is credit earned minus penalties, so it can go negative.
   63 and `contested` 66), and it fixes Jev's `locale` blind spot. The cost is focus actions: 90% against
   98%.
 - **`typesafe/jev-1.14` (87.8)** — pinned. 152ms median, 189ms p95, every call inside the cutoff, the best
-  focus actions of all 30 scored models (98%), $0.212 per 1,000 turns. Weak on `locale` (61); Jev 1.13, Microsoft,
+  focus actions of all 32 scored models (98%), $0.212 per 1,000 turns. Weak on `locale` (61); Jev 1.13, Microsoft,
   D1 and Clef sit at 60 to 62 on the same family too, while Perplexity reaches 97 and Mercury 99, so it is
   a real gap rather than a hard question.
 - **`microsoft/microsoft-decision-1` (87.5)** — 347ms median, 100% inside the cutoff, cheaper than Jev.
@@ -100,6 +103,12 @@ score is credit earned minus penalties, so it can go negative.
   3.9k, which is where their $0.98 and $1.46 per 1,000 turns come from: the catalog price ($0.09/M and
   $0.14/M) is not the reason. Turbo bills *more* tokens than the full build and is only 175ms faster, so
   the pair is one model in two shapes rather than a speed/accuracy choice.
+- **`liquid/d1.2-ultra` (84.5)** — a small step backwards from the D1 Ultra it replaces (87.9) rather than a
+  faster or cheaper one: 345ms median against 236ms, 890ms p95, with 5 of 885 calls past the 2.5s cutoff
+  (worst 5.1s) where D1 Ultra had none, and `emotional` 42 as its only weak family (`private_person` 62 and
+  `contested` 64 are next). Focus actions 92%, $0.157 per 1,000 turns, 3.7k input tokens a call, no errors
+  and no refusals. It is 16% cheaper than D1 Ultra's § $0.186, but the two figures use different cost bases,
+  so read that as "no longer the expensive build", not as a measured saving.
 - **`openai/gpt-6-luna-decisions` (82.3)** — fast (243ms) but the most expensive per turn ($0.555),
   behind Jev on score, and the only model that **refuses** to answer (see [Refusals](#refusals)). Weak on
   `depth` (56), `emotional` (41) and `private_person` (48, mostly the refusals).
@@ -129,6 +138,11 @@ score is credit earned minus penalties, so it can go negative.
   the only model here that researches the live web before answering.
 - **`cloudflare/clef` (76.6)** — 820ms, 98.9% inside the cutoff, weak on `emotional` (42) and focus
   actions (75%); 12 points behind Jev for 1.35x the price.
+- **`liquid/d1.2` (74.0)** — the cheap build regressed too: 5.3 points below D1.1 (79.3) and 4.5 below the
+  original D1 (78.5). `premise` 42 is its weak family, with `private_person` 61, `deep_research` 63, `recall`
+  64 and focus actions 75% behind it. 387ms median (34ms faster than D1.1, 127ms slower than D1), every call
+  inside the cutoff, no errors or refusals, $0.075 per 1,000 turns — the same price as D1.1, which is the
+  only thing it improved on.
 - **`perplexity/pplx-decider-flash-v1.2` (76.2)** — see [its own section](#perplexity-decider-flash-v12).
 - **`scaledown/classify-1` (75.4)** — 579ms, 97.3% inside the cutoff, weak on `premise` (42), and one of
   the most expensive models tested ($0.484 per 1,000 turns).
@@ -379,6 +393,38 @@ One `429` hit `pplx-decider-v1.3:free` mid-run, one call of 885, at the standard
 recorded as that sample's result and the run continued; at one call it does not move the score, but it is
 why a free model's error column is worth reading even when it looks clean.
 
+## Liquid d1.2 and d1.2-ultra: a step backwards
+
+Liquid's 2026-11-16 release is the first time this family has gone backwards: both builds score below the
+entry they replace. Both are billed as omnimodal (`text+image->decisions`), took all 23 questions in one
+request, refused nothing and errored on nothing, and were benched in one invocation on 2026-11-17.
+
+| | d1.2 | d1.1 (replaced) | d1.2-ultra | d1-ultra (replaced) |
+|---|--:|--:|--:|--:|
+| Score | **74.0** (69.0-78.8) | 79.3 | **84.5** (79.7-88.7) | 87.9 |
+| p50 / p95 | 387ms / 810ms | 421ms / 654ms | 345ms / 890ms | 236ms / 340ms |
+| Inside 2.5s | 100.0% | 100.0% | 99.4% | 100.0% |
+| Focus actions | 75% | 80% | 92% | 90% |
+| `$/1k turns` | $0.075 | $0.075 | $0.157 | $0.186 § |
+| Weak families | `premise` 42 | `locale`/`private_person`/`contested`/`emotional`/`premise` 61-64 | `emotional` 42 | `emotional` 63, `contested` 66 |
+
+- **The ultra build's 3.4-point drop is inside the ±4-point interval**, so "no better than D1 Ultra" is the
+  defensible claim and "worse" the likely one. The cheap build is 5.3 points below D1.1 and 4.5 below the
+  original D1, and its upper interval bound (78.8) still sits under D1.1's score (79.3), so that regression
+  is real rather than noise.
+- **The tail got worse where it matters.** `d1.2-ultra` put 5 of 885 calls past Oracle's 2.5s cutoff (worst
+  5.1s) where D1 Ultra had none, and its median rose by 109ms. This bench scores latency separately, but in
+  production a missed cutoff is a turn with Oracle off, so a slower build in front of every turn is a
+  bigger cost than 3 points of score.
+- **Both are cheap, and that is the whole of the good news.** `d1.2` bills exactly what D1.1 billed
+  ($0.075 per 1,000 turns, 3.7k input tokens a call) and `d1.2-ultra` is 16% below D1 Ultra's § figure — but
+  the two ultra numbers use different cost bases, so read that as "no longer the expensive build" rather
+  than a measured saving. Focus actions improved slightly (90% to 92%) on the ultra build and fell 5 points
+  on the cheap one.
+
+No part of this pair is a candidate: both sit well behind the pin, and the ultra build does not even hold
+its own predecessor's score.
+
 ## Gemini Decision 1 and the shared Google quota
 
 `google/gemini-decision-1` (`google/gemini-decision-1-20261111`, $0.10 per million input tokens) is the
@@ -458,10 +504,10 @@ Mercury has two entries and neither was a clean result, and as of **2026-11-10 b
 - **Fixed load.** Models run one after another with 2 calls in flight, so every model is timed under the
   same load. Latency moves with provider load, so treat it as one day's measurement.
 - **Judge.** A separate chat model (`deepseek`) reads the disputed cases, near-misses, and a 10% random
-  spot-check of ordinary answers. Across the runs' 592 spot-checks it disagreed with the hand label 6 times
+  spot-check of ordinary answers. Across the runs' 689 spot-checks it disagreed with the hand label 7 times
   (1.0%), which is the best available estimate of how wrong the bank is. It flagged
   `dr-remote-work-relocation`, `fo-researcher-loan-vs-index`, `pr-followup-japan-crowds`,
-  `hs-first-ipo-trivia` and `cl-best-pizza` for a human look.
+  `hs-first-ipo-trivia`, `cl-best-pizza` and `hs-killer-deal-laptop` for a human look.
 - **Weights.** Scoring weights and the 5s latency budget live in
   [`oraclebench/weights.yaml`](../../../oraclebench/weights.yaml). The 5s budget is deliberately looser than
   the 2.5s production timeout, which is why the timeout share is reported separately.

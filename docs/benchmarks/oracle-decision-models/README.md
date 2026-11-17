@@ -42,6 +42,13 @@ latency in front of the first token.
   3.9k. `perplexity/pplx-decider-flash-v1.3:free` (80.7) is the fastest model tested (256ms) and not much
   else: `premise` 31 is the lowest family score on the page. See [the v1.3
   pair](notes.md#perplexity-v13-and-the-heygen-pair).
+- **New and not candidates (2026-11-17): Liquid d1.2 and d1.2-ultra** — the newer generation is a step
+  backwards. `liquid/d1.2-ultra` scores 84.5 (79.7-88.7), **3.4 points below the D1 Ultra it replaces**
+  (87.9), at 345ms median instead of 236ms, with 5 of 885 calls past the 2.5s cutoff and `emotional` 42 as
+  its one weak family. `liquid/d1.2` scores 74.0, 5.3 below D1.1 (79.3) and 4.5 below the original D1
+  (78.5), with `premise` 42 as its weak family and focus actions at 75%. Both are cheap ($0.157 and $0.075
+  per 1,000 turns at 3.7k input tokens a call) and clean (no errors, no refusals), and neither approaches
+  the pin. See [the d1.2 pair](notes.md#liquid-d12-and-d12-ultra-a-step-backwards).
 - **Gone since the run:** `perplexity/pplx-decider-v1.1-27b` (second place, `HTTP 404` since 2026-10-26)
   and both Mercury entries (404 as of 2026-11-10). Those rows are records, not options.
 - **New and disqualified (2026-11-11): `google/gemini-decision-1`** — the calls that answered were fast
@@ -52,11 +59,11 @@ latency in front of the first token.
 
 ## Results
 
-Runs of 2026-10-16 to 2026-11-13: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
+Runs of 2026-10-16 to 2026-11-17: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
 reported separately), 3 repeats each, 2 calls in flight (the Drex models and Gemini ran at 1), weights
-`a6cbc140bd53`. The whole thing cost **$10.10**, about $0.67 of it the judge, $1.07 of it the four
-Gemini attempts (the 429s themselves are free, but not the calls that then re-sent them) and $2.16 of it
-the HeyGen pair. Raw leaderboards for every invocation are in [`runs/`](runs/), and
+`a6cbc140bd53`. The whole thing cost **$10.36**, about $0.78 of it the judge, $1.07 of it the four
+Gemini attempts (the 429s themselves are free, but not the calls that then re-sent them), $2.16 of it
+the HeyGen pair and $0.28 of it the d1.2 pair. Raw leaderboards for every invocation are in [`runs/`](runs/), and
 [notes.md#runs](notes.md#runs) lists which models ran when.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
@@ -75,22 +82,24 @@ the HeyGen pair. Raw leaderboards for every invocation are in [`runs/`](runs/), 
 | 12 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
 | 13 | `heygen/heygen-decision-1-turbo` | **85.4** (81.2-89.6) | 96% | 96% | 85% | 0% | 0% | 425ms | 1.2s | 99.9% | $0.978 |
 | 14 | `heygen/heygen-decision-1` | **85.3** (80.8-89.6) | 96% | 96% | 82% | 1% | 0% | 600ms | 1.4s | 99.5% | $1.458 |
-| 15 | `openai/gpt-6-luna-decisions` § | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
-| 16 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | $0.000 |
-| 17 | `perplexity/pplx-decider-flash-v1.3:free` | **80.7** (75.1-85.5) | 95% | 96% | 75% | 0% | 0% | 256ms | 444ms | 100.0% | $0.000 |
-| 18 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
-| 19 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
-| 20 | `liquid/d1` § | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 21 | `parallel/decisions-fast` ‡ | **78.4** (72.3-84.0) | 94% | 95% | 85% | 1% | 0% | 697ms | 1.0s | 99.8% | $0.000 |
-| 22 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 23 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
-| 24 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 25 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
-| 26 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
-| 27 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
-| 28 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
-| 29 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
-| 30 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| 15 | `liquid/d1.2-ultra` | **84.5** (79.7-88.7) | 96% | 96% | 92% | 1% | 0% | 345ms | 890ms | 99.4% | $0.157 |
+| 16 | `openai/gpt-6-luna-decisions` § | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 17 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | $0.000 |
+| 18 | `perplexity/pplx-decider-flash-v1.3:free` | **80.7** (75.1-85.5) | 95% | 96% | 75% | 0% | 0% | 256ms | 444ms | 100.0% | $0.000 |
+| 19 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
+| 20 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
+| 21 | `liquid/d1` § | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 22 | `parallel/decisions-fast` ‡ | **78.4** (72.3-84.0) | 94% | 95% | 85% | 1% | 0% | 697ms | 1.0s | 99.8% | $0.000 |
+| 23 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 24 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
+| 25 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 26 | `liquid/d1.2` | **74.0** (69.0-78.8) | 95% | 93% | 75% | 1% | 0% | 387ms | 809ms | 100.0% | $0.075 |
+| 27 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 28 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
+| 29 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
+| 30 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
+| 31 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 32 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
 | x | `google/gemini-decision-1` † | **80.3** (74.8-85.6) | 92% | 96% | 84% | 0% | 19% | 402ms | 643ms | 81.4% | $0.334 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.175 |
 | x | `inception/mercury-decide` (retired) § | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
