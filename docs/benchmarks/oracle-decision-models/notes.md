@@ -8,7 +8,7 @@ Catalog and availability notes here were checked live on **2026-11-17**.
 
 ## Runs
 
-Twenty-three invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-17, all with `--repeats 3 --seed 1
+Twenty-four invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-17, all with `--repeats 3 --seed 1
 --timeout 15s` and 2 calls in flight except where noted. The report command refuses to merge runs that
 differ in cases, repeats or weights, and in concurrency unless given `--allow-concurrency-mismatch`, which
 marks the affected rows (†) — accuracy is unaffected by concurrency, latency is not.
@@ -38,6 +38,8 @@ marks the affected rows (†) — accuracy is unaffected by concurrency, latency
 - **2026-11-17** — `liquid/d1.2` and `liquid/d1.2-ultra` in one invocation (created 2026-11-16). Neither
   needed a question cap, neither refused or errored. See [the d1.2
   pair](#liquid-d12-and-d12-ultra-a-step-backwards).
+- **2026-11-17 (later)** — `microsoft/microsoft-decision-1.1` in its own invocation, the successor to the
+  Microsoft Decision 1 row. No question cap, no errors, no refusals. See [the 1.1 build](#microsoft-decision-11).
 
 The two earliest files in `runs/` (2026-10-15) used an older, smaller case bank and older weights, so
 they are not comparable and do not appear in the table.
@@ -73,6 +75,13 @@ score is credit earned minus penalties, so it can go negative.
   pin is the tail, not the score: one call took 10.2s and four more passed 3s, where Jev has none, and it
   is 3.6x Jev's median in front of every turn. That tail is worth expecting rather than treating as a
   glitch — pplx-decider-v1.2 had the same 3.7s p95. See [the v1.3 pair](#perplexity-v13-and-the-heygen-pair).
+- **`microsoft/microsoft-decision-1.1` (89.2)** — the successor to Microsoft Decision 1, and the biggest shape
+  change in the roster: it keeps the predecessor's score roughly where it was (87.5 → 89.2, inside the noise)
+  but repairs all three of its weak families — `clarify` 43 → 64, `locale` 62 → 99, `private_person` 62 → 91 —
+  so its only soft spots left are `clarify` (64) and `emotional` (65), neither past the 25-point line. 466ms
+  median, 613ms p95 (347ms for 1.0), 99.9% of calls inside the cutoff with one at 2.50s, focus actions 95%,
+  0.5% dangerous false nudges, $0.161 per 1,000 turns, 3.9k input tokens a call. It is a statistical tie with
+  the pin at three times Jev's median, so it is not a candidate; see [its own section](#microsoft-decision-11).
 - **`inception/mercury-decide:free` (89.0, retired)** — 618ms median, 0 errors, focus actions 95%, $0 —
   but p95 4.3s, so about 12% of calls missed the cutoff, and weak on `clarify` (62) and `emotional` (43).
   Both Mercury entries now return `HTTP 404 No endpoints found` (2026-11-10).
@@ -81,7 +90,7 @@ score is credit earned minus penalties, so it can go negative.
   63 and `contested` 66), and it fixes Jev's `locale` blind spot. The cost is focus actions: 90% against
   98%.
 - **`typesafe/jev-1.14` (87.8)** — pinned. 152ms median, 189ms p95, every call inside the cutoff, the best
-  focus actions of all 32 scored models (98%), $0.212 per 1,000 turns. Weak on `locale` (61); Jev 1.13, Microsoft,
+  focus actions of all 33 scored models (98%), $0.212 per 1,000 turns. Weak on `locale` (61); Jev 1.13, Microsoft,
   D1 and Clef sit at 60 to 62 on the same family too, while Perplexity reaches 97 and Mercury 99, so it is
   a real gap rather than a hard question.
 - **`microsoft/microsoft-decision-1` (87.5)** — 347ms median, 100% inside the cutoff, cheaper than Jev.
@@ -425,6 +434,38 @@ request, refused nothing and errored on nothing, and were benched in one invocat
 No part of this pair is a candidate: both sit well behind the pin, and the ultra build does not even hold
 its own predecessor's score.
 
+## Microsoft Decision 1.1
+
+`microsoft/microsoft-decision-1.1` (`microsoft/microsoft-decision-1.1-20261117`, created 2026-11-17, same
+$0.042/M input as the pin and the same 32k context as its predecessor) is the clearest example so far of a
+headline score hiding the thing that actually changed.
+
+| | 1.1 | 1.0 (replaced) | Jev 1.14 (pin) |
+|---|--:|--:|--:|
+| Score | **89.2** (85.0-92.7) | 87.5 | 87.8 |
+| p50 / p95 | 466ms / 613ms | 347ms / 424ms | 152ms / 189ms |
+| Inside 2.5s | 99.9% | 100.0% | 100.0% |
+| Focus actions | 95% | 95% | 98% |
+| `clarify` / `locale` / `private_person` | 64 / 99 / 91 | 43 / 62 / 62 | 66 / 62 / 88 |
+| `$/1k turns` | $0.161 | $0.157 § | $0.212 § |
+
+- **The score moved 1.7 points, which is inside the ±4-point interval**, so the honest summary is "the same
+  accuracy, in a different shape". The shape is the story: 1.0's three weak families were `clarify` (43),
+  `locale` (62) and `private_person` (62); 1.1 takes them to 64, 99 and 91. It did not so much beat 1.0 as
+  stop getting those three families wrong.
+- **It did not get faster.** 119ms slower at the median than 1.0, and 3x the pin's median. In front of every
+  turn that is the cost that matters, and it buys a tie on score. Not a candidate for the same reason
+  Drex Max and pplx v1.3 are not.
+- **One call landed just past 2.50s**: 884 of 885 calls were inside the 2.5s cutoff, the one exception at
+  2.5029s. That is a single sample, not a pattern — unlike pplx v1.3's 10.2s outlier — but it is the closest
+  any Microsoft build has come to the cutoff.
+- `contested` 99.8 is the highest that family has scored on the page, and `claim_check` 99.9 is second only
+  to Jev's 100; `locale` 98.6 is near the top too. The trade is that `high_stakes` (81.7) and `recall` (77)
+  are now its lowest families after `clarify` and `emotional`.
+- **Against the pin specifically**, the shape is mixed rather than better: it is far ahead on `locale`
+  (98.6 against 61.5) and `private_person` (90.5 against 87.5), level on `clarify` (64.4 against 66.2), and
+  behind on focus actions (95% against 98%).
+
 ## Gemini Decision 1 and the shared Google quota
 
 `google/gemini-decision-1` (`google/gemini-decision-1-20261111`, $0.10 per million input tokens) is the
@@ -504,7 +545,7 @@ Mercury has two entries and neither was a clean result, and as of **2026-11-10 b
 - **Fixed load.** Models run one after another with 2 calls in flight, so every model is timed under the
   same load. Latency moves with provider load, so treat it as one day's measurement.
 - **Judge.** A separate chat model (`deepseek`) reads the disputed cases, near-misses, and a 10% random
-  spot-check of ordinary answers. Across the runs' 689 spot-checks it disagreed with the hand label 7 times
+  spot-check of ordinary answers. Across the runs' 720 spot-checks it disagreed with the hand label 7 times
   (1.0%), which is the best available estimate of how wrong the bank is. It flagged
   `dr-remote-work-relocation`, `fo-researcher-loan-vs-index`, `pr-followup-japan-crowds`,
   `hs-first-ipo-trivia`, `cl-best-pizza` and `hs-killer-deal-laptop` for a human look.

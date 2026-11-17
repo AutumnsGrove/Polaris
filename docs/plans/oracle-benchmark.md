@@ -735,3 +735,12 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   (the cheap build bills exactly what D1.1 billed). Ultra's focus actions improved 90% to 92%; its
   `emotional` 42 is the only weak family. Neither is close enough to the pin to matter, so this is a record,
   not a decision.
+- `microsoft/microsoft-decision-1.1` (created 2026-11-17, benched the same day) is the clearest case yet of a
+  headline score hiding the real change. It scores **89.2** (85.0-92.7) — 1.4 points above the pin and 1.7
+  above the 1.0 build it replaces, both inside the ±4-point interval, so "a tie in a different shape" is the
+  honest reading. The shape did change: 1.0's three weak families were `clarify` (43), `locale` (62) and
+  `private_person` (62), and 1.1 takes them to 64, 99 and 91, with `contested` 99.8 the highest that family
+  has scored. It is not a candidate because the tie costs latency: 466ms p50 against 1.0's 347ms and the
+  pin's 152ms, in front of every turn, at $0.161 per 1,000 turns (3.9k input tokens a call, same $0.042/M
+  catalog price as the pin). 99.9% of calls landed inside the 2.5s cutoff, one at 2.5029s; no errors, no
+  refusals, and it takes all 23 questions in one request (32k context, like 1.0).

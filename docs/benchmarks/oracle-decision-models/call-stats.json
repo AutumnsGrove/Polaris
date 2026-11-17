@@ -1103,5 +1103,38 @@
     "cost_usd_fresh": 0.04641730799999997,
     "fresh_calls": 295,
     "input_tokens": 3315522
+  },
+  "microsoft/microsoft-decision-1.1": {
+    "calls": 885,
+    "answered": 885,
+    "under_2_5s": 884,
+    "under_5s": 885,
+    "refused": 0,
+    "failed": 0,
+    "calls_by_track": {
+      "chips": 48,
+      "claim_check": 24,
+      "clarify": 36,
+      "contested": 27,
+      "deep_research": 42,
+      "depth": 18,
+      "emotional": 45,
+      "focus": 120,
+      "format": 33,
+      "high_stakes": 87,
+      "intent": 66,
+      "locale": 15,
+      "premise": 39,
+      "private_person": 33,
+      "recall": 21,
+      "recency": 24,
+      "research": 60,
+      "source_type": 60,
+      "task": 33,
+      "ui": 54
+    },
+    "cost_usd_fresh": 0.04764206999999999,
+    "fresh_calls": 295,
+    "input_tokens": 3403005
   }
 }
