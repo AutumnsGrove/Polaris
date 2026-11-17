@@ -724,3 +724,14 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   fits in 3.9k, and turbo sends *more* than the full build while being 175ms faster. Catalog price per
   million tokens cannot distinguish this from a cheap model; only the measured bill can, which is what the
   `$/1k turns` column is for. Neither justifies a second attempt.
+- `liquid/d1.2` and `liquid/d1.2-ultra` (created 2026-11-16, benched 2026-11-17) are **not candidates, and are
+  the first Liquid build that does not improve on its predecessor**: `d1.2-ultra` scores **84.5** (79.7-88.7),
+  3.4 points below the D1 Ultra it replaces (87.9), at 345ms p50 instead of 236ms, with 5 of 885 calls past
+  the 2.5s cutoff (worst 5.1s) where D1 Ultra had none; `d1.2` scores **74.0** (69.0-78.8), 5.3 below D1.1
+  (79.3) and 4.5 below the original D1 (78.5), with `premise` 42 and focus actions 75%. The ultra drop is
+  inside the ±4-point interval, so "no better" is the defensible reading; the cheap build's upper bound
+  (78.8) sits under D1.1's score, so that one is a real regression. Both are clean (no errors, no refusals,
+  all 23 questions in one request) and cheap: 3.7k input tokens a call, $0.157 and $0.075 per 1,000 turns
+  (the cheap build bills exactly what D1.1 billed). Ultra's focus actions improved 90% to 92%; its
+  `emotional` 42 is the only weak family. Neither is close enough to the pin to matter, so this is a record,
+  not a decision.

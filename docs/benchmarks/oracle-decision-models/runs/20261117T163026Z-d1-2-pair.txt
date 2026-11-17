@@ -1,0 +1,16 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model              score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   liquid/d1.2-ultra  84.5   79.7-88.7  84.5       96%      90%    96%      92%    1%         0%   345ms  890ms  $0.179  
+2   liquid/d1.2        74.0   69.0-78.8  74.0       95%      84%    93%      75%    1%         0%   387ms  809ms  $0.105  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  liquid/d1.2-ultra  ██░░░                           |         p50 345ms  p95 890ms 
+  liquid/d1.2        ██░░░                           |         p50 387ms  p95 809ms 
+
+Tracks scoring 25+ points below the model's own headline:
+  liquid/d1.2-ultra: emotional 42
+  liquid/d1.2: premise 42
