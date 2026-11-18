@@ -159,3 +159,18 @@ func TestSearchRecent_FreshnessParam(t *testing.T) {
 		}
 	}
 }
+
+// The image reserve is what keeps image_search working at the end of a busy
+// month: web-shaped callers must stop before the paid ceiling, and the slice
+// left over has to be big enough to matter.
+func TestWebSearchCeiling_LeavesAnImageReserve(t *testing.T) {
+	if WebSearchCeiling >= MonthlyCap {
+		t.Errorf("WebSearchCeiling = %d, want less than MonthlyCap (%d) so image_search keeps headroom", WebSearchCeiling, MonthlyCap)
+	}
+	if WebSearchCeiling != MonthlyCap-ImageReserveCalls {
+		t.Errorf("WebSearchCeiling = %d, want MonthlyCap - ImageReserveCalls (%d)", WebSearchCeiling, MonthlyCap-ImageReserveCalls)
+	}
+	if ImageReserveCalls <= 0 {
+		t.Errorf("ImageReserveCalls = %d, want a positive reserve", ImageReserveCalls)
+	}
+}

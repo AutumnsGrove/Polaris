@@ -219,6 +219,20 @@ gap only found by running `polaris search` live and checking what it actually ha
 code review. Any new CLI command or server entry point that can trigger `web_search` needs the same
 five pieces (SearXNG, Brave, Parallel, Tavily + DB-backed usage closures), not just the LLM client.
 
+`image_search` is deliberately the **reverse order** (`tools/image_search.go`): Brave's Image Search
+endpoint first, SearXNG's "images" category only as a fallback when Brave is unconfigured, capped,
+failing, or returned nothing. Two reasons, both measured live on 2026-11-18 rather than assumed:
+SearXNG's image engines are mostly suspended under ordinary use (brave.images "too many requests",
+startpage CAPTCHA, duckduckgo "parsing error") and a third to a half of its thumbnails are
+hotlinks that don't load — while Brave serves them from its own CDN; and SearXNG can never report
+itself `Degraded` for a non-`"general"` category (`generalCategoryEngineCount` is only compared for
+`category == ""`), so a "SearXNG first, Brave on degraded" order could not escalate away from that
+at all — the old Brave image fallback was reachable only if a web search had already tripped the
+shared cooldown. `filterDeadThumbnails` probes every SearXNG candidate's thumbnail before the model
+sees it. `brave.WebSearchCeiling` (`brave.MonthlyCap - brave.ImageReserveCalls`) is what the
+web-shaped callers stop at so the last 100 calls of a busy month stay available to image search —
+don't replace either check with a bare `brave.MonthlyCap`.
+
 `TavilyUsageThisMonth`/`IncrementTavilyUsage` back a single `tavilyMonthlyCap` (`tools/web_search.go`)
 shared across every way a deployment can spend a Tavily credit — this file's Search fallback above,
 `web_read`'s own JS-render/paywall Extract fallback, and `web_read`'s explicit `force_tavily`

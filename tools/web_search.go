@@ -279,8 +279,11 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 		if ctx.Brave != nil && ctx.BraveUsageThisMonth != nil {
 			if used, uErr := ctx.BraveUsageThisMonth(); uErr != nil {
 				log.Warn("web_search: checking brave usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
-			} else if used >= brave.MonthlyCap {
-				log.Warn("web_search: brave monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", brave.MonthlyCap)
+			} else if used >= brave.WebSearchCeiling {
+				// WebSearchCeiling, not MonthlyCap: the last ImageReserveCalls of
+				// the month are left for image_search, which has no fallback
+				// worth having. See brave.WebSearchCeiling.
+				log.Warn("web_search: brave web-search ceiling reached, skipping to next fallback", "query", args.Query, "used", used, "ceiling", brave.WebSearchCeiling)
 			} else if formatted, ok := braveFallback(ctx, siteQuery, args.Recency, "Brave (SearXNG degraded)", callID); ok {
 				return formatted
 			}

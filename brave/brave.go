@@ -47,9 +47,25 @@ const maxOffset = 9
 // rather than the only thing standing between usage and a bill — kept
 // anyway for a clear in-app error message instead of silently hitting
 // Brave's own 4xx. Exported so every caller (tools/web_search.go's
-// agent-facing fallback, gateway/search.go's Atlas fallback) enforces
-// the exact same number rather than two consts drifting apart.
+// agent-facing fallback, gateway/atlas_search.go's Atlas fallback)
+// enforces the exact same number rather than two consts drifting apart.
 const MonthlyCap = 1000
+
+// ImageReserveCalls is how much of MonthlyCap the web-shaped callers
+// (web_search, Atlas) deliberately leave unspent so image_search still has a
+// provider at the end of a busy month. Brave is the primary for both, sharing
+// one bucket, and image search is the one with no cheaper alternative: a peak
+// month of web_search alone can reach ~93% of MonthlyCap (see
+// docs/plans/search-provider-tiers.md), which would otherwise starve it.
+// Image volume is small — 17 calls in the 30 days to 2026-11-18 — so 100 is
+// many months of headroom against the cap itself.
+const ImageReserveCalls = 100
+
+// WebSearchCeiling is the usage level past which web-shaped callers stop
+// calling Brave: MonthlyCap minus the slice reserved for image_search. A
+// ceiling, not a second cap — the paid ceiling is still MonthlyCap, and
+// image_search itself checks that one (see tools/image_search.go).
+const WebSearchCeiling = MonthlyCap - ImageReserveCalls
 
 // maxResponseBytes bounds a response read from Brave's API — same "never
 // trust a remote Content-Length header" reasoning tools/web_read.go and
