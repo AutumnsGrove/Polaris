@@ -211,7 +211,7 @@ func searxngImageSearch(ctx *Context, query string, count int, attachGallery boo
 	// (the engines still answering are Bing's and Flickr's CDNs plus
 	// Pinterest's hotlink protection). A dead tile is worse than an absent
 	// one: it still costs the model a view_image call to find out.
-	found = filterDeadThumbnails(ctx.Ctx, found, ctx.ProbeThumbnail)
+	found = filterDeadThumbnails(ctx, found, ctx.ProbeThumbnail)
 	if len(found) == 0 {
 		log.Info("image_search: no reachable thumbnails", "query", query)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": "no images found", "call_id": callID})
@@ -248,6 +248,15 @@ var probeThumbnail = reachableThumbnail
 // the package's ordinary identifying one: measured against the CDNs SearXNG
 // actually surfaces (Bing, Flickr, Pinterest) it performs the same as a
 // browser string, so there is no reason to impersonate one here.
+//
+// The transport is dialContext (safeDialContext), not a bare http.Client:
+// these URLs are scraper output, so a page can set og:image to
+// http://127.0.0.1:8899/... or a metadata endpoint, and once an image engine
+// indexes it this probe would GET it from the host network — the identical
+// data flow web_read.go's SafeDialContext doc comment calls out for Pulsar
+// Daily's Picture of the Day. Redirects make a plain client worse still,
+// since it follows them by default. Callers also refuse to probe a
+// blocklisted source at all (see filterDeadThumbnails).
 func reachableThumbnail(ctx context.Context, raw string) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
@@ -258,7 +267,7 @@ func reachableThumbnail(ctx context.Context, raw string) bool {
 	// packet rather than however many MB the host decides to stream.
 	req.Header.Set("Range", "bytes=0-0")
 
-	client := &http.Client{Timeout: thumbnailProbeTimeout}
+	client := &http.Client{Timeout: thumbnailProbeTimeout, Transport: &http.Transport{DialContext: dialContext}}
 	resp, err := client.Do(req)
 	if err != nil {
 		return false
@@ -279,17 +288,27 @@ func reachableThumbnail(ctx context.Context, raw string) bool {
 // preserving order (and therefore the model-visible numbering). Runs the
 // probes concurrently; each one is independently bounded. probe may be nil
 // (production), meaning the package's real reachability check.
-func filterDeadThumbnails(ctx context.Context, cards []Card, probe func(context.Context, string) bool) []Card {
+//
+// A thumbnail on a blocklisted domain is dropped without ever being dialed —
+// the one check that matters more than reachability, since probing it is
+// itself the request the blocklist exists to prevent (same reasoning as
+// view_image's Blocked check before fetching a candidate).
+func filterDeadThumbnails(tctx *Context, cards []Card, probe func(context.Context, string) bool) []Card {
 	if probe == nil {
 		probe = probeThumbnail
 	}
 	if len(cards) == 0 {
 		return cards
 	}
+	ctx := tctx.Ctx
 	alive := make([]bool, len(cards))
 	sem := make(chan struct{}, thumbnailProbeWorkers)
 	var wg sync.WaitGroup
 	for i, card := range cards {
+		if tctx.Blocklist.Blocked(card.ImageURL) {
+			log.Info("image_search: not probing a blocklisted thumbnail", "url", card.ImageURL)
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -332,3 +332,101 @@ func TestAddImageCandidate_DedupsAndKeepsNumbers(t *testing.T) {
 		t.Errorf("pool size = %d, want 2", n)
 	}
 }
+
+// The real probe, not a stub: the review on #223 caught that every test
+// replaced `probeThumbnail`, so the transport and the status/Content-Type
+// logic shipped unexercised. TestMain (web_read_test.go) points dialContext at
+// an unrestricted dialer so httptest's loopback servers can be reached; the
+// SSRF guard itself is dialContext's default (safeDialContext), tested
+// separately in TestSafeDialContext_BlocksInternalAddresses.
+func TestReachableThumbnail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Range"); got != "bytes=0-0" {
+			t.Errorf("Range = %q, want bytes=0-0 — the probe must not pull a whole image", got)
+		}
+		switch r.URL.Path {
+		case "/ok.jpg":
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Write([]byte("\xff\xd8\xff"))
+		case "/no-type":
+			// Present-but-empty suppresses net/http's own sniffing, which is
+			// how a host that omits Content-Type entirely looks on the wire.
+			w.Header()["Content-Type"] = nil
+			w.Write([]byte("bytes"))
+		case "/octet":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write([]byte("bytes"))
+		case "/html":
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte("<html>not an image</html>"))
+		case "/missing":
+			http.Error(w, "gone", http.StatusNotFound)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{"/ok.jpg", true},
+		{"/no-type", true},
+		{"/octet", true},
+		{"/html", false},
+		{"/missing", false},
+	} {
+		if got := reachableThumbnail(context.Background(), srv.URL+tc.path); got != tc.want {
+			t.Errorf("reachableThumbnail(%s) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}
+
+// An unreachable host is a drop, not an error or a hang.
+func TestReachableThumbnail_DeadHostIsFalse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close() // nothing is listening any more
+	if reachableThumbnail(context.Background(), url) {
+		t.Error("reachableThumbnail returned true for a closed server")
+	}
+}
+
+// Blocklisted sources are never dialed at all — probing one would be the
+// request the blocklist exists to prevent.
+func TestHandleImageSearch_DoesNotProbeBlocklistedThumbnails(t *testing.T) {
+	var probed []string
+	orig := probeThumbnail
+	probeThumbnail = func(_ context.Context, raw string) bool {
+		probed = append(probed, raw)
+		return true
+	}
+	t.Cleanup(func() { probeThumbnail = orig })
+
+	srv := fakeSearXNGImages(t, []map[string]interface{}{
+		{"title": "Blocked", "url": "https://blocked.example/a", "thumbnail": "https://blocked.example/a.jpg"},
+		{"title": "Fine", "url": "https://ok.example/b", "thumbnail": "https://ok.example/b.jpg"},
+	})
+	bl, err := search.LoadBlocklist(writeBlocklistFile(t, "blocked.example\n"))
+	if err != nil {
+		t.Fatalf("LoadBlocklist: %v", err)
+	}
+	ctx := &Context{
+		Ctx:       context.Background(),
+		SearXNG:   search.NewSearXNGClient(srv.URL, nil),
+		Blocklist: bl,
+		Emit:      func(string, map[string]interface{}) {},
+	}
+
+	handleImageSearch(`{"query":"anything"}`, ctx, "test-call")
+
+	for _, u := range probed {
+		if strings.Contains(u, "blocked.example") {
+			t.Errorf("probed a blocklisted thumbnail %q", u)
+		}
+	}
+	if len(ctx.ImageCandidates) != 1 || ctx.ImageCandidates[0].Title != "Fine" {
+		t.Fatalf("ImageCandidates = %+v, want only the non-blocklisted result", ctx.ImageCandidates)
+	}
+}
