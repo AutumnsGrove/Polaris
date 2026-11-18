@@ -309,7 +309,9 @@ func TestHandleWebSearch_DegradedPrefersBraveOverParallelAndTavily(t *testing.T)
 	}
 }
 
-func TestHandleWebSearch_DegradedSkipsBraveWhenMonthlyCapReached(t *testing.T) {
+// Brave's web-shaped callers stop at WebSearchCeiling, not MonthlyCap — the
+// last ImageReserveCalls of the month belong to image_search.
+func TestHandleWebSearch_DegradedSkipsBraveWhenWebSearchCeilingReached(t *testing.T) {
 	searxngSrv := fakeDegradedSearXNG(t)
 	braveSrv, braveHits := fakeBrave(t)
 	parallelSrv, parallelHits := fakeParallel(t)
@@ -318,9 +320,9 @@ func TestHandleWebSearch_DegradedSkipsBraveWhenMonthlyCapReached(t *testing.T) {
 		Ctx:                 context.Background(),
 		SearXNG:             search.NewSearXNGClient(searxngSrv.URL, nil),
 		Brave:               brave.NewClientForTest("test-key", braveSrv.URL),
-		BraveUsageThisMonth: func() (int, error) { return brave.MonthlyCap, nil }, // already at the cap
+		BraveUsageThisMonth: func() (int, error) { return brave.WebSearchCeiling, nil }, // image reserve only
 		IncrementBraveUsage: func() error {
-			t.Error("IncrementBraveUsage must not be called when the cap gates Brave out")
+			t.Error("IncrementBraveUsage must not be called when the ceiling gates Brave out")
 			return nil
 		},
 		Parallel:               parallel.NewClientForTest("test-key", parallelSrv.URL),
@@ -335,7 +337,7 @@ func TestHandleWebSearch_DegradedSkipsBraveWhenMonthlyCapReached(t *testing.T) {
 		t.Errorf("result = %q, want the Parallel fallback result — Brave should have been skipped at the cap", result)
 	}
 	if *braveHits != 0 {
-		t.Errorf("brave hits = %d, want 0 — must not call Brave once the monthly cap is reached", *braveHits)
+		t.Errorf("brave hits = %d, want 0 — must not call Brave once the web-search ceiling is reached", *braveHits)
 	}
 	if *parallelHits != 1 {
 		t.Errorf("parallel hits = %d, want 1", *parallelHits)

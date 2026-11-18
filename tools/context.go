@@ -127,6 +127,15 @@ type Context struct {
 	// compare_sources falls back to LogDecisionsCost when this is nil.
 	LogCompareDecisionsCost func(usd float64) error
 
+	// ProbeThumbnail, when non-nil, replaces image_search's own reachability
+	// check for a candidate's thumbnail URL (see tools/image_search.go's
+	// filterDeadThumbnails). Only wired by tests — the real check is what
+	// keeps SearXNG's roughly-a-third-dead hotlinked thumbnails away from the
+	// model, and a fixture's example.com URLs would otherwise filter every
+	// candidate out. Nil (the default everywhere in production) means use the
+	// real probe.
+	ProbeThumbnail func(ctx context.Context, rawURL string) bool
+
 	// PinnedProvider, when non-empty, forces web_search to a single
 	// provider on every call instead of the normal SearXNG-first,
 	// fallback-on-degraded chain — see handleWebSearch in

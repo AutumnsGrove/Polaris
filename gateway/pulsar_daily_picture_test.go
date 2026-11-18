@@ -34,6 +34,10 @@ func pictureTestContext(srv *httptest.Server) *tools.Context {
 		Ctx:     context.Background(),
 		SearXNG: search.NewSearXNGClient(srv.URL, nil),
 		Emit:    func(string, map[string]interface{}) {},
+		// The fixture thumbnails point at cdn.example, which isn't reachable;
+		// image_search's real dead-thumbnail filter would drop every
+		// candidate before the judge ever saw one.
+		ProbeThumbnail: func(context.Context, string) bool { return true },
 	}
 }
 

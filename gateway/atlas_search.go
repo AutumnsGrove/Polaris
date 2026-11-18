@@ -132,8 +132,11 @@ func resolveAtlasBraveFallback(ctx context.Context, db *store.Store, braveClient
 		log.Warn("atlas search: checking brave usage failed, skipping brave fallback", "query", query, "err", err)
 		return nil, nil, false
 	}
-	if used >= brave.MonthlyCap {
-		log.Warn("atlas search: brave monthly cap reached, skipping brave fallback", "query", query, "used", used, "cap", brave.MonthlyCap)
+	if used >= brave.WebSearchCeiling {
+		// WebSearchCeiling, not MonthlyCap — same reserve web_search leaves
+		// so image_search keeps a provider at the end of a busy month. See
+		// brave.WebSearchCeiling's comment.
+		log.Warn("atlas search: brave web-search ceiling reached, skipping brave fallback", "query", query, "used", used, "ceiling", brave.WebSearchCeiling)
 		return nil, nil, false
 	}
 
