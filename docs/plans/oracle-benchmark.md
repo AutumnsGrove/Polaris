@@ -744,3 +744,12 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   pin's 152ms, in front of every turn, at $0.161 per 1,000 turns (3.9k input tokens a call, same $0.042/M
   catalog price as the pin). 99.9% of calls landed inside the 2.5s cutoff, one at 2.5029s; no errors, no
   refusals, and it takes all 23 questions in one request (32k context, like 1.0).
+- `baseten/bison-1` and `baseten/groundhog-1` (both created 2026-11-20, benched the same day). Bison scores
+  **88.1** (84.2-91.4), 0.3 points above the pin and so a tie, with no errors or refusals at 447ms p50
+  (3x the pin's 152ms), $0.445 per 1,000 turns (twice the pin's) and focus actions at 90% against 98%. It
+  is the strongest Baseten build tested short of Mammoth (90.1), which is no longer free. Not a candidate:
+  a tie on score that costs latency, money and focus accuracy. Groundhog is disqualified: 16% of its calls
+  failed with `HTTP 429 Rate limit exceeded` at concurrency 2 and 23% at concurrency 1, so the second
+  attempt, run straight after the first, did no better. Its answered calls score 81.5 at 343ms p50 and its
+  `source_type`/`ui` "weak families" are where the 429s landed. A third attempt after a real pause would
+  say whether it is a rate limit that resets; it has not been run. `decisions.DefaultModel` is unchanged.
