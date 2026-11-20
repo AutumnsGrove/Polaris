@@ -1,0 +1,17 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   baseten/bison-1      88.1   84.2-91.4  88.1       97%      91%    96%      90%    0%         0%   447ms  520ms  $0.424  
+x   baseten/groundhog-1  79.6   75.1-83.9  79.6       88%      82%    95%      90%    0%         16%  340ms  376ms  $0.140  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+x = disqualified:
+  baseten/groundhog-1: error/refusal rate above 5%
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  baseten/groundhog-1  ██                              |         p50 340ms  p95 376ms 
+  baseten/bison-1      ██░                             |         p50 447ms  p95 520ms 
+
+Tracks scoring 25+ points below the model's own headline:
+  baseten/groundhog-1: source_type 32, ui 33
