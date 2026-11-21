@@ -55,6 +55,11 @@ latency in front of the first token.
   (78.5), with `premise` 42 as its weak family and focus actions at 75%. Both are cheap ($0.157 and $0.075
   per 1,000 turns at 3.7k input tokens a call) and clean (no errors, no refusals), and neither approaches
   the pin. See [the d1.2 pair](notes.md#liquid-d12-and-d12-ultra-a-step-backwards).
+- **New and not a candidate (2026-11-20): `baseten/bison-1`** — 88.1 (84.2-91.4), 0.3 points above the pin
+  and inside the noise: a tie. Clean (no errors, no refusals in 885 calls) at 447ms median, 520ms p95, 99.9%
+  of calls inside the 2.5s cutoff (the one miss took 4.1s), $0.445 per 1,000 turns. It ties Jev on score with three
+  times Jev's latency and twice its price, and is weaker at focus actions (90% against Jev's 98%). It is the
+  stronger of the two new Baseten builds by a wide margin. See [the Baseten pair](notes.md#baseten-bison-1-and-groundhog-1).
 - **Gone since the run:** `perplexity/pplx-decider-v1.1-27b` (second place, `HTTP 404` since 2026-10-26)
   and both Mercury entries (404 as of 2026-11-10). Those rows are records, not options.
 - **New and disqualified (2026-11-11): `google/gemini-decision-1`** — the calls that answered were fast
@@ -62,14 +67,19 @@ latency in front of the first token.
   all: OpenRouter's shared Google quota returns `429 Rate limit exceeded` in bursts, and four attempts
   across two concurrencies landed between 19% and 39% errors. See [the shared Google
   quota](notes.md#gemini-decision-1-and-the-shared-google-quota).
+- **New and disqualified (2026-11-20): `baseten/groundhog-1`** — the calls that answered were the fastest
+  of the two new Baseten builds (343ms median, 417ms p95) and scored 81.5, but 23% of the run never
+  answered: every failure is `429 Rate limit exceeded`, none is a refusal or a question cap, and all of
+  them land in the back half of a run. Two attempts, 16% errors at concurrency 2 and 23% at concurrency 1,
+  so lowering the load did not help. Its two "weak families" (`source_type` 56, `ui` 57) are where the 429s landed, not a finding about the model. Not ranked. See [the Baseten pair](notes.md#baseten-bison-1-and-groundhog-1).
 
 ## Results
 
-Runs of 2026-10-16 to 2026-11-17: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
-reported separately), 3 repeats each, 2 calls in flight (the Drex models and Gemini ran at 1), weights
-`a6cbc140bd53`. The whole thing cost **$10.54**, about $0.83 of it the judge, $1.07 of it the four
+Runs of 2026-10-16 to 2026-11-20: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
+reported separately), 3 repeats each, 2 calls in flight (the Drex models, Gemini and Groundhog ran at 1), weights
+`a6cbc140bd53`. The whole thing cost **$11.31**, about $0.83 of it the judge, $1.07 of it the four
 Gemini attempts (the 429s themselves are free, but not the calls that then re-sent them), $2.16 of it
-the HeyGen pair, $0.28 of it the d1.2 pair and $0.18 of it Microsoft Decision 1.1. Raw leaderboards for
+the HeyGen pair, $0.28 of it the d1.2 pair, $0.18 of it Microsoft Decision 1.1 and $0.77 of it the Baseten pair's two attempts (judge included). Raw leaderboards for
 every invocation are in [`runs/`](runs/), and
 [notes.md#runs](notes.md#runs) lists which models ran when.
 
@@ -82,39 +92,41 @@ every invocation are in [`runs/`](runs/), and
 | 5 | `perplexity/pplx-decider-v1.3:free` | **89.5** (85.8-92.8) | 97% | 97% | 95% | 0% | 0% | 555ms | 1.3s | 99.2% | $0.000 |
 | 6 | `microsoft/microsoft-decision-1.1` | **89.2** (85.0-92.7) | 96% | 96% | 95% | 1% | 0% | 466ms | 613ms | 99.9% | $0.161 |
 | 7 | `inception/mercury-decide:free` (retired) § | **89.0** (84.0-93.3) | 97% | 97% | 95% | 1% | 0% | 618ms | 4.3s | 87.8% | $0.000 |
-| 8 | `liquid/d1-ultra` § | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
-| 9 | `typesafe/jev-1.14` § | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
-| 10 | `microsoft/microsoft-decision-1` § | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
-| 11 | `typesafe/jev-1.13` § | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
-| 12 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.080 |
-| 13 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
-| 14 | `heygen/heygen-decision-1-turbo` | **85.4** (81.2-89.6) | 96% | 96% | 85% | 0% | 0% | 425ms | 1.2s | 99.9% | $0.978 |
-| 15 | `heygen/heygen-decision-1` | **85.3** (80.8-89.6) | 96% | 96% | 82% | 1% | 0% | 600ms | 1.4s | 99.5% | $1.458 |
-| 16 | `liquid/d1.2-ultra` | **84.5** (79.7-88.7) | 96% | 96% | 92% | 1% | 0% | 345ms | 890ms | 99.4% | $0.157 |
-| 17 | `openai/gpt-6-luna-decisions` § | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
-| 18 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | $0.000 |
-| 19 | `perplexity/pplx-decider-flash-v1.3:free` | **80.7** (75.1-85.5) | 95% | 96% | 75% | 0% | 0% | 256ms | 444ms | 100.0% | $0.000 |
-| 20 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
-| 21 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
-| 22 | `liquid/d1` § | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 23 | `parallel/decisions-fast` ‡ | **78.4** (72.3-84.0) | 94% | 95% | 85% | 1% | 0% | 697ms | 1.0s | 99.8% | $0.000 |
-| 24 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 25 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
-| 26 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
-| 27 | `liquid/d1.2` | **74.0** (69.0-78.8) | 95% | 93% | 75% | 1% | 0% | 387ms | 809ms | 100.0% | $0.075 |
-| 28 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
-| 29 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
-| 30 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
-| 31 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
-| 32 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
-| 33 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| 8 | `baseten/bison-1` | **88.1** (84.2-91.4) | 97% | 96% | 90% | 0% | 0% | 447ms | 520ms | 99.9% | $0.445 |
+| 9 | `liquid/d1-ultra` § | **87.9** (84.2-91.1) | 96% | 96% | 90% | 0% | 0% | 236ms | 340ms | 100.0% | $0.186 |
+| 10 | `typesafe/jev-1.14` § | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
+| 11 | `microsoft/microsoft-decision-1` § | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
+| 12 | `typesafe/jev-1.13` § | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
+| 13 | `perplexity/pplx-decider-v1.2` | **86.5** (82.6-90.0) | 96% | 95% | 90% | 1% | 0% | 871ms | 3.7s | 93.0% | $0.080 |
+| 14 | `respan/span-02` | **86.4** (81.5-90.4) | 95% | 96% | 98% | 1% | 0% | 2.3s | 2.6s | 85.9% | $0.060 |
+| 15 | `heygen/heygen-decision-1-turbo` | **85.4** (81.2-89.6) | 96% | 96% | 85% | 0% | 0% | 425ms | 1.2s | 99.9% | $0.978 |
+| 16 | `heygen/heygen-decision-1` | **85.3** (80.8-89.6) | 96% | 96% | 82% | 1% | 0% | 600ms | 1.4s | 99.5% | $1.458 |
+| 17 | `liquid/d1.2-ultra` | **84.5** (79.7-88.7) | 96% | 96% | 92% | 1% | 0% | 345ms | 890ms | 99.4% | $0.157 |
+| 18 | `openai/gpt-6-luna-decisions` § | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 19 | `baseten/elephant-1:free` | **81.2** (75.8-86.2) | 95% | 96% | 80% | 0% | 0% | 445ms | 765ms | 98.4% | $0.000 |
+| 20 | `perplexity/pplx-decider-flash-v1.3:free` | **80.7** (75.1-85.5) | 95% | 96% | 75% | 0% | 0% | 256ms | 444ms | 100.0% | $0.000 |
+| 21 | `nace-ai/drex-v1.5` † | **80.5** (75.0-85.6) | 94% | 96% | 82% | 1% | 0% | 293ms | 851ms | 99.9% | $0.147 |
+| 22 | `liquid/d1.1` | **79.3** (74.0-84.2) | 95% | 95% | 80% | 1% | 0% | 421ms | 654ms | 100.0% | $0.075 |
+| 23 | `liquid/d1` § | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 24 | `parallel/decisions-fast` ‡ | **78.4** (72.3-84.0) | 94% | 95% | 85% | 1% | 0% | 697ms | 1.0s | 99.8% | $0.000 |
+| 25 | `cloudflare/clef` § | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 26 | `perplexity/pplx-decider-flash-v1.2` | **76.2** (70.2-81.4) | 95% | 93% | 70% | 1% | 0% | 386ms | 507ms | 99.5% | $0.057 |
+| 27 | `scaledown/classify-1` § | **75.4** (70.6-80.0) | 93% | 92% | 82% | 0% | 0% | 579ms | 1.4s | 97.3% | $0.484 |
+| 28 | `liquid/d1.2` | **74.0** (69.0-78.8) | 95% | 93% | 75% | 1% | 0% | 387ms | 809ms | 100.0% | $0.075 |
+| 29 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 30 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
+| 31 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
+| 32 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
+| 33 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 34 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| x | `baseten/groundhog-1` † | **81.5** (77.0-85.5) | 90% | 96% | 90% | 0% | 23% | 343ms | 417ms | 77.1% | $0.119 |
 | x | `google/gemini-decision-1` † | **80.3** (74.8-85.6) | 92% | 96% | 84% | 0% | 19% | 402ms | 643ms | 81.4% | $0.334 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.175 |
 | x | `inception/mercury-decide` (retired) § | **4.6** (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 
 **x** is disqualified: over 5% errors or refusals, which in every case traces to the provider (`429`
 quota, `429 Model busy`, `429 rate_limit_exceeded`) rather than the question set. Gemini's row is the best
-of four attempts; every answered call in all four was inside the 2.5s timeout, so its latency columns are
+of four attempts and Groundhog's the better of two; every answered call in all four was inside the 2.5s timeout, so its latency columns are
 sound, and its score is what it managed on the calls the provider let through. **†** ran at concurrency 1
 rather than 2, so its latency and under-2.5s share are a best case; accuracy is unaffected. **§** predates per-call cost capture, so its
 cost is the average over identical repeats and may run a few percent low for a cache-capable model.
@@ -133,14 +145,14 @@ With 274 scored cases the intervals are about ±4 points, so a gap under 2.5 poi
 within a tier means nothing. Four tiers:
 
 - **Reflex, Perplexity v1.1 (retired), Drex Max, Mammoth** — 90 and up.
-- **Perplexity v1.3 free, Mercury free (retired), D1 Ultra, Jev 1.14, Microsoft, Jev 1.13, Perplexity
-  v1.2, Span-02** — 86 to 90, a statistical tie.
+- **Perplexity v1.3 free, Mercury free (retired), Bison 1, D1 Ultra, Jev 1.14, Microsoft, Jev 1.13,
+  Perplexity v1.2, Span-02** — 86 to 90, a statistical tie.
 - **The HeyGen pair, Luna, Elephant, Perplexity Flash v1.3 free, Drex 1.5, D1.1, D1, Clef, Flash v1.2,
   Classify 1** — 75 to 85.
 - **Clef Flash, Tev1, Clef Omni, Kev, Solar Flash, Joey 1** — 55 to 74.
 
-Drex 2.0 and Gemini 1 are in no tier: 22% and 19% of their calls respectively failed upstream (`429 Model
-busy`, `429 Rate limit exceeded`), so both are disqualified rather than ranked.
+Drex 2.0, Gemini 1 and Groundhog 1 are in no tier: 22%, 19% and 23% of their calls respectively failed
+upstream (`429 Model busy`, `429 Rate limit exceeded`), so all three are disqualified rather than ranked.
 
 Only two things separate the leaders, and neither is in the score: **speed** (Jev is 10x faster at the
 median than Reflex) and **focus actions**, the one check that changes what Oracle actually does rather

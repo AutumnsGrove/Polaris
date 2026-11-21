@@ -4,11 +4,11 @@ The detail behind [README.md](README.md)'s table: what each model does well and 
 workaround, the models that could not be scored, and how the run was made. The recommendation lives in
 the README; this page is for when a row needs explaining.
 
-Catalog and availability notes here were checked live on **2026-11-17**.
+Catalog and availability notes here were checked live on **2026-11-20**.
 
 ## Runs
 
-Twenty-four invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-17, all with `--repeats 3 --seed 1
+Twenty-six invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-20, all with `--repeats 3 --seed 1
 --timeout 15s` and 2 calls in flight except where noted. The report command refuses to merge runs that
 differ in cases, repeats or weights, and in concurrency unless given `--allow-concurrency-mismatch`, which
 marks the affected rows (†) — accuracy is unaffected by concurrency, latency is not.
@@ -40,6 +40,10 @@ marks the affected rows (†) — accuracy is unaffected by concurrency, latency
   pair](#liquid-d12-and-d12-ultra-a-step-backwards).
 - **2026-11-17 (later)** — `microsoft/microsoft-decision-1.1` in its own invocation, the successor to the
   Microsoft Decision 1 row. No question cap, no errors, no refusals. See [the 1.1 build](#microsoft-decision-11).
+- **2026-11-20** — `baseten/bison-1` and `baseten/groundhog-1` in one invocation (both created
+  2026-11-20), then Groundhog alone at `--concurrency 1` after 16% of its calls failed with `429`. Neither
+  needed a question cap and neither refused anything; Groundhog's second attempt did *worse* (23%), so the
+  row in the table is its better attempt. See [the Baseten pair](#baseten-bison-1-and-groundhog-1).
 
 The two earliest files in `runs/` (2026-10-15) used an older, smaller case bank and older weights, so
 they are not comparable and do not appear in the table.
@@ -85,6 +89,11 @@ score is credit earned minus penalties, so it can go negative.
 - **`inception/mercury-decide:free` (89.0, retired)** — 618ms median, 0 errors, focus actions 95%, $0 —
   but p95 4.3s, so about 12% of calls missed the cutoff, and weak on `clarify` (62) and `emotional` (43).
   Both Mercury entries now return `HTTP 404 No endpoints found` (2026-11-10).
+- **`baseten/bison-1` (88.1)** — 447ms median, 520ms p95, no errors or refusals in 885 calls, 99.9% inside
+  the 2.5s cutoff (one slow call, 4.1s), $0.445 per 1,000 turns. A tie with Jev on score at 3x its median and
+  2x its price, with focus actions at 90% against Jev's 98%. Weakest on `recall` (76), `clarify` (77) and
+  `source_type` (82); nothing is 25 points under its own score. Strongest on `claim_check` (99), `locale`
+  (98) and `format` (98). See [the Baseten pair](#baseten-bison-1-and-groundhog-1).
 - **`liquid/d1-ultra` (87.9)** — the strongest alternative to Jev: same score inside the noise, 236ms
   median, 340ms p95, 100% inside the cutoff, about 12% cheaper, no weak family (lowest are `emotional`
   63 and `contested` 66), and it fixes Jev's `locale` blind spot. The cost is focus actions: 90% against
@@ -137,6 +146,10 @@ score is credit earned minus penalties, so it can go negative.
   moves around — `private_person` 40, `contested` 36, `depth` 41, `recency` 28 — because which calls the
   limiter erased differs each time. Only `high_stakes` is low in more than one attempt (48 and 53). Its
   best family is `locale` (99.5), the exact place Jev is weakest (61).
+- **`baseten/groundhog-1` (81.5, disqualified)** — 343ms median, 417ms p95, and the 77% of calls that
+  answered all came back well inside the cutoff, but 23% of the second attempt (16% of the first) were
+  `HTTP 429 Rate limit exceeded`. Its `source_type` (56) and `ui` (57) scores are where the 429s landed,
+  not weaknesses of the model. See [the Baseten pair](#baseten-bison-1-and-groundhog-1).
 - **`liquid/d1.1` (79.3)** — a tie with the D1 it replaces (78.5) and not a step toward D1 Ultra. Cheaper
   ($0.075 against $0.089) and better at focus actions (80% against 68%), but ~160ms slower at the median
   and still 8.5 points behind Jev, with weak `locale` (61), `private_person` (62), `contested` (64),
@@ -466,6 +479,45 @@ headline score hiding the thing that actually changed.
   (98.6 against 61.5) and `private_person` (90.5 against 87.5), level on `clarify` (64.4 against 66.2), and
   behind on focus actions (95% against 98%).
 
+## Baseten Bison 1 and Groundhog 1
+
+Two Baseten decision builds, both created 2026-11-20 and both listed only under
+`output_modalities=all` (they are absent from the default `/api/v1/models` listing, like every decision
+model). `baseten/bison-1` (`baseten/bison-1-20261120`, $0.10/M input, 32k context) and `baseten/groundhog-1`
+(`baseten/groundhog-1-20261120`, $0.035/M input, 16k context); neither has a `:free` variant, and both take
+all 23 Oracle questions in one request.
+
+| | Bison 1 | Groundhog 1 (better attempt) | Jev 1.14 (pin) |
+|---|--:|--:|--:|
+| Score | **88.1** (84.2-91.4) | 81.5 (77.0-85.5) † | 87.8 |
+| Errors | 0% | **23%** | 1% |
+| p50 / p95 | 447ms / 520ms | 343ms / 417ms † | 152ms / 189ms |
+| Focus actions | 90% | 90% | 98% |
+| `$/1k turns` | $0.445 | $0.119 | $0.212 § |
+
+- **Bison is a tie with the pin, not a win**: 0.3 points is far inside the ±4 interval, and it pays for
+  that tie with 3x the median latency, twice the price and eight points of focus accuracy. Not a candidate.
+  Among the Baseten builds it is the clear leader on this page (Elephant 81.2, Joey 55.6) and within noise
+  of Mammoth (90.1), which is no longer free.
+- **Groundhog's failures are a rate limit, not the model.** Every failed call is `HTTP 429 Rate limit
+  exceeded`, none is a refusal or a question cap, and the 8-case smoke test was clean. The first attempt
+  (concurrency 2) lost 143 of 885 calls, all in the last 14% of its run; the second (concurrency 1) lost 203
+  of 885, starting at call 412 and then failing roughly 43% of what remained, not all of it, which is what a
+  limiter looks like rather than a hard cap. The second attempt ran straight after the first, so the two
+  are not independent samples of the same quota. Lowering the concurrency did not help here, unlike in the
+  Gemini case. The table shows the second attempt because its score is higher (81.5 against 79.6), but that
+  gap is inside the noise and mostly reflects how many calls the limiter let through, so it is a † row for
+  its latency columns and nothing more.
+- **The "weak families" belong to the 429s.** `source_type` and `ui` read 56 and 57 because 39 of 60 and 35
+  of 54 of their calls failed, and a failed call scores nothing. Do not read them as a finding.
+- **What would settle it**: a third attempt after the limiter has plainly reset (not straight after another
+  run), at concurrency 1. It has not been run; two attempts that both fail the same way were enough to
+  record the row as disqualified rather than keep spending until one turns green. The catalog's own uptime
+  for the endpoint read 100% throughout, so this looks like a limit on the account or the route, not an
+  outage; that is an inference, not something the runs show.
+- Cost of the pair: $0.424 for Bison's decision calls, $0.140 and $0.129 for Groundhog's two attempts, and
+  about $0.077 for the judge across the two invocations.
+
 ## Gemini Decision 1 and the shared Google quota
 
 `google/gemini-decision-1` (`google/gemini-decision-1-20261111`, $0.10 per million input tokens) is the
@@ -545,7 +597,7 @@ Mercury has two entries and neither was a clean result, and as of **2026-11-10 b
 - **Fixed load.** Models run one after another with 2 calls in flight, so every model is timed under the
   same load. Latency moves with provider load, so treat it as one day's measurement.
 - **Judge.** A separate chat model (`deepseek`) reads the disputed cases, near-misses, and a 10% random
-  spot-check of ordinary answers. Across the runs' 720 spot-checks it disagreed with the hand label 7 times
+  spot-check of ordinary answers. Across the runs' 830 spot-checks it disagreed with the hand label 8 times
   (1.0%), which is the best available estimate of how wrong the bank is. It flagged
   `dr-remote-work-relocation`, `fo-researcher-loan-vs-index`, `pr-followup-japan-crowds`,
   `hs-first-ipo-trivia`, `cl-best-pizza` and `hs-killer-deal-laptop` for a human look.
