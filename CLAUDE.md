@@ -452,7 +452,7 @@ Read the `review / review` row and act on the state it reports:
 | skipped                                          | A draft, or a branch that is not in this repository. A draft can be marked ready; a fork is never reviewed.      |
 | a review for this head                           | Push **once**, with every finding from it. One push per finding restarts the cycle and pays for the read again.  |
 | failed, or cancelled by a push that was not yours | It will not post for this head. Say so on the thread, then push.                                               |
-| still pending, and the job has run past its limit    | The job allows 33 minutes of **running**, and queue time is on top of that, so measure from when the job started (`gh run view <id> --json startedAt,status`), not from your push. Past that, it is not coming: say so on the thread, then push. |
+| still pending, and it has no start time | The run is queued for a runner, not late. GitHub enforces the 33-minute job timeout itself, so a job that is *running* cannot sit past it — it ends cancelled or failed, which is the row above. A run with no start (`gh run view <id> --json status,startedAt`) is waiting and will start, so wait. |
 
 A green `review / review` tick means a review was posted — the job exits non-zero when it cannot post — so
 read the review rather than trusting the tick. A red check from CI is the one exception to all of the
