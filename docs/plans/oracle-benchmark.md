@@ -753,3 +753,16 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   attempt, run straight after the first, did no better. Its answered calls score 81.5 at 343ms p50 and its
   `source_type`/`ui` "weak families" are where the 429s landed. A third attempt after a real pause would
   say whether it is a rate limit that resets; it has not been run. `decisions.DefaultModel` is unchanged.
+- `antdigital/lingdt-decision-fast-1.0:free` (created 2026-11-26, benched the same day) is **not a candidate**
+  and the weakest addition since Joey 1: **58.6** (49.9-66.3), 29.2 points behind the pin. It is compatible —
+  885 of 885 calls answered, 0 errors, 0 refusals, all inside the 2.5s cutoff (worst 2.36s), $0, 3.9k input
+  tokens a call, 23 questions in one request — so this is a quality result, not an availability one. The
+  shape is a pair of opposing errors: it under-fires (`research` on 11 of 22 messages that need fresh data,
+  `clarify` on 0 of 5, `premise` on 2 of 8) and over-fires on the dangerous checks, with 8 of its 10
+  dangerous false nudges being the private-person nudge on questions about public figures or non-people
+  ("who painted the Mona Lisa", "who wrote Pride and Prejudice", an actor's age) and the other 2 `emotional`
+  on both hyperbole traps — 2.6% of 391 opportunities against the pin's 0.5%. Calibration is the second worst
+  on the page (Brier 0.323 against Jev's 0.163) and the median call is 1.3s, 8.6x the pin. It does hold up on
+  `high_stakes` (18 of 18 wanted, 0 of 18 false) and `claim_check` (6 of 6), which is why the row is not
+  lower; that is not enough to matter. The `:free` id is the only one with endpoints (the paid id resolves to
+  none), so the build carries the free tier's withdrawal risk. `decisions.DefaultModel` is unchanged.

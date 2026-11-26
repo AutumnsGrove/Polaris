@@ -4,11 +4,11 @@ The detail behind [README.md](README.md)'s table: what each model does well and 
 workaround, the models that could not be scored, and how the run was made. The recommendation lives in
 the README; this page is for when a row needs explaining.
 
-Catalog and availability notes here were checked live on **2026-11-20**.
+Catalog and availability notes here were checked live on **2026-11-26**.
 
 ## Runs
 
-Twenty-six invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-20, all with `--repeats 3 --seed 1
+Twenty-seven invocations of `polaris oracle-bench`, 2026-10-16 to 2026-11-26, all with `--repeats 3 --seed 1
 --timeout 15s` and 2 calls in flight except where noted. The report command refuses to merge runs that
 differ in cases, repeats or weights, and in concurrency unless given `--allow-concurrency-mismatch`, which
 marks the affected rows (†) — accuracy is unaffected by concurrency, latency is not.
@@ -44,6 +44,9 @@ marks the affected rows (†) — accuracy is unaffected by concurrency, latency
   2026-11-20), then Groundhog alone at `--concurrency 1` after 16% of its calls failed with `429`. Neither
   needed a question cap and neither refused anything; Groundhog's second attempt did *worse* (23%), so the
   row in the table is its better attempt. See [the Baseten pair](#baseten-bison-1-and-groundhog-1).
+- **2026-11-26** — `antdigital/lingdt-decision-fast-1.0:free` in its own invocation, the day it was created,
+  paced at one call per 3.5s like every `:free` build. No question cap, no errors, no refusals. See [the LingDT
+  build](#ant-digitals-lingdt-decision-fast-10).
 
 The two earliest files in `runs/` (2026-10-15) used an older, smaller case bank and older weights, so
 they are not comparable and do not appear in the table.
@@ -173,6 +176,12 @@ score is credit earned minus penalties, so it can go negative.
   (26) and `private_person` (38). At 4B parameters the failure is accuracy, not compatibility.
 - **`cloudflare/clef-omni` (66.3)** — the second-priciest model tested, behind only Reflex ($0.802 per 1,000 turns, 3.8x Jev).
   Fast (379ms) but badly wrong on `premise` (16); it is the multimodal variant and Oracle sends only text.
+- **`antdigital/lingdt-decision-fast-1.0:free` (58.6)** — Ant Digital's Ling build, the third-weakest thing on
+  the page and the weakest free build measured. It is compatible — 885 of 885 answered, 100% inside the cutoff
+  (worst 2.36s), no refusals, $0 at 3.9k input tokens a call — and that is the whole of the good news: 1.3s
+  median (8.6x Jev), `private_person` -12, `premise` -9, `contested` 0 and `research` 17, 2.6% dangerous false
+  nudges against the pin's 0.5%, and the second-worst calibration on the page. See [the LingDT
+  section](#ant-digitals-lingdt-decision-fast-10).
 - **`nace-ai/drex-v2.0` (64.7, disqualified)** — 22% errors, all upstream `429 Model busy`. See [Drex
   2.0's errors](#drex-20s-errors-trace-to-the-provider).
 - **`jaredpalmer/kev-4b` (58.5)** — 1.0s, no errors, focus actions right only 55% of the time, weak on
@@ -518,6 +527,57 @@ all 23 Oracle questions in one request.
 - Cost of the pair: $0.424 for Bison's decision calls, $0.140 and $0.129 for Groundhog's two attempts, and
   about $0.077 for the judge across the two invocations.
 
+## Ant Digital's LingDT Decision Fast 1.0
+
+`antdigital/lingdt-decision-fast-1.0:free` (build `antdigital/lingdt-decision-fast-1.0-20261126`, a Ling-based
+decision model, FP8, 32k context, created and benched 2026-11-26) **scores 58.6** (49.9-66.3). It is the
+third-weakest row in the table, 29.2 points behind the pin, and unlike most of the recent arrivals it is a
+quality result rather than an availability one — nothing stopped it from answering:
+
+| | LingDT Fast 1.0 | Jev 1.14 (pin) |
+|---|--:|--:|
+| Score | **58.6** (49.9-66.3) | 87.8 |
+| Calls answered | 885 / 885 | 885 / 885 |
+| Errors / refusals | 0% / 0% | 0% / 0% |
+| p50 / p95 / worst | 1.3s / 1.4s / 2.36s | 152ms / 189ms / 572ms |
+| Under the 2.5s cutoff | 100% | 100% |
+| Focus actions | 88% | 98% |
+| Dangerous false nudges | **2.6%** (10 of 391) | 0.5% (2 of 391) |
+| Brier | **0.323** | 0.163 |
+| `$/1k turns` | $0.000 (3.9k input tokens a call) | $0.212 § |
+
+It takes all 23 questions in one request on the `:free` endpoint (the paid id has no endpoints at all, so
+this run's build is the free one and carries the free tier's rate-limit and withdrawal risk). Nothing about
+the calls was odd: no errors, no refusals, a tight latency distribution with a 2.36s worst case, and $0
+billed.
+
+**What it does badly is fire the wrong nudges in both directions**, which is why a row with 88% focus
+accuracy and a perfect `high_stakes` record still scores 58.6:
+
+- **It under-fires.** `research` was delivered on 11 of the 22 messages that need fresh data and `clarify`
+  on none of the 5 that needed a question back (`clarify` 0 of 5 wanted, 0 of 5 false — it simply never
+  says yes), and `premise` on 2 of 8, so the belief-contradicting messages ("the sky isn't green at night",
+  the landlord-deposit follow-up) mostly sail through without the nudge that exists for them.
+- **Then it over-fires on the family that matters most.** It delivered the **private-person** nudge on 8 of
+  the 168 cases whose label says no — questions about public figures or about no person at all: "who
+  painted the Mona Lisa", "who wrote Pride and Prejudice", an actor's age, the penicillin-discovery trivia.
+  Those are 8 of its 10 dangerous false nudges; the other two are `emotional` on both hyperbole traps (the
+  lost-bag fury and the wedding-font stress). That is 2.6% of 391 opportunities against the pin's 0.5%,
+  still inside the 5% disqualification line but the loosest of any free build measured and 5x the pin.
+- **`contested` is the mirror image**: 6 of 6 when the label wants it, 3 of 13 when it does not, for a track
+  score of 0.3 — the penalties cancel the credit. `source_type` (3 of 4) and `locale` (2 of 3) fire wrongly
+  on tiny samples; treat those as direction, not measurement.
+- **What it gets right is the safety-adjacent half.** `high_stakes` 18 of 18 wanted with 0 of 18 false (track
+  86.3), `claim_check` 6 of 6 and 98.8 on the track, `recency` 11 of 11 and 85.2, `format` 8 of 8, intent 45
+  of 46 — and its Brier is 0.32, so even the answers it gets right are not confident about it.
+- **The latency is the second problem.** 1.3s median is 8.6x the pin and slower than every row above it
+  in the table except the three deliberately slow-accurate ones (Reflex, Perplexity v1.1, Span-02), for the
+  weakest score of any free build here. Nothing recommends it: not speed, not accuracy, not the tail, not the
+  calibration.
+
+*Not a candidate*, and `decisions.DefaultModel` stays `typesafe/jev-1.14`. The run cost $0.03, all of it the
+judge (36 audited answers, 0 disagreements).
+
 ## Gemini Decision 1 and the shared Google quota
 
 `google/gemini-decision-1` (`google/gemini-decision-1-20261111`, $0.10 per million input tokens) is the
@@ -597,8 +657,8 @@ Mercury has two entries and neither was a clean result, and as of **2026-11-10 b
 - **Fixed load.** Models run one after another with 2 calls in flight, so every model is timed under the
   same load. Latency moves with provider load, so treat it as one day's measurement.
 - **Judge.** A separate chat model (`deepseek`) reads the disputed cases, near-misses, and a 10% random
-  spot-check of ordinary answers. Across the runs' 830 spot-checks it disagreed with the hand label 8 times
-  (1.0%), which is the best available estimate of how wrong the bank is. It flagged
+  spot-check of ordinary answers. Across the runs' 866 spot-checks it disagreed with the hand label 8 times
+  (0.9%), which is the best available estimate of how wrong the bank is. It flagged
   `dr-remote-work-relocation`, `fo-researcher-loan-vs-index`, `pr-followup-japan-crowds`,
   `hs-first-ipo-trivia`, `cl-best-pizza` and `hs-killer-deal-laptop` for a human look.
 - **Weights.** Scoring weights and the 5s latency budget live in
