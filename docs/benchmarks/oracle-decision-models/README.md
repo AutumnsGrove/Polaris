@@ -60,6 +60,16 @@ latency in front of the first token.
   of calls inside the 2.5s cutoff (the one miss took 4.1s), $0.445 per 1,000 turns. It ties Jev on score with three
   times Jev's latency and twice its price, and is weaker at focus actions (90% against Jev's 98%). It is the
   stronger of the two new Baseten builds by a wide margin. See [the Baseten pair](notes.md#baseten-bison-1-and-groundhog-1).
+- **New and not a candidate (2026-11-26): `antdigital/lingdt-decision-fast-1.0:free`** — 58.6 (49.9-66.3),
+  29 points below the pin and third-weakest of the 35 ranked models. Compatibility is not the problem: 885
+  of 885 calls answered, none past the 2.5s cutoff (worst 2.36s), no refusals, $0. It is simply wrong, in both
+  directions — it under-fires (`research` on 11 of the 22 messages that need it, `clarify` on 0 of 5, `premise`
+  on 2 of 8) and over-fires where it matters most, delivering the private-person nudge on questions about
+  public figures and non-people ("who painted the Mona Lisa", "who wrote Pride and Prejudice"). That puts it
+  at **2.6% dangerous false nudges (10 of 391)** against the pin's 0.5%, the loosest of the free builds
+  measured, with the second-least calibrated probabilities on the page (Brier 0.32 against the pin's 0.16). At
+  1.3s median it is also 8.6x the pin's latency. See [the LingDT
+  section](notes.md#ant-digitals-lingdt-decision-fast-10).
 - **Gone since the run:** `perplexity/pplx-decider-v1.1-27b` (second place, `HTTP 404` since 2026-10-26)
   and both Mercury entries (404 as of 2026-11-10). Those rows are records, not options.
 - **New and disqualified (2026-11-11): `google/gemini-decision-1`** — the calls that answered were fast
@@ -75,12 +85,13 @@ latency in front of the first token.
 
 ## Results
 
-Runs of 2026-10-16 to 2026-11-20: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
+Runs of 2026-10-16 to 2026-11-26: 295 hand-labeled cases (274 scored; 21 have disputed labels and are
 reported separately), 3 repeats each, 2 calls in flight (the Drex models, Gemini and Groundhog ran at 1), weights
-`a6cbc140bd53`. The whole thing cost **$11.31**, about $0.83 of it the judge, $1.07 of it the four
+`a6cbc140bd53`. The whole thing cost **$11.34**, about $0.86 of it the judge, $1.07 of it the four
 Gemini attempts (the 429s themselves are free, but not the calls that then re-sent them), $2.16 of it
-the HeyGen pair, $0.28 of it the d1.2 pair, $0.18 of it Microsoft Decision 1.1 and $0.77 of it the Baseten pair's two attempts (judge included). Raw leaderboards for
-every invocation are in [`runs/`](runs/), and
+the HeyGen pair, $0.28 of it the d1.2 pair, $0.18 of it Microsoft Decision 1.1, $0.77 of it the Baseten
+pair's two attempts (judge included) and $0.03 of it the LingDT run, all of that the judge — its decision
+calls were free. Raw leaderboards for every invocation are in [`runs/`](runs/), and
 [notes.md#runs](notes.md#runs) lists which models ran when.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
@@ -116,9 +127,10 @@ every invocation are in [`runs/`](runs/), and
 | 29 | `cloudflare/clef-flash` § | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
 | 30 | `togethercomputer/tev1-4b-experimental` | **70.3** (63.8-75.8) | 93% | 91% | 75% | 1% | 0% | 778ms | 1.0s | 99.8% | $0.261 |
 | 31 | `cloudflare/clef-omni` | **66.3** (59.9-72.2) | 93% | 92% | 68% | 1% | 0% | 379ms | 562ms | 100.0% | $0.802 |
-| 32 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
-| 33 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
-| 34 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
+| 32 | `antdigital/lingdt-decision-fast-1.0:free` | **58.6** (49.9-66.3) | 86% | 90% | 88% | 3% | 0% | 1.3s | 1.4s | 100.0% | $0.000 |
+| 33 | `jaredpalmer/kev-4b` | **58.5** (52.4-64.1) | 94% | 87% | 55% | 0% | 0% | 1.0s | 1.6s | 100.0% | $0.154 |
+| 34 | `upstage/solar-decide-flash` § | **57.3** (49.5-64.8) | 84% | 89% | 85% | 4% | 0% | 1.3s | 1.6s | 100.0% | $0.575 |
+| 35 | `baseten/joey-1` | **55.6** (48.4-62.0) | 85% | 89% | 68% | 0% | 0% | 360ms | 572ms | 100.0% | $0.044 |
 | x | `baseten/groundhog-1` † | **81.5** (77.0-85.5) | 90% | 96% | 90% | 0% | 23% | 343ms | 417ms | 77.1% | $0.119 |
 | x | `google/gemini-decision-1` † | **80.3** (74.8-85.6) | 92% | 96% | 84% | 0% | 19% | 402ms | 643ms | 81.4% | $0.334 |
 | x | `nace-ai/drex-v2.0` † (split) | **64.7** (58.1-70.6) | 80% | 92% | 70% | 1% | 22% | 769ms | 1.6s | 77.9% | $0.175 |
@@ -149,7 +161,7 @@ within a tier means nothing. Four tiers:
   Perplexity v1.2, Span-02** — 86 to 90, a statistical tie.
 - **The HeyGen pair, Luna, Elephant, Perplexity Flash v1.3 free, Drex 1.5, D1.1, D1, Clef, Flash v1.2,
   Classify 1** — 75 to 85.
-- **Clef Flash, Tev1, Clef Omni, Kev, Solar Flash, Joey 1** — 55 to 74.
+- **Clef Flash, Tev1, Clef Omni, LingDT Fast, Kev, Solar Flash, Joey 1** — 55 to 74.
 
 Drex 2.0, Gemini 1 and Groundhog 1 are in no tier: 22%, 19% and 23% of their calls respectively failed
 upstream (`429 Model busy`, `429 Rate limit exceeded`), so all three are disqualified rather than ranked.
@@ -169,12 +181,12 @@ burns 10k tokens on a 4k-token prompt, which no catalog price shows.
 
 <p align="center"><img src="tracks.svg" alt="Score for each model on each family of questions, best in each row boxed" width="860"></p>
 
-## Roster status (checked 2026-11-13)
+## Roster status (checked 2026-11-26)
 
-`GET /api/v1/models?output_modalities=decisions` returned **41 entries**: 27 ids that are rows in the
-table (26 scored, plus Gemini 1's disqualified one), 5 `~` aliases, and 9 ids with no row. The filter is
-on output modality, not on "can answer Choice questions", so each of the 9 is a judgment rather than an
-omission:
+`GET /api/v1/models?output_modalities=decisions` returned **45 entries**: 34 ids that are rows in the
+table (31 scored, plus Drex 2.0, Gemini 1 and Groundhog 1 disqualified), 5 `~` aliases, and 6 ids with no
+row. The filter is on output modality, not on "can answer Choice questions", so each of the 6 is a
+judgment rather than an omission:
 
 | Model | Why it has no row |
 |---|---|
@@ -183,16 +195,18 @@ omission:
 | `upstage/solar-decide` | Answers correctly but takes 10 to 21s per call, 4x Oracle's timeout. |
 | `cloudflare/clairic` | Not a decision model: `/api/alpha/extractions` only, a different response shape. |
 | `baseten/mammoth-1`, `baseten/elephant-1` | The same builds the table ran as `:free`, now paid ($0.10/M and $0.035/M). Not re-run, since the weights did not change. |
-| `parallel/decisions-fast:free` | A free build of a model already ruled out at 78.4 (see [notes](notes.md#parallel-decisions-fast-web-grounded)). |
 | the 5 `~…-latest` aliases | A moving alias makes a result uninterpretable, so the versioned id is what runs. |
 
 Free and paid have swapped in both directions since the runs, which is why the table names the build it
-measured: Mammoth and Elephant moved `:free` → paid, Parallel moved paid → `:free`. Both Mercury entries and
-Perplexity v1.1 now return `HTTP 404 No endpoints found`, so their rows are records. `liquid/d1` is still
-listed beside `d1.1`. Google's entry appeared on 2026-11-11 and has a row, so it does not appear in that
-table — but it is worth re-checking once the launch-week quota pressure in
+measured: Mammoth and Elephant moved `:free` → paid, and Parallel went the other way — its `:free` id now
+has no endpoints while the paid id serves a $0 one, so the 78.4 row is unchanged and still free. Both
+Mercury entries, Perplexity v1.1, `liquid/d1` and `liquid/d1.1` now resolve to no endpoints at all, so their
+rows are records. Google's entry appeared on 2026-11-11 and has a row, so it does not appear in that table —
+but it is worth re-checking once the launch-week quota pressure in
 [notes](notes.md#gemini-decision-1-and-the-shared-google-quota) subsides. Perplexity v1.3 and the two
-HeyGen builds arrived on 2026-11-12 and were run on 2026-11-13.
+HeyGen builds arrived on 2026-11-12 and were run on 2026-11-13; Ant Digital's LingDT arrived on 2026-11-26,
+and only its `:free` id has endpoints, so it carries the free-tier caveats — it can be rate-limited or
+withdrawn without notice, as Mammoth's was.
 
 ## Where things are
 

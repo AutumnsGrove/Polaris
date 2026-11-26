@@ -1,0 +1,13 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                                     score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50   p95   cost    
+1   antdigital/lingdt-decision-fast-1.0:free  58.6   49.9-66.3  58.6       86%      84%    90%      88%    3%         0%   1.3s  1.4s  $0.032  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  antdigital/lingdt-decision-fast-1.0:free  ████████░                       |         p50 1.3s   p95 1.4s  
+
+Tracks scoring 25+ points below the model's own headline:
+  antdigital/lingdt-decision-fast-1.0:free: clarify 21, contested 0, premise -9, private_person -12, research 17
